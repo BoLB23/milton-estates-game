@@ -1,5 +1,7 @@
 # Milton Estates: Next Steps After the First Playthrough
 
+> This historical graybox plan has been completed and is retained for context. The current handoff is [Next-phase handoff: illustrated world and real content browsing](next-phase-handoff-2026-07-13.md).
+
 ## Current checkpoint
 
 The first graybox mission is playable end to end: movement, dialogue, quest stages, the creek map, controller pickup, the optional creek token, LocalStorage persistence, and mission completion are implemented. The first real playthrough exposed the most important kind of MVP issue—a route/state soft-lock—before visual production work began.

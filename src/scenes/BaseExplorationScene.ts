@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { EVENT, gameEvents } from "../game/events";
+import { EVENT, gameEvents, type InputActionEvent } from "../game/events";
+import { inputState } from "./InputRouterScene";
 import type { DialogueLine, Interactable } from "../game/types";
 
 interface RegionInteraction extends Interactable {
@@ -14,9 +15,6 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private regionInteractables: RegionInteraction[] = [];
   protected inputLocked = false;
   private interactionBlockedUntil = 0;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private moveKeys!: Record<"W" | "A" | "S" | "D" | "E" | "SPACE", Phaser.Input.Keyboard.Key>;
-  private wasInteractDown = false;
   private lastHint = "";
   private nearbyInteractable?: Interactable;
 
@@ -25,28 +23,26 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(spawn.x, spawn.y, "billy").setName("player");
     this.player.setDepth(50).setCollideWorldBounds(true).setSize(20, 18).setOffset(6, 23);
     this.physics.add.collider(this.player, this.obstacles);
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.moveKeys = this.input.keyboard!.addKeys("W,A,S,D,E,SPACE") as typeof this.moveKeys;
     this.input.keyboard?.on("keydown-F4", this.debugTeleportToObjective, this);
     this.input.keyboard?.on("keydown-F6", this.debugTeleportToObjective, this);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1.25);
     gameEvents.on(EVENT.interactRequested, this.handleRequestedInteraction, this);
+    gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.off("keydown-F4", this.debugTeleportToObjective, this);
       this.input.keyboard?.off("keydown-F6", this.debugTeleportToObjective, this);
       gameEvents.off(EVENT.interactRequested, this.handleRequestedInteraction, this);
+      gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     });
   }
 
   update(): void {
-    const keyboard = this.input.keyboard;
-    if (!keyboard) return;
-    const keys = this.moveKeys;
-    const dx = Number(this.cursors.right.isDown || keys.D.isDown) - Number(this.cursors.left.isDown || keys.A.isDown);
-    const dy = Number(this.cursors.down.isDown || keys.S.isDown) - Number(this.cursors.up.isDown || keys.W.isDown);
-    const movement = new Phaser.Math.Vector2(dx, dy).normalize().scale(this.inputLocked ? 0 : 190);
-    this.player.setVelocity(movement.x, movement.y);
+    const movement = inputState.movement();
+    this.player.setVelocity(
+      this.inputLocked ? 0 : movement.x * 190,
+      this.inputLocked ? 0 : movement.y * 190,
+    );
 
     const nearby = this.closestInteractable(62);
     this.nearbyInteractable = nearby;
@@ -56,17 +52,6 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.lastHint = hint;
     }
 
-    const interactDown = keys.E.isDown || keys.SPACE.isDown;
-    if (
-      !this.inputLocked &&
-      this.time.now >= this.interactionBlockedUntil &&
-      nearby &&
-      interactDown &&
-      !this.wasInteractDown
-    ) {
-      nearby.interact();
-    }
-    this.wasInteractDown = interactDown;
   }
 
   protected addObstacle(x: number, y: number, width: number, height: number): void {
@@ -84,6 +69,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   protected showDialogue(lines: DialogueLine[], onComplete?: () => void): void {
+    gameEvents.emit(EVENT.audioCue, "interaction");
     this.inputLocked = true;
     this.player.setVelocity(0, 0);
     gameEvents.emit(EVENT.dialogue, {
@@ -93,7 +79,6 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
         // The UI closes dialogue on keydown. Block world interaction briefly so
         // that same physical press cannot reopen a nearby one-line dialogue.
         this.interactionBlockedUntil = this.time.now + 180;
-        this.wasInteractDown = true;
         onComplete?.();
       },
     });
@@ -123,8 +108,13 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   private handleRequestedInteraction(): void {
-    if (this.inputLocked || this.time.now < this.interactionBlockedUntil) return;
+    if (this.sys.isPaused() || this.inputLocked || this.time.now < this.interactionBlockedUntil) return;
     this.nearbyInteractable?.interact();
+  }
+
+  private handleInputAction(event: InputActionEvent): void {
+    if (event.action !== "interact" || !event.pressed) return;
+    this.handleRequestedInteraction();
   }
 
   private closestInteractable(maxDistance: number): Interactable | undefined {

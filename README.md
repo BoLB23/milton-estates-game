@@ -19,6 +19,8 @@ Controls:
 - Talk, inspect, and travel: E, Space, or click the interaction prompt
 - Open Billy's Backpack: Escape
 
+The front end opens as a childhood scrapbook: Title → Chapter Scrapbook → Quest Journal → Start / Continue / Replay. Completed-quest replay uses a temporary in-memory copy and never overwrites canonical progress.
+
 The Backpack contains the quest history, local map, save/restart controls, and settings.
 
 ## MVP gameplay
@@ -40,7 +42,7 @@ During local development, F3 toggles a state panel and F4/F6 moves Billy to the 
 - `src/game/` contains shared types, events, and the versioned local save store.
 - `docs/` contains the durable concept and first-area map contract.
 
-The MVP uses original programmatic placeholder art so gameplay can be tuned before committing to a tileset. The planned production maps remain orthogonal Tiled maps following [the first-area contract](docs/maps/first-area-plan.md); replacing the graybox presentation with Tiled data should preserve stable interaction and quest IDs.
+The current production pass uses original programmatic pixel art governed by [the art contract](docs/art-direction.md), with a generated fictionalized Chapter 1 cover. The map contract remains compatible with a later Tiled export while preserving stable interaction and quest IDs. Checkpoint assets, temporary-art notes, and risks are tracked in [the production-polish manifest](docs/production-polish-manifest.md).
 
 ## Validation
 

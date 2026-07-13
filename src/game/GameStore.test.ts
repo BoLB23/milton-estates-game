@@ -18,10 +18,14 @@ const makeStore = (storage = new MemoryStorage()) => new GameStore(storage, () =
 
 afterEach(() => gameEvents.removeAllListeners());
 
-describe("GameStore save v2", () => {
+describe("GameStore save v3", () => {
   it("starts with trustworthy mission and menu defaults", () => {
     expect(makeStore().getState()).toEqual({
-      version: 2,
+      version: 3,
+      activeChapterId: "chapter_1",
+      activeQuestId: "missing_controller",
+      completedChapterIds: [],
+      completedQuestIds: [],
       questStage: "talk_to_jeremy",
       questHistory: [],
       inventory: [],
@@ -58,7 +62,11 @@ describe("GameStore save v2", () => {
     store.updateSettings({ textSize: "large", reducedMotion: true });
 
     expect(store.getState()).toEqual({
-      version: 2,
+      version: 3,
+      activeChapterId: "chapter_1",
+      activeQuestId: "missing_controller",
+      completedChapterIds: [],
+      completedQuestIds: [],
       questStage: "search_creek",
       questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found"],
       inventory: [CONTROLLER_ITEM],
@@ -87,14 +95,14 @@ describe("GameStore save v2", () => {
 
       const state = makeStore(storage).getState();
       expect(state).toMatchObject({
-        version: 2,
+        version: 3,
         questStage: "return_to_jeremy",
         questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found", "missing_controller.controller_recovered"],
         inventory: [CONTROLLER_ITEM],
         discoveredMaps: ["neighborhood", "creek"],
         lastSavedAt: null,
       });
-      expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(2);
+      expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(3);
     },
   );
 
@@ -116,6 +124,50 @@ describe("GameStore save v2", () => {
     expect(state.inventory).toEqual([CONTROLLER_ITEM]);
     expect(state.questHistory).toEqual(["missing_controller.controller_returned"]);
     expect(state.discoveredMaps).toEqual(["neighborhood", "creek"]);
+    expect(state.completedQuestIds).toEqual(["missing_controller"]);
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(3);
+  });
+
+  it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    store.setQuestStage("complete");
+    store.addInventoryItem(CONTROLLER_ITEM);
+    store.addSecret("creek_token");
+    const canonical = store.getCanonicalState();
+    const persisted = storage.getItem("milton-estates-save");
+    const writeSpy = vi.spyOn(storage, "setItem");
+
+    store.startQuestReplay("missing_controller");
+    expect(store.isReplaying()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      questStage: "talk_to_jeremy",
+      questHistory: [],
+      inventory: [],
+      secrets: [],
+      currentMap: "neighborhood",
+      completedQuestIds: ["missing_controller"],
+    });
+    store.setQuestStage("search_creek");
+    store.addInventoryItem(CONTROLLER_ITEM);
+    store.addSecret("replay-only-secret");
+    store.setCurrentMap("creek");
+    store.saveNow();
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(storage.getItem("milton-estates-save")).toBe(persisted);
+    expect(store.getCanonicalState()).toEqual(canonical);
+
+    store.endQuestReplay();
+    expect(store.isReplaying()).toBe(false);
+    expect(store.getState()).toEqual(canonical);
+  });
+
+  it("rejects replay for incomplete or unimplemented quests", () => {
+    const store = makeStore();
+    expect(() => store.startQuestReplay("missing_controller")).toThrow(RangeError);
+    store.setQuestStage("complete");
+    expect(() => store.startQuestReplay("storm_drain_detectives")).toThrow(RangeError);
   });
 
   it("saveNow refreshes lastSavedAt without changing mission progress", () => {

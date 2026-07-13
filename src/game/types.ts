@@ -2,6 +2,14 @@ export type Direction = "north" | "east" | "south" | "west";
 
 export type MapId = "neighborhood" | "creek";
 
+/** Stable content IDs. These values are persisted and must not be renamed. */
+export type ChapterId = "chapter_1";
+export type QuestId =
+  | "missing_controller"
+  | "storm_drain_detectives"
+  | "creek_token_hunt"
+  | "last_day_of_summer";
+
 export type QuestStage =
   | "talk_to_jeremy"
   | "talk_to_andrew"
@@ -26,7 +34,11 @@ export interface PlayerSettings {
 }
 
 export interface SaveData {
-  version: 2;
+  version: 3;
+  activeChapterId: ChapterId;
+  activeQuestId: QuestId;
+  completedChapterIds: ChapterId[];
+  completedQuestIds: QuestId[];
   questStage: QuestStage;
   /** Ordered semantic milestones. Display strings must not be persisted here. */
   questHistory: QuestMilestone[];

@@ -8,6 +8,22 @@
   </head>
   <body>
     <main id="game" aria-label="Milton Estates game"></main>
+    <div class="portrait-message" role="status" aria-live="polite">
+      <strong>Turn your device sideways</strong>
+      <span>Milton Estates is built for landscape play.</span>
+    </div>
+    <nav class="touch-controls" aria-label="Touch game controls">
+      <div class="touch-dpad" aria-label="Movement controls">
+        <button class="touch-up" data-game-action="moveUp" aria-label="Move up">▲</button>
+        <button class="touch-left" data-game-action="moveLeft" aria-label="Move left">◀</button>
+        <button class="touch-right" data-game-action="moveRight" aria-label="Move right">▶</button>
+        <button class="touch-down" data-game-action="moveDown" aria-label="Move down">▼</button>
+      </div>
+      <div class="touch-actions">
+        <button data-game-action="menu" aria-label="Open Backpack">BACKPACK</button>
+        <button class="touch-act" data-game-action="interact" aria-label="Interact or confirm">ACT</button>
+      </div>
+    </nav>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

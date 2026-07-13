@@ -1,5 +1,5 @@
 import { EVENT, gameEvents } from "./events";
-import type { MapId, PlayerSettings, QuestMilestone, QuestStage, SaveData } from "./types";
+import type { ChapterId, MapId, PlayerSettings, QuestId, QuestMilestone, QuestStage, SaveData } from "./types";
 
 const STORAGE_KEY = "milton-estates-save";
 const LEGACY_CONTROLLER_ITEMS = new Set(["xbox-controller", "xbox controller"]);
@@ -24,7 +24,11 @@ const DEFAULT_SETTINGS: PlayerSettings = {
 };
 
 const DEFAULT_SAVE: SaveData = {
-  version: 2,
+  version: 3,
+  activeChapterId: "chapter_1",
+  activeQuestId: "missing_controller",
+  completedChapterIds: [],
+  completedQuestIds: [],
   questStage: "talk_to_jeremy",
   questHistory: [],
   inventory: [],
@@ -35,11 +39,14 @@ const DEFAULT_SAVE: SaveData = {
   lastSavedAt: null,
 };
 
-type LegacySaveData = Omit<SaveData, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & { version: 1 };
+type SaveDataV2 = Omit<SaveData, "version" | "activeChapterId" | "activeQuestId" | "completedChapterIds" | "completedQuestIds"> & { version: 2 };
+type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & { version: 1 };
 
 function copySave(save: SaveData): SaveData {
   return {
     ...save,
+    completedChapterIds: [...save.completedChapterIds],
+    completedQuestIds: [...save.completedQuestIds],
     questHistory: [...save.questHistory],
     inventory: [...save.inventory],
     secrets: [...save.secrets],
@@ -84,6 +91,15 @@ function isMapId(value: unknown): value is MapId {
   return MAP_IDS.some((map) => map === value);
 }
 
+function isChapterId(value: unknown): value is ChapterId {
+  return value === "chapter_1";
+}
+
+function isQuestId(value: unknown): value is QuestId {
+  return value === "missing_controller" || value === "storm_drain_detectives"
+    || value === "creek_token_hunt" || value === "last_day_of_summer";
+}
+
 function isSettings(value: unknown): value is PlayerSettings {
   if (typeof value !== "object" || value === null) return false;
   const settings = value as Partial<PlayerSettings>;
@@ -100,11 +116,24 @@ function isLegacySave(value: unknown): value is LegacySaveData {
     && isStringArray(save.secrets) && isMapId(save.currentMap);
 }
 
+function isSaveDataV2(value: unknown): value is SaveDataV2 {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveDataV2>;
+  return save.version === 2 && isQuestStage(save.questStage)
+    && isEnumArray(save.questHistory, QUEST_MILESTONES)
+    && isStringArray(save.inventory) && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
+    && isSettings(save.settings)
+    && (save.lastSavedAt === null || (typeof save.lastSavedAt === "string" && !Number.isNaN(Date.parse(save.lastSavedAt))));
+}
+
 function isSaveData(value: unknown): value is SaveData {
   if (typeof value !== "object" || value === null) return false;
   const save = value as Partial<SaveData>;
-  return save.version === 2 && isQuestStage(save.questStage)
-    && isEnumArray(save.questHistory, QUEST_MILESTONES)
+  return save.version === 3 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, ["missing_controller", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
+    && isQuestStage(save.questStage) && isEnumArray(save.questHistory, QUEST_MILESTONES)
     && isStringArray(save.inventory) && isStringArray(save.secrets)
     && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
     && isSettings(save.settings)
@@ -114,6 +143,11 @@ function isSaveData(value: unknown): value is SaveData {
 function normalizeSave(save: SaveData): SaveData {
   return {
     ...save,
+    completedChapterIds: unique(save.completedChapterIds),
+    completedQuestIds: unique([
+      ...save.completedQuestIds,
+      ...(save.questStage === "complete" ? ["missing_controller" as const] : []),
+    ]),
     questHistory: unique(save.questHistory),
     inventory: normalizeInventory(save.inventory),
     secrets: unique(save.secrets),
@@ -122,8 +156,19 @@ function normalizeSave(save: SaveData): SaveData {
   };
 }
 
-function migrateLegacySave(save: LegacySaveData): SaveData {
+function migrateV2Save(save: SaveDataV2): SaveData {
   return normalizeSave({
+    ...save,
+    version: 3,
+    activeChapterId: "chapter_1",
+    activeQuestId: "missing_controller",
+    completedChapterIds: [],
+    completedQuestIds: save.questStage === "complete" ? ["missing_controller"] : [],
+  });
+}
+
+function migrateLegacySave(save: LegacySaveData): SaveData {
+  return migrateV2Save({
     version: 2,
     questStage: save.questStage,
     questHistory: historyForStage(save.questStage),
@@ -143,6 +188,8 @@ function browserStorage(): Storage | undefined {
 
 export class GameStore {
   private state: SaveData;
+  private replayState: SaveData | null = null;
+  private replayQuestId: QuestId | null = null;
 
   public constructor(
     private readonly storage: Storage | undefined = browserStorage(),
@@ -151,50 +198,110 @@ export class GameStore {
     this.state = this.load();
   }
 
-  public getState(): SaveData { return copySave(this.state); }
+  public getState(): SaveData { return copySave(this.replayState ?? this.state); }
+  public getCanonicalState(): SaveData { return copySave(this.state); }
+  public isReplaying(): boolean { return this.replayState !== null; }
+  public getReplayQuestId(): QuestId | null { return this.replayQuestId; }
 
   public setQuestStage(questStage: QuestStage): void {
-    if (questStage === this.state.questStage) return;
+    const current = this.replayState ?? this.state;
+    if (questStage === current.questStage) return;
     const inferredHistory = historyForStage(questStage);
-    this.update({ ...this.state, questStage, questHistory: unique([...this.state.questHistory, ...inferredHistory]) });
+    const completedQuestIds = !this.replayState && questStage === "complete"
+      ? unique([...current.completedQuestIds, current.activeQuestId])
+      : current.completedQuestIds;
+    this.update({ ...current, questStage, completedQuestIds, questHistory: unique([...current.questHistory, ...inferredHistory]) });
   }
 
   public recordQuestMilestone(milestone: QuestMilestone): void {
-    if (this.state.questHistory.includes(milestone)) return;
-    this.update({ ...this.state, questHistory: [...this.state.questHistory, milestone] });
+    const current = this.replayState ?? this.state;
+    if (current.questHistory.includes(milestone)) return;
+    this.update({ ...current, questHistory: [...current.questHistory, milestone] });
   }
 
   public addInventoryItem(item: string): void {
+    const current = this.replayState ?? this.state;
     const normalized = LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item;
-    if (this.state.inventory.includes(normalized)) return;
-    this.update({ ...this.state, inventory: [...this.state.inventory, normalized] });
+    if (current.inventory.includes(normalized)) return;
+    this.update({ ...current, inventory: [...current.inventory, normalized] });
   }
 
   public addSecret(secret: string): void {
-    if (this.state.secrets.includes(secret)) return;
-    this.update({ ...this.state, secrets: [...this.state.secrets, secret] });
+    const current = this.replayState ?? this.state;
+    if (current.secrets.includes(secret)) return;
+    this.update({ ...current, secrets: [...current.secrets, secret] });
   }
 
   public setCurrentMap(currentMap: MapId): void {
-    if (currentMap === this.state.currentMap && this.state.discoveredMaps.includes(currentMap)) return;
-    this.update({ ...this.state, currentMap, discoveredMaps: unique([...this.state.discoveredMaps, currentMap]) });
+    const current = this.replayState ?? this.state;
+    if (currentMap === current.currentMap && current.discoveredMaps.includes(currentMap)) return;
+    this.update({ ...current, currentMap, discoveredMaps: unique([...current.discoveredMaps, currentMap]) });
   }
 
   public discoverMap(map: MapId): void {
-    if (this.state.discoveredMaps.includes(map)) return;
-    this.update({ ...this.state, discoveredMaps: [...this.state.discoveredMaps, map] });
+    const current = this.replayState ?? this.state;
+    if (current.discoveredMaps.includes(map)) return;
+    this.update({ ...current, discoveredMaps: [...current.discoveredMaps, map] });
   }
 
   public updateSettings(settings: Partial<PlayerSettings>): void {
-    const next = { ...this.state.settings, ...settings };
+    const current = this.replayState ?? this.state;
+    const next = { ...current.settings, ...settings };
     if (!isSettings(next)) throw new RangeError("Invalid player settings");
-    this.update({ ...this.state, settings: next });
+    this.update({ ...current, settings: next });
   }
 
-  public saveNow(): void { this.update(this.state); }
-  public hasInventoryItem(item: string): boolean { return this.state.inventory.includes(item); }
-  public hasSecret(secret: string): boolean { return this.state.secrets.includes(secret); }
-  public reset(): void { this.update(copySave(DEFAULT_SAVE)); }
+  public setActiveQuest(activeChapterId: ChapterId, activeQuestId: QuestId): void {
+    const current = this.replayState ?? this.state;
+    this.update({ ...current, activeChapterId, activeQuestId });
+  }
+
+  /** Starts a temporary Missing Controller run. Nothing in this state is persisted. */
+  public startQuestReplay(questId: QuestId): void {
+    if (questId !== "missing_controller") throw new RangeError(`Quest ${questId} cannot be replayed yet`);
+    if (!this.state.completedQuestIds.includes(questId)) throw new RangeError("Only completed quests can be replayed");
+    this.replayQuestId = questId;
+    this.replayState = {
+      ...copySave(this.state),
+      activeChapterId: "chapter_1",
+      activeQuestId: questId,
+      questStage: "talk_to_jeremy",
+      questHistory: [],
+      inventory: [],
+      secrets: [],
+      currentMap: "neighborhood",
+      discoveredMaps: ["neighborhood"],
+    };
+    gameEvents.emit(EVENT.stateChanged, this.getState());
+  }
+
+  public endQuestReplay(): void {
+    if (!this.replayState) return;
+    this.replayState = null;
+    this.replayQuestId = null;
+    gameEvents.emit(EVENT.stateChanged, this.getState());
+  }
+
+  public saveNow(): void { this.update(this.replayState ?? this.state); }
+  public hasInventoryItem(item: string): boolean { return (this.replayState ?? this.state).inventory.includes(item); }
+  public hasSecret(secret: string): boolean { return (this.replayState ?? this.state).secrets.includes(secret); }
+  /** Starts a canonical fresh game while preserving the player's preferences. */
+  public newGame(): void {
+    const settings = { ...this.state.settings };
+    this.replayState = null;
+    this.replayQuestId = null;
+    this.update({ ...copySave(DEFAULT_SAVE), settings });
+  }
+  public reset(): void {
+    if (this.replayState && this.replayQuestId) {
+      const questId = this.replayQuestId;
+      this.replayState = null;
+      this.replayQuestId = null;
+      this.startQuestReplay(questId);
+      return;
+    }
+    this.update(copySave(DEFAULT_SAVE));
+  }
 
   private load(): SaveData {
     if (!this.storage) return copySave(DEFAULT_SAVE);
@@ -203,6 +310,12 @@ export class GameStore {
       if (serialized === null) return copySave(DEFAULT_SAVE);
       const parsed: unknown = JSON.parse(serialized);
       if (isSaveData(parsed)) return normalizeSave(parsed);
+      if (isSaveDataV2(parsed)) {
+        const migrated = migrateV2Save(parsed);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
+        catch { /* The in-memory migration remains usable if storage is read-only. */ }
+        return migrated;
+      }
       if (isLegacySave(parsed)) {
         const migrated = migrateLegacySave(parsed);
         try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
@@ -214,6 +327,16 @@ export class GameStore {
   }
 
   private update(nextState: SaveData): void {
+    if (this.replayState) {
+      this.replayState = {
+        ...copySave(nextState),
+        completedChapterIds: [...this.state.completedChapterIds],
+        completedQuestIds: [...this.state.completedQuestIds],
+        lastSavedAt: this.state.lastSavedAt,
+      };
+      gameEvents.emit(EVENT.stateChanged, this.getState());
+      return;
+    }
     let persisted = copySave(nextState);
     if (this.storage) {
       const stamped = { ...persisted, lastSavedAt: this.now().toISOString() };

@@ -34,17 +34,24 @@ class EventBus {
 
 export const gameEvents = new EventBus();
 
-export type InputAction = "move" | "interact" | "menu" | "back";
-export interface InputActionEvent {
-  action: InputAction;
-  direction?: import("./types").Direction;
-  pressed: boolean;
-}
+export type { SemanticAction as InputAction, SemanticActionEvent as InputActionEvent } from "../input/actions";
 
 export type MenuPage = "resume" | "quests" | "map" | "save" | "settings";
 export interface MenuRequest {
   page?: MenuPage;
 }
+
+export type AudioCue =
+  | "menuNavigate"
+  | "confirm"
+  | "back"
+  | "dialogueAdvance"
+  | "interaction"
+  | "controllerPickup"
+  | "tokenPickup"
+  | "objectiveUpdate"
+  | "questComplete"
+  | "saveConfirmation";
 
 export const EVENT = {
   stateChanged: "state-changed",
@@ -56,4 +63,5 @@ export const EVENT = {
   interactRequested: "interact-requested",
   menuRequested: "menu-requested",
   menuClosed: "menu-closed",
+  audioCue: "audio-cue",
 } as const;
