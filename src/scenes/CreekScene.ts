@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { getClueDialogue, getControllerDialogue } from "../content/dialogue";
 import { nextStage } from "../content/quest";
+import { getIllustratedMapLayers } from "../content/illustratedMapLayers";
 import { EVENT, gameEvents } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import { BaseExplorationScene } from "./BaseExplorationScene";
@@ -65,22 +66,35 @@ export class CreekScene extends BaseExplorationScene {
     this.drawTrailMarker(g, 1015, 1328, "W");
     this.drawTrailMarker(g, 1170, 255, "N");
     this.drawWaterGlints();
-    this.drawForegroundVegetation();
+    this.drawIllustratedLayers();
 
     this.addObstacle(0, 0, WIDTH, 35);
     this.addObstacle(0, HEIGHT - 35, 850, 35);
     this.addObstacle(1200, HEIGHT - 35, WIDTH - 1200, 35);
     this.addObstacle(0, 0, 35, HEIGHT);
     this.addObstacle(WIDTH - 35, 0, 35, HEIGHT);
-    this.addObstacle(940, 0, 190, 365);
-    this.addObstacle(940, 445, 190, 615);
-    this.addObstacle(940, 1140, 190, 396);
+    // Follow the illustrated creek's banks while leaving both painted bridges
+    // traversable. This is intentionally separate from the image layer.
+    this.addObstacle(1000, 0, 300, 275);
+    this.addObstacle(1000, 400, 300, 540);
+    // The south trail is the return route. Stop the creek bank above it so
+    // the painted trail, bridge, and usable exit all describe the same space.
+    this.addObstacle(1000, 1120, 300, 245);
 
     if (!gameStore.hasInventoryItem(CONTROLLER_ITEM)) {
-      this.controllerSprite = this.add.sprite(680, 610, "controller").setDepth(30);
+      this.controllerSprite = this.add.sprite(600, 720, "controller").setDepth(30);
     }
     if (!gameStore.hasSecret("creek_token")) {
       this.secretSprite = this.add.sprite(1530, 865, "secret").setDepth(30);
+    }
+  }
+
+  private drawIllustratedLayers(): void {
+    for (const layer of getIllustratedMapLayers("creek")) {
+      this.add.image(layer.x, layer.y, layer.textureKey)
+        .setOrigin(0, 0)
+        .setDisplaySize(layer.width, layer.height)
+        .setDepth(layer.depth);
     }
   }
 
@@ -259,20 +273,6 @@ export class CreekScene extends BaseExplorationScene {
     this.tweens.add({ targets: glints, alpha: 0.25, y: 7, duration: 1800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
   }
 
-  private drawForegroundVegetation(): void {
-    const fg = this.add.graphics().setDepth(55);
-    const clumps: ReadonlyArray<readonly [number, number, number]> = [
-      [32, 520, 1.2], [38, 1040, 1.35], [260, 1512, 1.15], [560, 1518, 1.25],
-      [1510, 1515, 1.25], [1800, 1510, 1.4], [2018, 550, 1.25], [2015, 1080, 1.35],
-    ];
-    for (const [x, y, scale] of clumps) {
-      fg.fillStyle(0x123425).fillCircle(x, y, 62 * scale);
-      fg.fillStyle(0x235936).fillCircle(x - 24 * scale, y - 18 * scale, 39 * scale);
-      fg.fillStyle(0x397745).fillCircle(x + 25 * scale, y - 28 * scale, 45 * scale);
-      fg.fillStyle(0x71a453, 0.75).fillCircle(x + 5 * scale, y - 52 * scale, 18 * scale);
-    }
-  }
-
   private addInteractions(): void {
     this.registerRegionInteraction({
       id: "return_neighborhood",
@@ -292,8 +292,8 @@ export class CreekScene extends BaseExplorationScene {
     });
     this.registerInteraction({
       id: "controller",
-      x: 680,
-      y: 610,
+      x: 600,
+      y: 720,
       label: "Search the tall grass",
       interact: () => this.findController(),
     });
@@ -342,7 +342,7 @@ export class CreekScene extends BaseExplorationScene {
 
   protected override getDebugObjectivePosition(): { x: number; y: number } {
     return gameStore.getState().questStage === "search_creek"
-      ? { x: 680, y: 650 }
-      : { x: 1024, y: 1400 };
+      ? { x: 600, y: 760 }
+      : { x: 1024, y: 1460 };
   }
 }

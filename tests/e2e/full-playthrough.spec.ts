@@ -27,6 +27,9 @@ async function clickInteractionPrompt(page: Page): Promise<void> {
   // The game uses a fixed 960x540 canvas; the interaction prompt is centered
   // at (480, 505) and is intentionally pointer-accessible.
   await page.mouse.click(480, 505);
+  // Phaser dispatches the pointer handler on its next update. Give the
+  // dialogue event one rendered frame before sending keyboard advancement.
+  await page.waitForTimeout(80);
 }
 
 async function advanceDialogue(page: Page, lineCount: number): Promise<void> {
@@ -40,25 +43,36 @@ async function advanceDialogue(page: Page, lineCount: number): Promise<void> {
 async function teleportAndInteract(page: Page): Promise<void> {
   await page.waitForTimeout(220);
   await page.keyboard.press("F4");
-  await page.waitForTimeout(80);
+  // A reloaded map needs its artwork, collision, and interaction registry
+  // rebuilt before the prompted action is activated.
+  await page.waitForTimeout(850);
   await clickInteractionPrompt(page);
 }
 
 async function startNewGame(page: Page): Promise<void> {
   await page.waitForTimeout(250);
+  // Let Phaser finish registering the first title-page hit areas before the
+  // first synthetic input; this is also a real device's first display frame.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   if (process.env.CAPTURE_DOCS === "1") await page.screenshot({ path: "docs/checkpoint-3-title.png" });
   // Follow the same title -> scrapbook -> journal flow players use.
-  await page.mouse.click(260, 338); // New Game.
-  await page.mouse.click(260, 338); // Confirm New Game.
+  await page.keyboard.press("ArrowDown"); // New Game.
+  await page.waitForTimeout(100);
+  await page.keyboard.press("Space"); // Arm New Game.
+  await page.waitForTimeout(140);
+  await page.keyboard.press("Space"); // Confirm New Game.
+  await page.waitForTimeout(140);
   if (process.env.CAPTURE_DOCS === "1") await page.screenshot({ path: "docs/checkpoint-3-chapters.png" });
-  await page.mouse.click(630, 398); // Open Quest Journal.
+  await page.keyboard.press("Space"); // Open Quest Journal.
+  await page.waitForTimeout(120);
   if (process.env.CAPTURE_DOCS === "1") await page.screenshot({ path: "docs/checkpoint-3-quests.png" });
-  await page.mouse.click(630, 418); // Start Missing Controller.
+  await page.keyboard.press("Space"); // Start Missing Controller.
+  await page.waitForTimeout(120);
 }
 
 async function continueGame(page: Page): Promise<void> {
   await page.waitForTimeout(250);
-  await page.mouse.click(260, 283);
+  await page.keyboard.press("Space");
 }
 
 async function captureCheckpoint(page: Page, filename: string): Promise<void> {

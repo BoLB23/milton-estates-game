@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
 import { selectMissingControllerQuestDisplay } from "../content/questHistory";
-import { getMapDefinition, selectVisibleMapMarkers } from "../content/maps";
+import { getMapDefinition } from "../content/maps";
 import { EVENT, gameEvents, type InputActionEvent, type MenuPage } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import type { PlayerSettings, SaveData } from "../game/types";
@@ -289,99 +289,22 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private renderMap(): void {
-    const definition = getMapDefinition(this.state.currentMap);
-    this.heading(definition.label, "Billy's fold-out map  •  pencil, crayon, and best guesses  •  NOT TO SCALE");
-    const left = 92, top = 228, width = 776, height = 240;
-    const graphics = this.add.graphics();
-    graphics.fillStyle(0xfff4cd, 1).fillRect(left, top, width, height);
-    graphics.lineStyle(2, 0x9a7b52, 1).strokeRect(left, top, width, height);
-    graphics.lineStyle(1, 0xb99b6d, 0.55);
-    graphics.lineBetween(left + width / 3, top, left + width / 3, top + height);
-    graphics.lineBetween(left + width * 2 / 3, top, left + width * 2 / 3, top + height);
-    graphics.lineStyle(2, 0x87a564, 0.8);
-    for (let i = 0; i < 14; i += 1) {
-      const tx = left + 18 + (i * 61) % (width - 30);
-      const ty = top + 18 + (i * 47) % (height - 35);
-      graphics.strokeCircle(tx, ty, 7 + (i % 3) * 2);
-    }
-    graphics.lineStyle(22, 0xbab4a3, 1);
-    if (this.state.currentMap === "neighborhood") {
-      graphics.beginPath();
-      graphics.moveTo(left - 5, top + 170);
-      graphics.lineTo(left + 150, top + 151);
-      graphics.lineTo(left + 315, top + 166);
-      graphics.lineTo(left + 470, top + 136);
-      graphics.lineTo(left + 625, top + 151);
-      graphics.lineTo(left + width + 5, top + 125);
-      graphics.strokePath();
-      graphics.lineStyle(3, 0xf5eada, 1).strokePath();
-      graphics.lineStyle(6, 0x4e91a2, 0.8);
-      graphics.beginPath(); graphics.moveTo(left + 438, top - 2); graphics.lineTo(left + 458, top + 44); graphics.lineTo(left + 500, top + 80); graphics.strokePath();
-    } else {
-      graphics.lineStyle(28, 0x4d9db5, 0.95);
-      graphics.beginPath(); graphics.moveTo(left + 470, top - 5); graphics.lineTo(left + 425, top + 53); graphics.lineTo(left + 458, top + 111); graphics.lineTo(left + 412, top + 170); graphics.lineTo(left + 435, top + height + 5); graphics.strokePath();
-      graphics.lineStyle(4, 0xccebf0, 0.8).strokePath();
-      graphics.lineStyle(8, 0x9a724e, 1);
-      graphics.beginPath(); graphics.moveTo(left + 38, top + 205); graphics.lineTo(left + 170, top + 165); graphics.lineTo(left + 278, top + 113); graphics.lineTo(left + 380, top + 85); graphics.strokePath();
-    }
-    this.pageContent.add(graphics);
-
-    if (this.state.currentMap === "neighborhood") {
-      this.drawMapHouse(left + 116, top + 80, 0xf4f0df, 0x657781);
-      this.drawMapHouse(left + 410, top + 76, 0x5f93b4, 0x485963);
-      this.drawMapHouse(left + 602, top + 71, 0x9fc9dc, 0xa3493c);
-      this.addMapLabel(left + 111, top + 38, "ANDREW'S", -0.04);
-      this.addMapLabel(left + 405, top + 34, "BILLY'S", 0.03);
-      this.addMapLabel(left + 594, top + 29, "JEREMY'S", -0.03);
-      this.addMapLabel(left + 638, top + 198, "Fruitville Pike →\n(adults only)", -0.04, "#8c533c");
-      this.addMapLabel(left + 15, top + 200, "← farms + big sky", 0.02, "#537342");
-      this.addMapLabel(left + 458, top + 8, "creek trail!", -0.08, "#397589");
-    } else {
-      this.addMapLabel(left + 35, top + 25, "FALLEN LOG\nsecret hangout", -0.04);
-      this.addMapLabel(left + 500, top + 104, "cold water!", 0.06, "#397589");
-      this.addMapLabel(left + 565, top + 200, "Wheatfield Dr. ↓", -0.03, "#8c533c");
-      this.addMapLabel(left + 235, top + 176, "stay on trail", 0.04, "#537342");
-    }
-
-    const derivedLandmarks = ["billy_home"];
-    if (this.state.questHistory.includes("missing_controller.started")) derivedLandmarks.push("jeremy_home");
-    if (this.state.questHistory.includes("missing_controller.andrew_consulted")) derivedLandmarks.push("andrew_home");
-    if (this.state.discoveredMaps.includes("creek")) derivedLandmarks.push("creek_crossing", "fallen_log");
-    const markers = selectVisibleMapMarkers({ currentMap: this.state.currentMap, stage: this.state.questStage, discoveredIds: derivedLandmarks });
-    for (const marker of markers) {
-      const color = marker.kind === "objective" ? "#fff2a1" : marker.kind === "exit" ? "#fff8df" : "#e5f0d2";
-      const prefix = marker.kind === "objective" ? "★" : marker.kind === "exit" ? "➜" : "●";
-      this.pageContent.add(this.add.text(left + marker.x * width, top + marker.y * height, `${prefix} ${marker.label}`, {
-        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: marker.kind === "objective" ? "13px" : "11px", color,
-        backgroundColor: "#315f4cdd", padding: { x: 4, y: 2 },
-      }).setOrigin(0.5));
-    }
-
-    const world = this.scene.get(this.state.currentMap);
-    const player = world.children.getByName("player") as Phaser.GameObjects.Sprite | null;
-    if (player) {
-      const px = left + Phaser.Math.Clamp(player.x / definition.worldWidth, 0, 1) * width;
-      const py = top + Phaser.Math.Clamp(player.y / definition.worldHeight, 0, 1) * height;
-      this.pageContent.add(this.add.text(px, py, "BILLY", {
-        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#ffffff", fontStyle: "bold",
-        backgroundColor: "#d9533f", padding: { x: 6, y: 4 },
-      }).setOrigin(0.5));
-    }
-  }
-
-  private drawMapHouse(x: number, y: number, wall: number, trim: number): void {
-    const graphics = this.add.graphics();
-    graphics.fillStyle(wall, 1).fillRect(x, y, 56, 34);
-    graphics.fillStyle(trim, 1);
-    graphics.beginPath(); graphics.moveTo(x - 6, y); graphics.lineTo(x + 28, y - 23); graphics.lineTo(x + 62, y); graphics.closePath(); graphics.fillPath();
-    graphics.fillStyle(0x5c3d2e, 1).fillRect(x + 24, y + 15, 10, 19);
-    graphics.fillStyle(0xe9f5ef, 1).fillRect(x + 6, y + 10, 11, 10).fillRect(x + 40, y + 10, 11, 10);
-    graphics.lineStyle(2, 0x564638, 1).strokeRect(x, y, 56, 34);
-    this.pageContent.add(graphics);
-  }
-
-  private addMapLabel(x: number, y: number, label: string, rotation = 0, color = "#684a35"): void {
-    this.note(x, y, label, { fontSize: "11px", color, fontStyle: "bold", lineSpacing: 2 }).setRotation(rotation);
+    const map = this.add.image(480, 301, "regional-foldout-map").setDisplaySize(620, 349);
+    this.pageContent.add(map);
+    const inCreek = this.state.currentMap === "creek";
+    const playerPosition = inCreek ? { x: 292, y: 292 } : { x: 454, y: 300 };
+    const objectivePosition = inCreek ? { x: 285, y: 247 } : { x: 474, y: 276 };
+    this.pageContent.add(this.add.circle(playerPosition.x, playerPosition.y, 12, 0xc94b3f, 1).setStrokeStyle(3, 0xfff4cd, 1));
+    this.pageContent.add(this.add.text(playerPosition.x, playerPosition.y, "B", {
+      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5));
+    this.pageContent.add(this.add.text(objectivePosition.x, objectivePosition.y, "★", {
+      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "25px", color: "#c94b3f", stroke: "#fff4cd", strokeThickness: 3,
+    }).setOrigin(0.5));
+    this.pageContent.add(this.add.text(73, 126, "REGIONAL FOLD-OUT  •  B = BILLY  ★ = CURRENT CLUE", {
+      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff4cd", fontStyle: "bold",
+      backgroundColor: "#315f4c", padding: { x: 8, y: 5 },
+    }));
   }
 
   private renderSave(): void {

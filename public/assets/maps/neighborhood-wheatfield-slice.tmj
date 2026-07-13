@@ -1,0 +1,52 @@
+{
+  "compressionlevel": -1,
+  "height": 1500,
+  "infinite": false,
+  "layers": [
+    {
+      "draworder": "topdown",
+      "id": 1,
+      "image": "neighborhood-master-v1.png",
+      "imageheight": 941,
+      "imagewidth": 1672,
+      "name": "wheatfield-illustrated-master",
+      "opacity": 1,
+      "type": "imagelayer",
+      "visible": true,
+      "x": 630,
+      "y": 410
+    },
+    {
+      "draworder": "topdown",
+      "id": 2,
+      "name": "stable-gameplay-objects",
+      "objects": [
+        { "id": 1, "name": "spawn_home", "type": "spawn", "x": 1270, "y": 1040 },
+        { "id": 2, "name": "spawn_woods", "type": "spawn", "x": 1340, "y": 350 },
+        { "id": 3, "name": "andrew", "type": "interaction", "x": 440, "y": 690 },
+        { "id": 4, "name": "jeremy", "type": "interaction", "x": 1860, "y": 690 },
+        { "id": 5, "name": "side_yard_gap", "type": "interaction", "x": 1085, "y": 500 },
+        { "id": 6, "name": "woods_gate", "type": "transition", "x": 1340, "y": 290 },
+        { "id": 7, "name": "blocked_bent_creek", "type": "blocked_route", "x": 70, "y": 875 },
+        { "id": 8, "name": "blocked_stonehenge", "type": "blocked_route", "x": 2230, "y": 875 },
+        { "id": 9, "name": "blocked_reidenbaugh", "type": "blocked_route", "x": 2130, "y": 1050 },
+        { "id": 10, "name": "blocked_fruitville", "type": "blocked_route", "x": 1120, "y": 1390 }
+      ],
+      "opacity": 1,
+      "type": "objectgroup",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 11,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.0",
+  "tileheight": 32,
+  "tilewidth": 32,
+  "type": "map",
+  "version": "1.10",
+  "width": 2300
+}

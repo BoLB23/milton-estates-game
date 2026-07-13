@@ -9,10 +9,14 @@ import {
 import { nextStage, type QuestEvent } from "../content/quest";
 import { EVENT, gameEvents } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
+import { getIllustratedMapLayers } from "../content/illustratedMapLayers";
 import { BaseExplorationScene } from "./BaseExplorationScene";
 
 const WORLD_WIDTH = 2300;
 const WORLD_HEIGHT = 1500;
+const ANDREW_HOME = { x: 250, y: 980 };
+const JEREMY_HOME = { x: 1890, y: 980 };
+const JEREMY_DRIVEWAY = { x: 1790, y: 980 };
 
 export class NeighborhoodScene extends BaseExplorationScene {
   constructor() {
@@ -53,16 +57,28 @@ export class NeighborhoodScene extends BaseExplorationScene {
     this.drawCreekApproach(g);
     this.drawYardDetails(g);
     this.drawRouteSigns();
+    this.drawIllustratedSlice();
 
-    this.addObstacle(250, 470, 360, 245);
-    this.addObstacle(700, 460, 330, 255);
-    this.addObstacle(1120, 430, 400, 285);
-    this.addObstacle(1690, 460, 370, 255);
-    this.addObstacle(1435, 0, 115, 255);
+    // These bounds follow the full illustrated plate rather than the retired
+    // programmatic houses, so roofs/driveways do not block the wrong places.
+    this.addObstacle(80, 690, 300, 210);
+    this.addObstacle(535, 690, 300, 220);
+    this.addObstacle(1075, 570, 475, 330);
+    this.addObstacle(1735, 650, 385, 260);
+    this.addObstacle(1115, 0, 230, 265);
     this.addObstacle(0, 0, WORLD_WIDTH, 20);
     this.addObstacle(0, WORLD_HEIGHT - 20, WORLD_WIDTH, 20);
     this.addObstacle(0, 0, 20, WORLD_HEIGHT);
     this.addObstacle(WORLD_WIDTH - 20, 0, 20, WORLD_HEIGHT);
+  }
+
+  private drawIllustratedSlice(): void {
+    for (const layer of getIllustratedMapLayers("neighborhood")) {
+      this.add.image(layer.x, layer.y, layer.textureKey)
+        .setOrigin(0, 0)
+        .setDisplaySize(layer.width, layer.height)
+        .setDepth(layer.depth);
+    }
   }
 
   private drawGround(g: Phaser.GameObjects.Graphics): void {
@@ -373,38 +389,51 @@ export class NeighborhoodScene extends BaseExplorationScene {
   }
 
   private addCharacters(): void {
-    this.add.sprite(440, 690, "andrew").setDepth(45);
-    this.add.sprite(1860, 690, "jeremy").setDepth(45);
-    this.addLabel(440, 635, "Andrew", "#7d461b");
-    this.addLabel(1860, 635, "Jeremy", "#7a2630");
+    const stage = gameStore.getState().questStage;
+    // Andrew stays at Jeremy's driveway after the handoff too. This keeps a
+    // reload from putting him back at his house after the completed scene.
+    const finaleMeetup = stage === "return_to_jeremy" || stage === "complete";
+    const andrew = finaleMeetup ? JEREMY_DRIVEWAY : ANDREW_HOME;
+    this.add.sprite(andrew.x, andrew.y, "andrew").setDepth(45);
+    this.add.sprite(JEREMY_HOME.x, JEREMY_HOME.y, "jeremy").setDepth(45);
+    this.addLabel(andrew.x, andrew.y - 55, "Andrew", "#7d461b");
+    this.addLabel(JEREMY_HOME.x, JEREMY_HOME.y - 55, "Jeremy", "#7a2630");
   }
 
   private addInteractions(): void {
-    this.registerInteraction({
+    this.registerRegionInteraction({
       id: "jeremy",
-      x: 1860,
-      y: 690,
+      x: JEREMY_HOME.x,
+      y: JEREMY_HOME.y,
+      width: 190,
+      height: 105,
       label: "Talk to Jeremy",
       interact: () => this.talkToJeremy(),
     });
-    this.registerInteraction({
+    // The scene stays live as mission state advances. Keep the home-region
+    // registered, but make it available only for Andrew's required step so
+    // a completed game never leaves a ghost prompt at his empty house.
+    this.registerRegionInteraction({
       id: "andrew",
-      x: 440,
-      y: 690,
+      x: ANDREW_HOME.x,
+      y: ANDREW_HOME.y,
+      width: 190,
+      height: 105,
       label: "Talk to Andrew",
+      isAvailable: () => gameStore.getState().questStage === "talk_to_andrew",
       interact: () => this.talkToAndrew(),
     });
     this.registerInteraction({
       id: "side_yard_gap",
-      x: 1085,
-      y: 500,
+      x: 1010,
+      y: 860,
       label: "Inspect bent grass",
       interact: () => this.inspectGap(),
     });
     this.registerRegionInteraction({
       id: "woods_gate",
-      x: 1340,
-      y: 290,
+      x: 1235,
+      y: 300,
       width: 180,
       height: 100,
       label: "Enter the creek woods",
@@ -467,13 +496,13 @@ export class NeighborhoodScene extends BaseExplorationScene {
       case "talk_to_jeremy":
       case "return_to_jeremy":
       case "complete":
-        return { x: 1860, y: 720 };
+        return JEREMY_HOME;
       case "talk_to_andrew":
-        return { x: 440, y: 720 };
+        return ANDREW_HOME;
       case "search_yards":
-        return { x: 1085, y: 530 };
+        return { x: 1010, y: 860 };
       case "search_creek":
-        return { x: 1340, y: 330 };
+        return { x: 1235, y: 330 };
     }
   }
 }

@@ -17,8 +17,8 @@ new Phaser.Game({
   width: 960,
   height: 540,
   backgroundColor: "#7fcf76",
-  pixelArt: true,
-  roundPixels: true,
+  pixelArt: false,
+  roundPixels: false,
   physics: {
     default: "arcade",
     arcade: { debug: false },

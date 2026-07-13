@@ -6,6 +6,7 @@ import type { DialogueLine, Interactable } from "../game/types";
 interface RegionInteraction extends Interactable {
   width: number;
   height: number;
+  isAvailable?: () => boolean;
 }
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
@@ -17,11 +18,17 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private interactionBlockedUntil = 0;
   private lastHint = "";
   private nearbyInteractable?: Interactable;
+  private playerFacing: "up" | "down" | "left" | "right" = "down";
 
   protected initializeWorld(spawn: { x: number; y: number }): void {
     this.obstacles = this.physics.add.staticGroup();
     this.player = this.physics.add.sprite(spawn.x, spawn.y, "billy").setName("player");
-    this.player.setDepth(50).setCollideWorldBounds(true).setSize(20, 18).setOffset(6, 23);
+    this.player
+      .setDepth(50)
+      .setScale(0.18)
+      .setCollideWorldBounds(true)
+      .setSize(110, 95)
+      .setOffset(145, 275);
     this.physics.add.collider(this.player, this.obstacles);
     this.input.keyboard?.on("keydown-F4", this.debugTeleportToObjective, this);
     this.input.keyboard?.on("keydown-F6", this.debugTeleportToObjective, this);
@@ -43,6 +50,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.inputLocked ? 0 : movement.x * 190,
       this.inputLocked ? 0 : movement.y * 190,
     );
+    this.updatePlayerPresentation(movement);
 
     const nearby = this.closestInteractable(62);
     this.nearbyInteractable = nearby;
@@ -99,11 +107,42 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     return undefined;
   }
 
+  private updatePlayerPresentation(movement: { x: number; y: number }): void {
+    const moving = !this.inputLocked && (movement.x !== 0 || movement.y !== 0);
+    if (moving) {
+      if (Math.abs(movement.x) > Math.abs(movement.y)) {
+        this.playerFacing = movement.x < 0 ? "left" : "right";
+      } else {
+        this.playerFacing = movement.y < 0 ? "up" : "down";
+      }
+    }
+
+    const presentationFacing = this.playerFacing === "left" || this.playerFacing === "right"
+      ? "side"
+      : this.playerFacing;
+    // The authored side-facing frames look right by default, so left movement
+    // is the mirrored case. Keeping this here makes player intent and visual
+    // direction share a single source of truth.
+    this.player.setFlipX(this.playerFacing === "left");
+    this.player.anims.play(
+      moving ? `billy-walk-${presentationFacing}` : `billy-idle-${presentationFacing}`,
+      true,
+    );
+  }
+
   private debugTeleportToObjective(): void {
     if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) return;
     const target = this.getDebugObjectivePosition();
     if (!target) return;
     this.player.setPosition(target.x, target.y).setVelocity(0, 0);
+    // Sprite-sheet scaling changes the Arcade body's source dimensions. Reset
+    // it explicitly after a debug relocation so the next collision/interact
+    // frame cannot use the previous map position.
+    (this.player.body as Phaser.Physics.Arcade.Body).reset(target.x, target.y);
+    // The normal update loop refreshes this on the next frame. Do it now as
+    // well so a debug teleport can be inspected/interacted with immediately.
+    this.nearbyInteractable = this.closestInteractable(62);
+    gameEvents.emit(EVENT.hint, this.nearbyInteractable ? `E / Space — ${this.nearbyInteractable.label}` : "");
     gameEvents.emit(EVENT.toast, "Playtest: moved to the current objective.");
   }
 
@@ -128,6 +167,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       }
     }
     for (const candidate of this.regionInteractables) {
+      if (candidate.isAvailable && !candidate.isAvailable()) continue;
       const nearestX = Phaser.Math.Clamp(
         this.player.x,
         candidate.x - candidate.width / 2,

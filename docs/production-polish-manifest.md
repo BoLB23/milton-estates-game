@@ -50,6 +50,26 @@
 - Final gate: 42 unit tests, production build, and four Playwright scenarios covering the full quest/reload, pause/restart safety, replay isolation, and portrait behavior.
 - Screenshot: `checkpoint-7-portrait.png`.
 
+## Checkpoint 8 — Phase A visual targets
+
+- Added four approval-only HD illustrated visual targets: a Wheatfield Drive gameplay frame, Creek Woods gameplay frame, shared Chapter Scrapbook/Quest Journal browser, and regional Backpack fold-out map.
+- Assets: `public/assets/concepts/phase-a/`. Supporting review notes: `docs/phase-a-visual-targets.md`.
+- The supplied aerial was used only for broad, fictionalized regional placement: Bent Creek west, Milton Estates center, Stonehenge east/southeast, Reidenbaugh northeast, and Fruitville Pike as the eastern edge.
+- No renderer flags, stable IDs, map geometry, quest logic, save data, or shipped gameplay assets changed. The targets require approval before Phase B begins.
+
+## Checkpoint 9 — Phase B Wheatfield Drive illustrated slice
+
+- Added the first HD image-layer slice around Billy's house and Wheatfield Drive, drawn over the existing presentation-only geometry at the same world coordinates. The runtime `-v2` plate has its baked-in mockup character removed so only playable Billy appears in the frame.
+- Added a Tiled-ready `.tmj` handoff source with image layer plus stable spawn, interaction, transition, and blocked-route object IDs; the runtime manifest validates those IDs before the game starts.
+- Replaced Billy's generated 32 × 42 figure with a cleaned 4 × 2 illustrated direction/walk prototype sheet. The magenta source background was removed into an alpha PNG before loading.
+- Switched Phaser/CSS away from forced pixel filtering. The internal 960 × 540 canvas remains intentionally unchanged in this checkpoint because the HUD/menu layout still has fixed presentation coordinates; 1280 × 720 is deferred to the browser-layout pass.
+
+## Checkpoint 10 — Phase C full illustrated geography
+
+- Replaced the remaining programmatic presentation in both runtime maps with full illustrated neighborhood and Creek Woods master image layers, while retaining the exact existing world dimensions and gameplay coordinate systems.
+- Added the Creek Woods Tiled-ready source and stable object contract alongside the existing neighborhood source. The masters contain no baked-in characters, labels, or interaction markers; runtime actors and a transparent illustrated Creek canopy remain layered separately for foreground occlusion.
+- The neighborhood master establishes a curved residential rhythm, home order, creek entrance, fields, and distant regional edges. Creek Woods establishes readable banks, two crossings, loop trails, controller/token clearings, fallen-log landmark, and a southern return opening.
+
 ## Remaining risks and intentional temporary work
 
 - The maps are authored programmatically rather than exported from Tiled. Stable IDs, variants, and map contracts are documented for a future conversion.
@@ -58,3 +78,4 @@
 - Gamepad menu movement is edge-triggered; the stick must recenter between selections.
 - Phaser remains in one Vite chunk above the default 500 kB warning threshold.
 - The Chapter 1 cover is generated presentation art; prompt/provenance is documented in `generated-art-prompt.md`.
+- Phase A targets are generated concept art, not production map/image layers. They need cleaned art, source files, and runtime validation before they can replace programmatic presentation.

@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import {
   CHAPTER_REGISTRY,
   selectChapterProgress,
-  selectChapterState,
   selectOptionalProgress,
   selectQuestState,
   type QuestDefinition,
@@ -84,7 +83,14 @@ export class FrontEndScene extends Phaser.Scene {
     return object;
   }
 
-  private button(x: number, y: number, label: string, action: () => void, options?: { width?: number; color?: string; ink?: string; audio?: boolean }): Phaser.GameObjects.Text {
+  private button(x: number, y: number, label: string, action: () => void, options?: {
+    width?: number;
+    color?: string;
+    ink?: string;
+    focusColor?: string;
+    focusInk?: string;
+    audio?: boolean;
+  }): Phaser.GameObjects.Text {
     const button = this.text(x, y, label, {
       fontSize: "17px", fontStyle: "bold", color: options?.ink ?? "#f9f1d7",
       backgroundColor: options?.color ?? "#275c73", fixedWidth: options?.width ?? 250,
@@ -96,7 +102,9 @@ export class FrontEndScene extends Phaser.Scene {
     button
       .setData("action", action)
       .setData("baseColor", options?.color ?? "#275c73")
-      .setData("baseInk", options?.ink ?? "#f9f1d7");
+      .setData("baseInk", options?.ink ?? "#f9f1d7")
+      .setData("focusColor", options?.focusColor ?? "#f3c95f")
+      .setData("focusInk", options?.focusInk ?? INK);
     button.on("pointerover", () => {
       this.focusedIndex = this.focusables.indexOf(button);
       this.refreshFocus();
@@ -148,118 +156,66 @@ export class FrontEndScene extends Phaser.Scene {
   }
 
   private renderChapters(): void {
-    this.paper(35, 32, 890, 476);
-    this.tape(480, 38, 1);
-    this.text(64, 52, "THE CHAPTER SCRAPBOOK", { fontSize: "28px", fontStyle: "bold", color: BLUE_INK });
-    this.text(66, 88, "Every page is a summer we still talk about.", {
-      fontFamily: "Comic Sans MS, cursive", fontSize: "16px", color: MUTED_INK,
-    });
-
     const chapter = CHAPTER_REGISTRY[0];
     const progress = selectChapterProgress(chapter, this.state.completedQuestIds);
     const optional = selectOptionalProgress(chapter, this.state.completedQuestIds);
-    const chapterState = selectChapterState(chapter, this.state);
-    const cover = this.add.graphics();
-    cover.fillStyle(0xffffff).fillRoundedRect(64, 132, 314, 282, 4);
-    cover.lineStyle(3, 0xc9b890).strokeRoundedRect(64, 132, 314, 282, 4);
-    this.content.add(cover);
-    this.content.add(this.add.image(221, 250, "chapter-1-cover").setDisplaySize(286, 208));
-    this.tape(86, 137, -7);
-    this.text(221, 372, chapter.dateLabel, {
-      fontFamily: "Comic Sans MS, cursive", fontSize: "17px", color: MUTED_INK,
-    }).setOrigin(0.5);
-
-    this.text(412, 130, `CHAPTER ${chapter.number}`, { fontSize: "15px", fontStyle: "bold", color: RED_INK });
-    this.text(412, 153, chapter.title, { fontSize: "28px", fontStyle: "bold", color: INK, wordWrap: { width: 455 } });
-    this.text(412, 195, chapter.description, { fontSize: "17px", color: MUTED_INK, wordWrap: { width: 445 }, lineSpacing: 4 });
-    this.text(412, 262, `${progress.completed} / ${progress.total} memories complete  •  ${progress.percentage}%`, {
-      fontSize: "17px", fontStyle: "bold", color: BLUE_INK,
+    this.drawBrowserArt();
+    this.text(97, 472, `${chapter.dateLabel}  •  ${progress.completed}/${progress.total} memories  •  ${optional.completed}/${optional.total} secrets`, {
+      fontSize: "13px", color: "#4f5b51", fontStyle: "bold", backgroundColor: "#f3e7c5dd", padding: { x: 7, y: 4 },
     });
-    this.text(412, 296, `STATE      ${chapterState.toUpperCase()}\nFINALE     ${progress.finaleUnlocked ? "UNLOCKED" : "LOCKED"}\nSECRETS    ${optional.completed} / ${optional.total}`, {
-      fontFamily: "monospace", fontSize: "15px", color: INK, lineSpacing: 7,
+    // The illustrated book already provides the prominent red action plate.
+    // Put the live hit target on that plate instead of adding a second UI bar.
+    this.button(702, 359, "JOURNAL  →", () => this.openPage("quests"), {
+      width: 126, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
     });
-    this.button(412, 376, "OPEN QUEST JOURNAL  →", () => this.openPage("quests"), { width: 446 });
-
-    this.futurePage(66, 438, "CHAPTER ?", "The next pages are still stuck together…");
-    this.futurePage(493, 438, "CHAPTER ??", "A faded photo. No date. No names.");
     this.backButton();
-  }
-
-  private futurePage(x: number, y: number, label: string, teaser: string): void {
-    const g = this.add.graphics();
-    g.fillStyle(0xded6bd).fillRoundedRect(x, y, 398, 45, 3);
-    g.lineStyle(1, 0xa99e83).strokeRoundedRect(x, y, 398, 45, 3);
-    this.content.add(g);
-    this.text(x + 13, y + 7, `${label}  •  ${teaser}`, { fontSize: "13px", color: MUTED_INK, wordWrap: { width: 370 } });
   }
 
   private renderQuests(): void {
     const chapter = CHAPTER_REGISTRY[0];
     const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0];
     const state = selectQuestState(selected, this.state);
-    this.paper(35, 32, 890, 476);
-    const seam = this.add.graphics().lineStyle(2, 0xc9b890, 0.7).lineBetween(378, 48, 378, 489);
-    this.content.add(seam);
-    this.text(62, 51, "BILLY'S QUEST JOURNAL", { fontSize: "25px", fontStyle: "bold", color: BLUE_INK });
-    this.text(62, 83, "Chapter 1 • Summer 2007", { fontFamily: "Comic Sans MS, cursive", fontSize: "15px", color: MUTED_INK });
-
-    chapter.quests.forEach((quest, index) => this.questTab(quest, index));
-
-    this.text(410, 62, selected.kind === "finale" ? "CHAPTER FINALE" : selected.optional ? "OPTIONAL SIDE QUEST" : "REQUIRED MAIN QUEST", {
-      fontSize: "13px", fontStyle: "bold", color: selected.optional ? "#527047" : RED_INK,
+    this.drawBrowserArt();
+    // The bottom image card sits behind the primary action area. Keep its
+    // keyboard navigation, but avoid a transparent pointer target swallowing
+    // Start/Continue/Replay on the rendered button.
+    chapter.quests.slice(0, 3).forEach((_, index) => {
+      const zone = this.add.rectangle(627, 154 + index * 74, 304, 62, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", () => {
+          gameEvents.emit(EVENT.audioCue, "menuNavigate");
+          this.selectedQuestIndex = index;
+          this.render();
+        });
+      this.content.add(zone);
     });
-    this.text(410, 92, selected.title, { fontSize: "29px", fontStyle: "bold", color: INK, wordWrap: { width: 450 } });
-    this.text(410, 143, selected.description, { fontSize: "17px", color: MUTED_INK, wordWrap: { width: 455 }, lineSpacing: 5 });
-    const prereq = selected.prerequisiteQuestIds.length
-      ? selected.prerequisiteQuestIds.map((id) => chapter.quests.find((quest) => quest.id === id)?.title ?? id).join(", ")
-      : "None — this is where the summer begins.";
-    this.text(410, 214, `STATUS\n${state.toUpperCase()}\n\nPREREQUISITES\n${prereq}`, {
-      fontFamily: "monospace", fontSize: "14px", color: INK, lineSpacing: 5, wordWrap: { width: 445 },
+    this.text(523, 347, `${selected.title}  •  ${state.toUpperCase()}`, {
+      fontSize: "13px", color: "#344438", fontStyle: "bold", backgroundColor: "#f3e7c5ee", padding: { x: 7, y: 5 }, wordWrap: { width: 295 },
     });
-
     if (state === "locked") {
+      const prereq = selected.prerequisiteQuestIds.length
+        ? selected.prerequisiteQuestIds.map((id) => chapter.quests.find((quest) => quest.id === id)?.title ?? id).join(", ")
+        : "the previous Chapter 1 memory";
       const reason = !selected.implemented
         ? selected.kind === "finale" ? "Finish every required Chapter 1 memory to reveal the finale." : "This memory has not been added to the game yet."
         : `Complete ${prereq} first.`;
-      this.text(410, 350, `🔒  ${reason}`, { fontSize: "16px", color: RED_INK, wordWrap: { width: 445 } });
+      this.text(523, 390, `🔒 ${reason}`, { fontSize: "13px", color: RED_INK, backgroundColor: "#f3e7c5ee", padding: { x: 7, y: 5 }, wordWrap: { width: 300 } });
     } else {
       const action = state === "completed" ? "REPLAY" : this.state.questStage === "talk_to_jeremy" ? "START" : "CONTINUE";
-      this.button(410, 396, `${action}  →`, () => this.playQuest(selected), { width: 446 });
+      this.button(709, 359, `${action}  →`, () => this.playQuest(selected), {
+        width: 119, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
+      });
       if (state === "completed") {
-        this.text(410, 451, "Replay uses a temporary scrapbook copy. Your real progress stays safe.", {
-          fontSize: "13px", color: MUTED_INK, wordWrap: { width: 440 },
+        this.text(523, 450, "Replay uses a temporary scrapbook copy. Your real progress stays safe.", {
+          fontSize: "11px", color: MUTED_INK, wordWrap: { width: 300 },
         });
       }
     }
     this.backButton();
   }
 
-  private questTab(quest: QuestDefinition, index: number): void {
-    const selected = index === this.selectedQuestIndex;
-    const state = selectQuestState(quest, this.state);
-    const icon = state === "completed" ? "✓" : state === "locked" ? "?" : "→";
-    const tab = this.text(62, 122 + index * 76, `${icon}  ${quest.title}\n    ${state.toUpperCase()}`, {
-      fontSize: "16px", fontStyle: selected ? "bold" : "normal", color: selected ? "#f9f1d7" : INK,
-      backgroundColor: selected ? "#275c73" : "#e6d9b7", fixedWidth: 288,
-      padding: { x: 11, y: 9 }, lineSpacing: 3,
-    }).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
-      gameEvents.emit(EVENT.audioCue, "menuNavigate");
-      this.selectedQuestIndex = index;
-      this.render();
-    });
-    tab
-      .setData("action", () => {
-        gameEvents.emit(EVENT.audioCue, "menuNavigate");
-        this.selectedQuestIndex = index;
-        this.render();
-      })
-      .setData("baseColor", selected ? "#275c73" : "#e6d9b7")
-      .setData("baseInk", selected ? "#f9f1d7" : INK)
-      .on("pointerover", () => {
-        this.focusedIndex = this.focusables.indexOf(tab);
-        this.refreshFocus();
-      });
-    this.focusables.push(tab);
+  private drawBrowserArt(): void {
+    this.content.add(this.add.image(480, 270, "chapter-quest-browser-target").setDisplaySize(892, 502));
   }
 
   private playQuest(quest: QuestDefinition): void {
@@ -345,8 +301,8 @@ export class FrontEndScene extends Phaser.Scene {
   private refreshFocus(): void {
     this.focusables.forEach((item, index) => {
       const focused = index === this.focusedIndex;
-      item.setBackgroundColor(focused ? "#f3c95f" : item.getData("baseColor"));
-      item.setColor(focused ? INK : item.getData("baseInk"));
+      item.setBackgroundColor(focused ? item.getData("focusColor") : item.getData("baseColor"));
+      item.setColor(focused ? item.getData("focusInk") : item.getData("baseInk"));
       item.setShadow(0, 0, focused ? "#173026" : "#000000", focused ? 8 : 0, false, true);
     });
   }

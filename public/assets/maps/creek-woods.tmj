@@ -1,0 +1,47 @@
+{
+  "compressionlevel": -1,
+  "height": 1536,
+  "infinite": false,
+  "layers": [
+    {
+      "draworder": "topdown",
+      "id": 1,
+      "image": "creek-woods-master-v1.png",
+      "imageheight": 941,
+      "imagewidth": 1672,
+      "name": "creek-illustrated-master",
+      "opacity": 1,
+      "type": "imagelayer",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "draworder": "topdown",
+      "id": 2,
+      "name": "stable-gameplay-objects",
+      "objects": [
+        { "id": 1, "name": "spawn_home", "type": "spawn", "x": 1024, "y": 1400 },
+        { "id": 2, "name": "return_neighborhood", "type": "transition", "x": 1025, "y": 1460 },
+        { "id": 3, "name": "creek_tracks", "type": "interaction", "x": 620, "y": 900 },
+        { "id": 4, "name": "controller", "type": "interaction", "x": 680, "y": 610 },
+        { "id": 5, "name": "secret", "type": "interaction", "x": 1530, "y": 865 }
+      ],
+      "opacity": 1,
+      "type": "objectgroup",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 6,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.0",
+  "tileheight": 32,
+  "tilewidth": 32,
+  "type": "map",
+  "version": "1.10",
+  "width": 2048
+}

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { ILLUSTRATED_MAP_LAYERS, validateIllustratedMapLayers } from "../content/illustratedMapLayers";
 import { gameStore } from "../game/GameStore";
 
 export class BootScene extends Phaser.Scene {
@@ -8,10 +9,19 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.load.image("chapter-1-cover", "/assets/concepts/chapter-1-neighborhood-concept.png");
+    this.load.image("chapter-quest-browser-target", "/assets/concepts/phase-a/chapter-quest-browser-target.png");
+    this.load.image("regional-foldout-map", "/assets/concepts/phase-a/regional-foldout-map-target.png");
+    for (const layer of ILLUSTRATED_MAP_LAYERS) this.load.image(layer.textureKey, layer.imagePath);
+    this.load.spritesheet("billy", "/assets/characters/billy-hd-movement.png", {
+      frameWidth: 400,
+      frameHeight: 450,
+    });
   }
 
   create(): void {
+    validateIllustratedMapLayers();
     this.makeTextures();
+    this.makeBillyAnimations();
     this.scene.launch("input-router");
     // Persist migrations and establish an initial autosave before play begins.
     gameStore.saveNow();
@@ -19,7 +29,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTextures(): void {
-    this.makePerson("billy", 0x3e8ed0, 0xf1c27d);
     this.makePerson("andrew", 0xf29f3d, 0xe5b887);
     this.makePerson("jeremy", 0xd85b63, 0xd7a36d);
 
@@ -40,6 +49,27 @@ export class BootScene extends Phaser.Scene {
     secret.lineStyle(2, 0x8d5f2b).strokeCircle(12, 11, 7);
     secret.fillStyle(0x8d5f2b).fillRect(10, 6, 4, 10).fillRect(7, 9, 10, 4);
     secret.generateTexture("secret", 24, 24).destroy();
+  }
+
+  private makeBillyAnimations(): void {
+    const makeWalk = (key: string, frames: number[]) => {
+      this.anims.create({
+        key,
+        frames: frames.map((frame) => ({ key: "billy", frame })),
+        frameRate: 7,
+        repeat: -1,
+      });
+    };
+    const makeIdle = (key: string, frame: number) => {
+      this.anims.create({ key, frames: [{ key: "billy", frame }] });
+    };
+
+    makeIdle("billy-idle-down", 0);
+    makeWalk("billy-walk-down", [0, 1]);
+    makeIdle("billy-idle-side", 4);
+    makeWalk("billy-walk-side", [4, 5]);
+    makeIdle("billy-idle-up", 6);
+    makeWalk("billy-walk-up", [6, 7]);
   }
 
   private makePerson(key: string, shirt: number, skin: number): void {
