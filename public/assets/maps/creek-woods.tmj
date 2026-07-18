@@ -21,11 +21,32 @@
       "id": 2,
       "name": "stable-gameplay-objects",
       "objects": [
-        { "id": 1, "name": "spawn_home", "type": "spawn", "x": 1024, "y": 1400 },
-        { "id": 2, "name": "return_neighborhood", "type": "transition", "x": 1025, "y": 1460 },
+        { "id": 1, "name": "spawn_home", "type": "spawn", "x": 1370, "y": 1400 },
+        { "id": 2, "name": "return_neighborhood", "type": "transition", "x": 1370, "y": 1460 },
         { "id": 3, "name": "creek_tracks", "type": "interaction", "x": 620, "y": 900 },
-        { "id": 4, "name": "controller", "type": "interaction", "x": 680, "y": 610 },
+        { "id": 4, "name": "controller", "type": "interaction", "x": 600, "y": 680 },
         { "id": 5, "name": "secret", "type": "interaction", "x": 1530, "y": 865 }
+      ],
+      "opacity": 1,
+      "type": "objectgroup",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "draworder": "topdown",
+      "id": 3,
+      "name": "collision-rects",
+      "objects": [
+        { "id": 6, "name": "north_edge", "x": 0, "y": 0, "width": 2048, "height": 35 },
+        { "id": 7, "name": "south_west_edge", "x": 0, "y": 1501, "width": 850, "height": 35 },
+        { "id": 8, "name": "south_east_edge", "x": 1200, "y": 1501, "width": 848, "height": 35 },
+        { "id": 9, "name": "west_edge", "x": 0, "y": 0, "width": 35, "height": 1536 },
+        { "id": 10, "name": "east_edge", "x": 2013, "y": 0, "width": 35, "height": 1536 },
+        { "id": 11, "name": "water_north", "x": 1050, "y": 0, "width": 270, "height": 280 },
+        { "id": 12, "name": "water_upper", "x": 1000, "y": 400, "width": 310, "height": 230 },
+        { "id": 13, "name": "water_middle", "x": 960, "y": 630, "width": 300, "height": 310 },
+        { "id": 14, "name": "water_south", "x": 885, "y": 1120, "width": 300, "height": 330 }
       ],
       "opacity": 1,
       "type": "objectgroup",
@@ -34,13 +55,14 @@
       "y": 0
     }
   ],
-  "nextlayerid": 3,
-  "nextobjectid": 6,
+  "nextlayerid": 4,
+  "nextobjectid": 15,
   "orientation": "orthogonal",
   "renderorder": "right-down",
   "tiledversion": "1.11.0",
-  "tileheight": 32,
-  "tilewidth": 32,
+  "tileheight": 1,
+  "tilesets": [],
+  "tilewidth": 1,
   "type": "map",
   "version": "1.10",
   "width": 2048

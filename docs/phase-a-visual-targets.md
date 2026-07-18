@@ -7,19 +7,19 @@ These four targets establish the intended move from programmatic pixel shapes to
 
 ## 1. Wheatfield Drive neighborhood gameplay frame
 
-![HD illustrated neighborhood gameplay target](../public/assets/concepts/phase-a/neighborhood-gameplay-target.png)
+![HD illustrated neighborhood gameplay target](assets/phase-a/neighborhood-gameplay-target.png)
 
 What to carry forward: the soft high-detail illustration, three-quarter camera, curving street, Billy's blue house/garage/broad drive, clear walkable edge, foliage depth, creek entrance, and distant-field context. The future production plate needs a HUD-safe top edge and foreground layers that can occlude Billy.
 
 ## 2. Creek Woods gameplay frame
 
-![HD illustrated creek gameplay target](../public/assets/concepts/phase-a/creek-gameplay-target.png)
+![HD illustrated creek gameplay target](assets/phase-a/creek-gameplay-target.png)
 
 What to carry forward: layered canopy foreground, readable water edge, stepping-stone landmark, generous pathing, hidden-item nook, and a visibly sunlit return route. The actual map needs its current stable interaction and transition IDs retained independently from this composition.
 
 ## 3. Chapter Scrapbook and Quest Journal browser
 
-![Illustrated chapter and quest browser target](../public/assets/concepts/phase-a/chapter-quest-browser-target.png)
+![Illustrated chapter and quest browser target](assets/phase-a/chapter-quest-browser-target.png)
 
 What to carry forward: a tactile open-book interaction with page arrows, visible chapter index, active/locked/completed states, selected quest detail, and a single primary action. The generated Chapter 1 thumbnail is a generic visual placeholder; the implemented browser must use real Chapter 1 content and selection data.
 
@@ -36,6 +36,6 @@ Approve or revise each target separately. Approval enables Phase B's isolated Bi
 ## Asset provenance
 
 - Tool: built-in image generation
-- Output format: 1672 × 941 PNG, saved as project review assets under `public/assets/concepts/phase-a/`
+- Output format: 1672 × 941 PNG. Review-only targets live under `docs/assets/phase-a/`; the fold-out map remains a shipped game asset under `public/assets/concepts/phase-a/`.
 - Inputs: the provided annotated aerial informed broad regional relationships; `docs/art-direction.md` and the existing Chapter 1 concept informed the intended game presentation.
 - Temporary status: concept-only. Cleaned backgrounds, image-layer chunks, object layers, and character sheets must be authored separately before implementation.

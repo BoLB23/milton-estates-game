@@ -2,16 +2,33 @@
 
 A small, standalone Phaser exploration game about a summer afternoon, three friends, and a missing Xbox controller.
 
-## Quick start
+## Build and run
 
-You need a current Node.js installation. From this project folder, run:
+You need a current Node.js installation. Install the project's pinned dependencies once:
 
 ```sh
 npm install
-npm run dev
 ```
 
-Then open [http://localhost:5173](http://localhost:5173) in your browser. Keep the terminal running while you play. Press `Ctrl+C` in that terminal when you want to stop the game server.
+Build the production files without using `npm run`:
+
+```sh
+./scripts/build.sh
+```
+
+The build is written to `dist/`. To launch the local development server, also without `npm run`:
+
+```sh
+./scripts/serve.sh
+```
+
+Then open [http://localhost:5173](http://localhost:5173) in your browser. Keep the terminal running while you play, and press `Ctrl+C` to stop it. The server reloads automatically when source files change.
+
+To select a different address or port, set `HOST` and/or `PORT` when starting the server. For example, this listens on all network interfaces at port 8080:
+
+```sh
+HOST=0.0.0.0 PORT=8080 ./scripts/serve.sh
+```
 
 Controls:
 
@@ -33,7 +50,7 @@ The Backpack contains the quest history, local map, save/restart controls, and s
 
 Progress is saved automatically in that browser. Use Backpack → Save to save immediately or restart the mission with confirmation.
 
-During local development, F3 toggles a state panel and F4/F6 moves Billy to the current objective for rapid end-to-end playtesting. These shortcuts are disabled away from localhost.
+During development builds, F3 toggles a state panel and F4 moves Billy to the current objective for rapid end-to-end playtesting. These shortcuts are not included in production builds.
 
 ## Project shape
 
@@ -47,13 +64,16 @@ The current production pass uses original programmatic pixel art governed by [th
 ## Validation
 
 ```sh
-npm run check
+./scripts/build.sh
+node_modules/.bin/vitest run src
 ```
 
 Run the complete rendered quest regression, including the creek save/reload path, with:
 
 ```sh
-npm run check:full
+./scripts/build.sh
+node_modules/.bin/vitest run src
+node_modules/.bin/playwright test
 ```
 
-If Playwright asks for its browser the first time, run `npx playwright install chromium`, then retry `npm run check:full`.
+If Playwright asks for its browser the first time, run `node_modules/.bin/playwright install chromium`, then retry the full validation commands.

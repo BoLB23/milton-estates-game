@@ -28,6 +28,22 @@ describe("chapter and quest registry", () => {
     expect(selectQuestState(QUEST_BY_ID.missing_controller, progress())).toBe("active");
   });
 
+  it("registers both new Chapter 1 memories as implemented optional quests", () => {
+    expect(QUEST_BY_ID.andrew_mushroom_hunt).toMatchObject({
+      chapterId: "chapter_1",
+      kind: "side",
+      optional: true,
+      implemented: true,
+    });
+    expect(QUEST_BY_ID.three_player_sports).toMatchObject({
+      chapterId: "chapter_1",
+      prerequisiteQuestIds: ["andrew_mushroom_hunt"],
+      implemented: true,
+    });
+    expect(selectQuestState(QUEST_BY_ID.andrew_mushroom_hunt, progress(["missing_controller"]))).toBe("available");
+    expect(selectQuestState(QUEST_BY_ID.three_player_sports, progress(["missing_controller"]))).toBe("locked");
+  });
+
   it("keeps linear future quests locked until prerequisites and implementation exist", () => {
     expect(selectQuestState(QUEST_BY_ID.storm_drain_detectives, progress())).toBe("locked");
     expect(selectQuestState(QUEST_BY_ID.storm_drain_detectives, progress(["missing_controller"]))).toBe("locked");
@@ -45,8 +61,8 @@ describe("chapter and quest registry", () => {
     expect(isFinaleUnlocked(chapter, completed)).toBe(true);
     expect(selectChapterProgress(chapter, completed)).toMatchObject({
       completed: 2,
-      total: 4,
-      percentage: 50,
+      total: 6,
+      percentage: 33,
       finaleUnlocked: true,
     });
   });

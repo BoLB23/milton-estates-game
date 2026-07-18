@@ -1,20 +1,46 @@
+import { createMushroomSpawns } from "../content/mushrooms";
+import {
+  advanceMushroomStage,
+  IMPLEMENTED_QUEST_IDS,
+  MUSHROOM_COUNT,
+  QUEST_MILESTONES,
+  isStageForQuest,
+  milestonesForQuestStage,
+} from "./quests/specs";
+import {
+  migrateLegacyMissingControllerStage,
+  progressAtStage,
+  stageFromProgress,
+  validateSaveInvariants,
+  validateQuestProgress,
+} from "./persistence/questState";
+import { decodePersistedJson, isValidTimestamp } from "./persistence/decoder";
 import { EVENT, gameEvents } from "./events";
-import type { ChapterId, MapId, PlayerSettings, QuestId, QuestMilestone, QuestStage, SaveData } from "./types";
+import type {
+  ChapterId,
+  GameState,
+  MissingControllerStage,
+  MushroomQuestStage,
+  MushroomSpawn,
+  PlayerSettings,
+  QuestId,
+  QuestMilestone,
+  QuestProgress,
+  QuestStage,
+  SaveData,
+  SportsQuestStage,
+} from "./types";
 
 const STORAGE_KEY = "milton-estates-save";
 const LEGACY_CONTROLLER_ITEMS = new Set(["xbox-controller", "xbox controller"]);
 export const CONTROLLER_ITEM = "xbox_controller";
+export { MUSHROOM_COUNT } from "./quests/specs";
 
-const QUEST_STAGES: readonly QuestStage[] = [
-  "talk_to_jeremy", "talk_to_andrew", "search_yards", "search_creek",
-  "return_to_jeremy", "complete",
+const LEGACY_QUEST_MILESTONES: readonly QuestMilestone[] = QUEST_MILESTONES.slice(0, 5);
+const LEGACY_QUEST_IDS: readonly QuestId[] = [
+  "missing_controller", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer",
 ];
-const MAP_IDS: readonly MapId[] = ["neighborhood", "creek"];
-const QUEST_MILESTONES: readonly QuestMilestone[] = [
-  "missing_controller.started", "missing_controller.andrew_consulted",
-  "missing_controller.creek_clue_found", "missing_controller.controller_recovered",
-  "missing_controller.controller_returned",
-];
+const DEFAULT_MUSHROOM_SEED = 0x4d455354;
 
 const DEFAULT_SETTINGS: PlayerSettings = {
   masterVolume: 1,
@@ -23,36 +49,102 @@ const DEFAULT_SETTINGS: PlayerSettings = {
   reducedMotion: false,
 };
 
-const DEFAULT_SAVE: SaveData = {
-  version: 3,
-  activeChapterId: "chapter_1",
-  activeQuestId: "missing_controller",
-  completedChapterIds: [],
-  completedQuestIds: [],
-  questStage: "talk_to_jeremy",
-  questHistory: [],
-  inventory: [],
-  secrets: [],
-  currentMap: "neighborhood",
-  discoveredMaps: ["neighborhood"],
-  settings: DEFAULT_SETTINGS,
-  lastSavedAt: null,
+function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
+  return {
+    missingControllerStage: "talk_to_jeremy",
+    mushrooms: {
+      stage: "talk_to_andrew_for_mushrooms",
+      spawns: createMushroomSpawns(seed),
+      collectedIds: [],
+    },
+    sports: { stage: "meet_jeremy_to_skateboard" },
+  };
+}
+
+function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
+  return {
+    version: 5,
+    activeChapterId: "chapter_1",
+    activeQuestId: "missing_controller",
+    completedChapterIds: [],
+    completedQuestIds: [],
+    questProgress: createQuestProgress(seed),
+    questHistory: [],
+    inventory: [],
+    secrets: [],
+    currentMap: "neighborhood",
+    discoveredMaps: ["neighborhood"],
+    settings: { ...DEFAULT_SETTINGS },
+    lastSavedAt: null,
+  };
+}
+
+const DEFAULT_SAVE = createDefaultSave();
+
+type LegacyMissingControllerStage = MissingControllerStage | "search_yards";
+
+type SaveDataV2 = {
+  version: 2;
+  questStage: LegacyMissingControllerStage;
+  questHistory: QuestMilestone[];
+  inventory: string[];
+  secrets: string[];
+  currentMap: "neighborhood" | "creek";
+  discoveredMaps: ("neighborhood" | "creek")[];
+  settings: PlayerSettings;
+  lastSavedAt: string | null;
 };
 
-type SaveDataV2 = Omit<SaveData, "version" | "activeChapterId" | "activeQuestId" | "completedChapterIds" | "completedQuestIds"> & { version: 2 };
-type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & { version: 1 };
+type SaveDataV3 = Omit<SaveData, "version" | "questProgress"> & {
+  version: 3;
+  questStage: LegacyMissingControllerStage;
+};
+
+type LegacyQuestProgress = Omit<QuestProgress, "missingControllerStage"> & {
+  missingControllerStage: LegacyMissingControllerStage;
+};
+
+type SaveDataV4 = Omit<SaveData, "version" | "questProgress"> & {
+  version: 4;
+  questStage: QuestStage | "search_yards";
+  questProgress: LegacyQuestProgress;
+};
+
+type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & {
+  version: 1;
+};
+
+function copyQuestProgress(progress: QuestProgress): QuestProgress {
+  return {
+    missingControllerStage: progress.missingControllerStage,
+    mushrooms: {
+      stage: progress.mushrooms.stage,
+      spawns: progress.mushrooms.spawns.map((spawn) => ({ ...spawn })),
+      collectedIds: [...progress.mushrooms.collectedIds],
+    },
+    sports: { stage: progress.sports.stage },
+  };
+}
 
 function copySave(save: SaveData): SaveData {
   return {
     ...save,
     completedChapterIds: [...save.completedChapterIds],
     completedQuestIds: [...save.completedQuestIds],
+    questProgress: copyQuestProgress(save.questProgress),
     questHistory: [...save.questHistory],
     inventory: [...save.inventory],
     secrets: [...save.secrets],
     discoveredMaps: [...save.discoveredMaps],
     settings: { ...save.settings },
   };
+}
+
+function toGameState(save: SaveData): GameState {
+  const copy = copySave(save);
+  const questStage = stageFromProgress(copy.questProgress, copy.activeQuestId);
+  if (!questStage) throw new RangeError(`Quest ${copy.activeQuestId} has no runtime stage`);
+  return { ...copy, questStage };
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -63,16 +155,8 @@ function normalizeInventory(inventory: string[]): string[] {
   return unique(inventory.map((item) => LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item));
 }
 
-function historyForStage(stage: QuestStage): QuestMilestone[] {
-  const count: Record<QuestStage, number> = {
-    talk_to_jeremy: 0,
-    talk_to_andrew: 1,
-    search_yards: 2,
-    search_creek: 3,
-    return_to_jeremy: 4,
-    complete: 5,
-  };
-  return QUEST_MILESTONES.slice(0, count[stage]);
+function historyForQuestStage(questId: QuestId, stage: QuestStage): QuestMilestone[] {
+  return milestonesForQuestStage(questId, stage);
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -84,11 +168,27 @@ function isEnumArray<T extends string>(value: unknown, allowed: readonly T[]): v
 }
 
 function isQuestStage(value: unknown): value is QuestStage {
-  return QUEST_STAGES.some((stage) => stage === value);
+  return IMPLEMENTED_QUEST_IDS.some((questId) => isStageForQuest(questId, value));
 }
 
-function isMapId(value: unknown): value is MapId {
-  return MAP_IDS.some((map) => map === value);
+function isMissingControllerStage(value: unknown): value is MissingControllerStage {
+  return isStageForQuest("missing_controller", value);
+}
+
+function isLegacyMissingControllerStage(value: unknown): value is LegacyMissingControllerStage {
+  return value === "search_yards" || isMissingControllerStage(value);
+}
+
+function isMushroomQuestStage(value: unknown): value is MushroomQuestStage {
+  return isStageForQuest("andrew_mushroom_hunt", value);
+}
+
+function isSportsQuestStage(value: unknown): value is SportsQuestStage {
+  return isStageForQuest("three_player_sports", value);
+}
+
+function isMapId(value: unknown): value is "neighborhood" | "creek" {
+  return value === "neighborhood" || value === "creek";
 }
 
 function isChapterId(value: unknown): value is ChapterId {
@@ -96,7 +196,8 @@ function isChapterId(value: unknown): value is ChapterId {
 }
 
 function isQuestId(value: unknown): value is QuestId {
-  return value === "missing_controller" || value === "storm_drain_detectives"
+  return value === "missing_controller" || value === "andrew_mushroom_hunt"
+    || value === "three_player_sports" || value === "storm_drain_detectives"
     || value === "creek_token_hunt" || value === "last_day_of_summer";
 }
 
@@ -109,69 +210,227 @@ function isSettings(value: unknown): value is PlayerSettings {
     && typeof settings.reducedMotion === "boolean";
 }
 
+function isMushroomSpawn(value: unknown): value is MushroomSpawn {
+  if (typeof value !== "object" || value === null) return false;
+  const spawn = value as Partial<MushroomSpawn>;
+  return typeof spawn.id === "string" && isMapId(spawn.map)
+    && typeof spawn.x === "number" && Number.isFinite(spawn.x)
+    && typeof spawn.y === "number" && Number.isFinite(spawn.y);
+}
+
+function isQuestProgress(value: unknown): value is QuestProgress {
+  if (typeof value !== "object" || value === null) return false;
+  const progress = value as Partial<QuestProgress>;
+  const mushrooms = progress.mushrooms as Partial<QuestProgress["mushrooms"]> | undefined;
+  const sports = progress.sports as Partial<QuestProgress["sports"]> | undefined;
+  return isMissingControllerStage(progress.missingControllerStage)
+    && typeof mushrooms === "object" && mushrooms !== null
+    && isMushroomQuestStage(mushrooms.stage)
+    && Array.isArray(mushrooms.spawns) && mushrooms.spawns.every(isMushroomSpawn)
+    && isStringArray(mushrooms.collectedIds)
+    && typeof sports === "object" && sports !== null
+    && isSportsQuestStage(sports.stage);
+}
+
 function isLegacySave(value: unknown): value is LegacySaveData {
   if (typeof value !== "object" || value === null) return false;
   const save = value as Partial<LegacySaveData>;
-  return save.version === 1 && isQuestStage(save.questStage) && isStringArray(save.inventory)
+  return save.version === 1 && isLegacyMissingControllerStage(save.questStage) && isStringArray(save.inventory)
     && isStringArray(save.secrets) && isMapId(save.currentMap);
 }
 
 function isSaveDataV2(value: unknown): value is SaveDataV2 {
   if (typeof value !== "object" || value === null) return false;
   const save = value as Partial<SaveDataV2>;
-  return save.version === 2 && isQuestStage(save.questStage)
+  return save.version === 2 && isLegacyMissingControllerStage(save.questStage)
+    && isEnumArray(save.questHistory, LEGACY_QUEST_MILESTONES)
+    && isStringArray(save.inventory) && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek"] as const)
+    && isSettings(save.settings)
+    && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+function isSaveDataV3(value: unknown): value is SaveDataV3 {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveDataV3>;
+  return save.version === 3 && isChapterId(save.activeChapterId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, LEGACY_QUEST_IDS)
+    && isQuestId(save.activeQuestId) && LEGACY_QUEST_IDS.includes(save.activeQuestId)
+    && isLegacyMissingControllerStage(save.questStage)
+    && isEnumArray(save.questHistory, LEGACY_QUEST_MILESTONES)
+    && isStringArray(save.inventory) && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek"] as const)
+    && isSettings(save.settings)
+    && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+function isSaveDataV4(value: unknown): value is SaveDataV4 {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveDataV4>;
+  return save.version === 4 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, [
+      "missing_controller", "andrew_mushroom_hunt", "three_player_sports",
+      "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer",
+    ] as const)
+    && (isQuestStage(save.questStage) || save.questStage === "search_yards")
+    && isLegacyQuestProgress(save.questProgress)
     && isEnumArray(save.questHistory, QUEST_MILESTONES)
     && isStringArray(save.inventory) && isStringArray(save.secrets)
-    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek"] as const)
     && isSettings(save.settings)
-    && (save.lastSavedAt === null || (typeof save.lastSavedAt === "string" && !Number.isNaN(Date.parse(save.lastSavedAt))));
+    && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+
+function isLegacyQuestProgress(value: unknown): value is LegacyQuestProgress {
+  if (typeof value !== "object" || value === null) return false;
+  const progress = value as Partial<LegacyQuestProgress>;
+  const mushrooms = progress.mushrooms as Partial<QuestProgress["mushrooms"]> | undefined;
+  const sports = progress.sports as Partial<QuestProgress["sports"]> | undefined;
+  return isLegacyMissingControllerStage(progress.missingControllerStage)
+    && typeof mushrooms === "object" && mushrooms !== null
+    && isMushroomQuestStage(mushrooms.stage)
+    && Array.isArray(mushrooms.spawns) && mushrooms.spawns.every(isMushroomSpawn)
+    && isStringArray(mushrooms.collectedIds)
+    && typeof sports === "object" && sports !== null
+    && isSportsQuestStage(sports.stage);
 }
 
 function isSaveData(value: unknown): value is SaveData {
   if (typeof value !== "object" || value === null) return false;
   const save = value as Partial<SaveData>;
-  return save.version === 3 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+  return save.version === 5 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
     && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
-    && isEnumArray(save.completedQuestIds, ["missing_controller", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
-    && isQuestStage(save.questStage) && isEnumArray(save.questHistory, QUEST_MILESTONES)
+    && isEnumArray(save.completedQuestIds, [
+      "missing_controller", "andrew_mushroom_hunt", "three_player_sports",
+      "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer",
+    ] as const)
+    && isQuestProgress(save.questProgress)
+    && isEnumArray(save.questHistory, QUEST_MILESTONES)
     && isStringArray(save.inventory) && isStringArray(save.secrets)
-    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek"] as const)
     && isSettings(save.settings)
-    && (save.lastSavedAt === null || (typeof save.lastSavedAt === "string" && !Number.isNaN(Date.parse(save.lastSavedAt))));
+    && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
 }
 
-function normalizeSave(save: SaveData): SaveData {
+function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
+  const invariantViolations = validateQuestProgress(progress);
+  const uniqueIds = new Set(progress.mushrooms.spawns.map((spawn) => spawn.id));
+  const validLayout = !invariantViolations.some((violation) => violation.path === "questProgress.mushrooms.spawns")
+    && progress.mushrooms.spawns.length === MUSHROOM_COUNT
+    && uniqueIds.size === MUSHROOM_COUNT
+    && progress.mushrooms.spawns.filter((spawn) => spawn.map === "neighborhood").length === MUSHROOM_COUNT / 2
+    && progress.mushrooms.spawns.filter((spawn) => spawn.map === "creek").length === MUSHROOM_COUNT / 2;
+  const spawns = validLayout
+    ? progress.mushrooms.spawns.map((spawn) => ({ ...spawn }))
+    : createMushroomSpawns(DEFAULT_MUSHROOM_SEED);
+  const validIds = new Set(spawns.map((spawn) => spawn.id));
   return {
+    missingControllerStage: progress.missingControllerStage,
+    mushrooms: {
+      stage: progress.mushrooms.stage,
+      spawns,
+      collectedIds: unique(progress.mushrooms.collectedIds.filter((id) => validIds.has(id))),
+    },
+    sports: { stage: progress.sports.stage },
+  };
+}
+
+function normalizeSave(save: SaveData): SaveData | undefined {
+  const questProgress = normalizeQuestProgress(save.questProgress);
+  if (!IMPLEMENTED_QUEST_IDS.includes(save.activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) return undefined;
+  // Recoverable cases are normalized explicitly: duplicate scalar IDs,
+  // missing map discovery, controller aliases, invalid mushroom layout, and a
+  // missing completion flag when authoritative progress is already complete.
+  const completedFromProgress = IMPLEMENTED_QUEST_IDS.filter((questId) =>
+    stageFromProgress(questProgress, questId) === "complete");
+  const normalized: SaveData = {
     ...save,
     completedChapterIds: unique(save.completedChapterIds),
-    completedQuestIds: unique([
-      ...save.completedQuestIds,
-      ...(save.questStage === "complete" ? ["missing_controller" as const] : []),
-    ]),
+    completedQuestIds: unique([...save.completedQuestIds, ...completedFromProgress]),
+    questProgress,
     questHistory: unique(save.questHistory),
     inventory: normalizeInventory(save.inventory),
     secrets: unique(save.secrets),
     discoveredMaps: unique(["neighborhood", save.currentMap, ...save.discoveredMaps]),
     settings: { ...save.settings },
   };
+  return validateSaveInvariants(normalized).length === 0 ? normalized : undefined;
+}
+
+function migrateV3Save(save: SaveDataV3): SaveData {
+  const missingControllerStage = migrateLegacyMissingControllerStage(save.questStage);
+  if (!missingControllerStage) return copySave(DEFAULT_SAVE);
+  return normalizeSave({
+    version: 5,
+    activeChapterId: save.activeChapterId,
+    activeQuestId: save.activeQuestId,
+    completedChapterIds: save.completedChapterIds,
+    completedQuestIds: save.completedQuestIds,
+    questProgress: {
+      ...createQuestProgress(),
+      missingControllerStage,
+    },
+    questHistory: save.questHistory,
+    inventory: save.inventory,
+    secrets: save.secrets,
+    currentMap: save.currentMap,
+    discoveredMaps: save.discoveredMaps,
+    settings: save.settings,
+    lastSavedAt: save.lastSavedAt,
+  }) ?? copySave(DEFAULT_SAVE);
+}
+
+function migrateV4Save(save: SaveDataV4): SaveData {
+  const missingControllerStage = migrateLegacyMissingControllerStage(save.questProgress.missingControllerStage);
+  if (!missingControllerStage) return copySave(DEFAULT_SAVE);
+  return normalizeSave({
+    version: 5,
+    activeChapterId: save.activeChapterId,
+    activeQuestId: save.activeQuestId,
+    completedChapterIds: save.completedChapterIds,
+    completedQuestIds: save.completedQuestIds,
+    questProgress: { ...save.questProgress, missingControllerStage },
+    questHistory: save.questHistory,
+    inventory: save.inventory,
+    secrets: save.secrets,
+    currentMap: save.currentMap,
+    discoveredMaps: save.discoveredMaps,
+    settings: save.settings,
+    lastSavedAt: save.lastSavedAt,
+  }) ?? copySave(DEFAULT_SAVE);
 }
 
 function migrateV2Save(save: SaveDataV2): SaveData {
+  const missingControllerStage = migrateLegacyMissingControllerStage(save.questStage);
+  if (!missingControllerStage) return copySave(DEFAULT_SAVE);
   return normalizeSave({
-    ...save,
-    version: 3,
+    version: 5,
     activeChapterId: "chapter_1",
     activeQuestId: "missing_controller",
     completedChapterIds: [],
-    completedQuestIds: save.questStage === "complete" ? ["missing_controller"] : [],
-  });
+    completedQuestIds: missingControllerStage === "complete" ? ["missing_controller"] : [],
+    questProgress: {
+      ...createQuestProgress(),
+      missingControllerStage,
+    },
+    questHistory: save.questHistory,
+    inventory: save.inventory,
+    secrets: save.secrets,
+    currentMap: save.currentMap,
+    discoveredMaps: save.discoveredMaps,
+    settings: save.settings,
+    lastSavedAt: save.lastSavedAt,
+  }) ?? copySave(DEFAULT_SAVE);
 }
 
 function migrateLegacySave(save: LegacySaveData): SaveData {
   return migrateV2Save({
     version: 2,
     questStage: save.questStage,
-    questHistory: historyForStage(save.questStage),
+    questHistory: historyForQuestStage("missing_controller", migrateLegacyMissingControllerStage(save.questStage) ?? "talk_to_jeremy"),
     inventory: save.inventory,
     secrets: save.secrets,
     currentMap: save.currentMap,
@@ -186,6 +445,17 @@ function browserStorage(): Storage | undefined {
   catch { return undefined; }
 }
 
+function activeStage(save: SaveData): QuestStage {
+  const stage = stageFromProgress(save.questProgress, save.activeQuestId);
+  if (!stage) throw new RangeError(`Quest ${save.activeQuestId} has no runtime stage`);
+  return stage;
+}
+
+function progressWithStage(progress: QuestProgress, questId: QuestId, stage: QuestStage): QuestProgress | undefined {
+  if (!IMPLEMENTED_QUEST_IDS.includes(questId as typeof IMPLEMENTED_QUEST_IDS[number])) return undefined;
+  return progressAtStage(copyQuestProgress(progress), questId as typeof IMPLEMENTED_QUEST_IDS[number], stage);
+}
+
 export class GameStore {
   private state: SaveData;
   private replayState: SaveData | null = null;
@@ -198,25 +468,76 @@ export class GameStore {
     this.state = this.load();
   }
 
-  public getState(): SaveData { return copySave(this.replayState ?? this.state); }
-  public getCanonicalState(): SaveData { return copySave(this.state); }
+  public getState(): GameState { return toGameState(this.replayState ?? this.state); }
+  public getCanonicalState(): GameState { return toGameState(this.state); }
   public isReplaying(): boolean { return this.replayState !== null; }
-  public getReplayQuestId(): QuestId | null { return this.replayQuestId; }
+
+  /** Cheap primitive selectors for per-frame gameplay checks. */
+  public isQuestActive(questId: QuestId): boolean {
+    return (this.replayState ?? this.state).activeQuestId === questId;
+  }
+
+  public isAtStage(stage: QuestStage): boolean {
+    return activeStage(this.replayState ?? this.state) === stage;
+  }
+
+  public isQuestAt(questId: QuestId, stage: QuestStage): boolean {
+    const current = this.replayState ?? this.state;
+    return current.activeQuestId === questId && activeStage(current) === stage;
+  }
+
+  public isMushroomCollectible(id: string): boolean {
+    const current = this.replayState ?? this.state;
+    return current.activeQuestId === "andrew_mushroom_hunt"
+      && current.questProgress.mushrooms.stage === "search_mushrooms"
+      && !current.questProgress.mushrooms.collectedIds.includes(id);
+  }
 
   public setQuestStage(questStage: QuestStage): void {
     const current = this.replayState ?? this.state;
-    if (questStage === current.questStage) return;
-    const inferredHistory = historyForStage(questStage);
+    if (!IMPLEMENTED_QUEST_IDS.includes(current.activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) {
+      throw new RangeError(`Quest ${current.activeQuestId} is not implemented`);
+    }
+    const questProgress = progressWithStage(current.questProgress, current.activeQuestId, questStage);
+    if (!questProgress || questStage === activeStage(current)) return;
+    const progressViolations = validateQuestProgress(questProgress)
+      .filter((violation) => !violation.path.endsWith("spawns"));
+    if (progressViolations.length > 0) throw new RangeError(progressViolations[0]!.message);
     const completedQuestIds = !this.replayState && questStage === "complete"
       ? unique([...current.completedQuestIds, current.activeQuestId])
       : current.completedQuestIds;
-    this.update({ ...current, questStage, completedQuestIds, questHistory: unique([...current.questHistory, ...inferredHistory]) });
+    this.update({
+      ...current,
+      completedQuestIds,
+      questProgress,
+      questHistory: unique([...current.questHistory, ...historyForQuestStage(current.activeQuestId, questStage)]),
+    });
   }
 
-  public recordQuestMilestone(milestone: QuestMilestone): void {
+  /** Collects one of Andrew's persisted mushroom locations and advances the hunt when all ten are found. */
+  public collectMushroom(id: string): boolean {
     const current = this.replayState ?? this.state;
-    if (current.questHistory.includes(milestone)) return;
-    this.update({ ...current, questHistory: [...current.questHistory, milestone] });
+    const mushrooms = current.questProgress.mushrooms;
+    if (current.activeQuestId !== "andrew_mushroom_hunt" || mushrooms.stage !== "search_mushrooms") return false;
+    if (!mushrooms.spawns.some((spawn) => spawn.id === id) || mushrooms.collectedIds.includes(id)) return false;
+
+    const collectedIds = [...mushrooms.collectedIds, id];
+    const questStage = collectedIds.length === MUSHROOM_COUNT
+      ? advanceMushroomStage(mushrooms.stage, { type: "collected_all_mushrooms" })
+      : mushrooms.stage;
+    const questProgress = copyQuestProgress(current.questProgress);
+    questProgress.mushrooms = { ...mushrooms, collectedIds, stage: questStage };
+    this.update({
+      ...current,
+      questProgress,
+      questHistory: unique([...current.questHistory, ...historyForQuestStage(current.activeQuestId, questStage)]),
+    });
+    return true;
+  }
+
+  public getMushroomSpawns(map?: "neighborhood" | "creek"): MushroomSpawn[] {
+    const spawns = (this.replayState ?? this.state).questProgress.mushrooms.spawns;
+    return spawns.filter((spawn) => !map || spawn.map === map).map((spawn) => ({ ...spawn }));
   }
 
   public addInventoryItem(item: string): void {
@@ -232,16 +553,10 @@ export class GameStore {
     this.update({ ...current, secrets: [...current.secrets, secret] });
   }
 
-  public setCurrentMap(currentMap: MapId): void {
+  public setCurrentMap(currentMap: "neighborhood" | "creek"): void {
     const current = this.replayState ?? this.state;
     if (currentMap === current.currentMap && current.discoveredMaps.includes(currentMap)) return;
     this.update({ ...current, currentMap, discoveredMaps: unique([...current.discoveredMaps, currentMap]) });
-  }
-
-  public discoverMap(map: MapId): void {
-    const current = this.replayState ?? this.state;
-    if (current.discoveredMaps.includes(map)) return;
-    this.update({ ...current, discoveredMaps: [...current.discoveredMaps, map] });
   }
 
   public updateSettings(settings: Partial<PlayerSettings>): void {
@@ -253,19 +568,38 @@ export class GameStore {
 
   public setActiveQuest(activeChapterId: ChapterId, activeQuestId: QuestId): void {
     const current = this.replayState ?? this.state;
-    this.update({ ...current, activeChapterId, activeQuestId });
+    if (!IMPLEMENTED_QUEST_IDS.includes(activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) {
+      throw new RangeError(`Quest ${activeQuestId} is not implemented`);
+    }
+    this.update({
+      ...current,
+      activeChapterId,
+      activeQuestId,
+    });
   }
 
-  /** Starts a temporary Missing Controller run. Nothing in this state is persisted. */
+  /** Starts a temporary replay of any implemented quest. Nothing in this state is persisted. */
   public startQuestReplay(questId: QuestId): void {
-    if (questId !== "missing_controller") throw new RangeError(`Quest ${questId} cannot be replayed yet`);
+    if (!["missing_controller", "andrew_mushroom_hunt", "three_player_sports"].includes(questId)) {
+      throw new RangeError(`Quest ${questId} cannot be replayed yet`);
+    }
     if (!this.state.completedQuestIds.includes(questId)) throw new RangeError("Only completed quests can be replayed");
+
+    const questProgress = copyQuestProgress(this.state.questProgress);
+    if (questId === "missing_controller") {
+      questProgress.missingControllerStage = "talk_to_jeremy";
+    } else if (questId === "andrew_mushroom_hunt") {
+      questProgress.mushrooms = { ...questProgress.mushrooms, stage: "talk_to_andrew_for_mushrooms", collectedIds: [] };
+    } else {
+      questProgress.sports.stage = "meet_jeremy_to_skateboard";
+    }
+
     this.replayQuestId = questId;
     this.replayState = {
       ...copySave(this.state),
       activeChapterId: "chapter_1",
       activeQuestId: questId,
-      questStage: "talk_to_jeremy",
+      questProgress,
       questHistory: [],
       inventory: [],
       secrets: [],
@@ -275,23 +609,18 @@ export class GameStore {
     gameEvents.emit(EVENT.stateChanged, this.getState());
   }
 
-  public endQuestReplay(): void {
-    if (!this.replayState) return;
-    this.replayState = null;
-    this.replayQuestId = null;
-    gameEvents.emit(EVENT.stateChanged, this.getState());
-  }
-
   public saveNow(): void { this.update(this.replayState ?? this.state); }
   public hasInventoryItem(item: string): boolean { return (this.replayState ?? this.state).inventory.includes(item); }
   public hasSecret(secret: string): boolean { return (this.replayState ?? this.state).secrets.includes(secret); }
+
   /** Starts a canonical fresh game while preserving the player's preferences. */
   public newGame(): void {
     const settings = { ...this.state.settings };
     this.replayState = null;
     this.replayQuestId = null;
-    this.update({ ...copySave(DEFAULT_SAVE), settings });
+    this.update({ ...createDefaultSave(Math.floor(Math.random() * 0xffffffff)), settings });
   }
+
   public reset(): void {
     if (this.replayState && this.replayQuestId) {
       const questId = this.replayQuestId;
@@ -300,7 +629,7 @@ export class GameStore {
       this.startQuestReplay(questId);
       return;
     }
-    this.update(copySave(DEFAULT_SAVE));
+    this.update(createDefaultSave(Math.floor(Math.random() * 0xffffffff)));
   }
 
   private load(): SaveData {
@@ -308,8 +637,21 @@ export class GameStore {
     try {
       const serialized = this.storage.getItem(STORAGE_KEY);
       if (serialized === null) return copySave(DEFAULT_SAVE);
-      const parsed: unknown = JSON.parse(serialized);
-      if (isSaveData(parsed)) return normalizeSave(parsed);
+      const parsed = decodePersistedJson(serialized);
+      if (parsed === undefined) return copySave(DEFAULT_SAVE);
+      if (isSaveData(parsed)) return normalizeSave(parsed) ?? copySave(DEFAULT_SAVE);
+      if (isSaveDataV4(parsed)) {
+        const migrated = migrateV4Save(parsed);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
+        catch { /* The in-memory migration remains usable if storage is read-only. */ }
+        return migrated;
+      }
+      if (isSaveDataV3(parsed)) {
+        const migrated = migrateV3Save(parsed);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
+        catch { /* The in-memory migration remains usable if storage is read-only. */ }
+        return migrated;
+      }
       if (isSaveDataV2(parsed)) {
         const migrated = migrateV2Save(parsed);
         try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }

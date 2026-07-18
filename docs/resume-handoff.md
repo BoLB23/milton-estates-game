@@ -19,7 +19,7 @@ Implemented systems include SaveData v2 migration, autosave/manual save, confirm
 1. Read `README.md` for local run commands.
 2. Read `docs/next-steps.md`; begin at **Recommended next milestone**.
 3. Run `git status --short --branch` and `npm run check:full` before editing.
-4. Use F3 for local state diagnostics and F4/F6 to jump to the current objective during rapid playtesting. These shortcuts work only on localhost.
+4. Use F3 for local state diagnostics and F4 to jump to the current objective during rapid playtesting. These shortcuts work in development builds only.
 
 ## Next milestone
 

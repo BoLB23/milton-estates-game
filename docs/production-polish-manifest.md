@@ -53,7 +53,7 @@
 ## Checkpoint 8 — Phase A visual targets
 
 - Added four approval-only HD illustrated visual targets: a Wheatfield Drive gameplay frame, Creek Woods gameplay frame, shared Chapter Scrapbook/Quest Journal browser, and regional Backpack fold-out map.
-- Assets: `public/assets/concepts/phase-a/`. Supporting review notes: `docs/phase-a-visual-targets.md`.
+- Review assets: `docs/assets/phase-a/`; the live fold-out map remains at `public/assets/concepts/phase-a/`. Supporting review notes: `docs/phase-a-visual-targets.md`.
 - The supplied aerial was used only for broad, fictionalized regional placement: Bent Creek west, Milton Estates center, Stonehenge east/southeast, Reidenbaugh northeast, and Fruitville Pike as the eastern edge.
 - No renderer flags, stable IDs, map geometry, quest logic, save data, or shipped gameplay assets changed. The targets require approval before Phase B begins.
 

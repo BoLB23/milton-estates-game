@@ -38,6 +38,28 @@ const chapterOneQuests = [
     implemented: true,
   },
   {
+    id: "andrew_mushroom_hunt",
+    chapterId: "chapter_1",
+    title: "Mushrooms for Andrew",
+    description: "Find ten mushrooms across Milton's backyards and Creek Woods, then share them with the neighborhood.",
+    kind: "side",
+    required: false,
+    optional: true,
+    prerequisiteQuestIds: ["missing_controller"],
+    implemented: true,
+  },
+  {
+    id: "three_player_sports",
+    chapterId: "chapter_1",
+    title: "Three-Player Sports Day",
+    description: "Meet Jeremy to skateboard, Billy to play baseball, and Andrew to play basketball together.",
+    kind: "side",
+    required: false,
+    optional: true,
+    prerequisiteQuestIds: ["andrew_mushroom_hunt"],
+    implemented: true,
+  },
+  {
     id: "storm_drain_detectives",
     chapterId: "chapter_1",
     title: "Storm Drain Detectives",
@@ -90,9 +112,11 @@ export const CHAPTER_BY_ID: Readonly<Record<ChapterId, ChapterDefinition>> = Obj
 
 export const QUEST_BY_ID: Readonly<Record<QuestId, QuestDefinition>> = Object.freeze({
   missing_controller: chapterOneQuests[0],
-  storm_drain_detectives: chapterOneQuests[1],
-  creek_token_hunt: chapterOneQuests[2],
-  last_day_of_summer: chapterOneQuests[3],
+  andrew_mushroom_hunt: chapterOneQuests[1],
+  three_player_sports: chapterOneQuests[2],
+  storm_drain_detectives: chapterOneQuests[3],
+  creek_token_hunt: chapterOneQuests[4],
+  last_day_of_summer: chapterOneQuests[5],
 });
 
 export interface RegistryProgress {
@@ -103,7 +127,6 @@ export interface RegistryProgress {
 }
 
 export type QuestRegistryState = "locked" | "available" | "active" | "completed";
-export type ChapterRegistryState = "locked" | "available" | "active" | "completed";
 
 export function arePrerequisitesComplete(
   quest: QuestDefinition,
@@ -131,17 +154,6 @@ export function selectQuestState(
   if (!arePrerequisitesComplete(quest, progress.completedQuestIds)) return "locked";
   if (quest.kind === "finale" && !isFinaleUnlocked(chapter, progress.completedQuestIds)) return "locked";
   return progress.activeQuestId === quest.id ? "active" : "available";
-}
-
-export function selectChapterState(
-  chapter: ChapterDefinition,
-  progress: RegistryProgress,
-): ChapterRegistryState {
-  if (progress.completedChapterIds.includes(chapter.id)) return "completed";
-  if (chapter.prerequisiteChapterId && !progress.completedChapterIds.includes(chapter.prerequisiteChapterId)) {
-    return "locked";
-  }
-  return progress.activeChapterId === chapter.id ? "active" : "available";
 }
 
 export function selectOptionalProgress(

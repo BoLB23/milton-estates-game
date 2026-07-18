@@ -17,6 +17,50 @@ export interface SemanticActionEvent {
 
 export interface MovementVector { x: number; y: number }
 
+/**
+ * Identifies one physical control which currently owns a semantic action.
+ *
+ * A semantic action can have several owners at once: for example, a player
+ * may hold W and ArrowUp together, or use two touch pointers on matching
+ * controls. Releasing one owner must not release the action until the final
+ * owner is released.
+ */
+export type InputSourceToken = string;
+
+/** Tracks physical input ownership independently for every semantic action. */
+export class ActionOwnership {
+  private readonly owners = new Map<SemanticAction, Set<InputSourceToken>>();
+
+  /**
+   * Updates one physical owner and returns true only when the semantic action
+   * changed between pressed and released. This lets event consumers observe a
+   * stable action edge rather than duplicate alias presses/releases.
+   */
+  set(action: SemanticAction, token: InputSourceToken, pressed: boolean): boolean {
+    const existing = this.owners.get(action);
+    const wasPressed = (existing?.size ?? 0) > 0;
+
+    if (pressed) {
+      const owners = existing ?? new Set<InputSourceToken>();
+      owners.add(token);
+      this.owners.set(action, owners);
+    } else if (existing) {
+      existing.delete(token);
+      if (existing.size === 0) this.owners.delete(action);
+    }
+
+    return wasPressed !== this.isPressed(action);
+  }
+
+  isPressed(action: SemanticAction): boolean {
+    return (this.owners.get(action)?.size ?? 0) > 0;
+  }
+
+  clear(): void {
+    this.owners.clear();
+  }
+}
+
 export const GAMEPAD_DEADZONE = 0.24;
 
 const KEY_ACTIONS: Readonly<Record<string, SemanticAction>> = {

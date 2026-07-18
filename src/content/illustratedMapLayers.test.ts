@@ -5,6 +5,7 @@ import {
   ILLUSTRATED_MAP_LAYERS,
   validateIllustratedMapLayers,
 } from "./illustratedMapLayers";
+import { MAP_DEFINITIONS } from "./maps";
 
 describe("illustrated map layers", () => {
   it("keeps full illustrated plates in the existing map coordinate spaces", () => {
@@ -33,13 +34,15 @@ describe("illustrated map layers", () => {
     ]);
   });
 
-  it("validates unique image layers and preserves the stable interaction contract", () => {
+  it("validates unique image layers and keeps stable interactions with the canonical map", () => {
     expect(() => validateIllustratedMapLayers()).not.toThrow();
-    expect(ILLUSTRATED_MAP_LAYERS[0]?.stableObjectIds).toEqual([
+    expect(MAP_DEFINITIONS.neighborhood.authoredObjectIds).toEqual([
       "spawn_home",
       "spawn_woods",
       "andrew",
+      "billy",
       "jeremy",
+      "jeremy_driveway",
       "side_yard_gap",
       "woods_gate",
       "blocked_bent_creek",
@@ -47,13 +50,13 @@ describe("illustrated map layers", () => {
       "blocked_reidenbaugh",
       "blocked_fruitville",
     ]);
-    expect(ILLUSTRATED_MAP_LAYERS[1]?.stableObjectIds).toEqual([
+    expect(MAP_DEFINITIONS.creek.authoredObjectIds).toEqual([
       "spawn_home",
       "return_neighborhood",
       "creek_tracks",
       "controller",
       "secret",
     ]);
-    expect(ILLUSTRATED_MAP_LAYERS[2]?.stableObjectIds).toBeUndefined();
+    expect(ILLUSTRATED_MAP_LAYERS[2]?.role).toBe("foreground");
   });
 });

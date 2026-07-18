@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { GameStore } from "../game/GameStore";
-import type { SaveData } from "../game/types";
-import { deriveAudioCues } from "./AudioManager";
+import type { GameState } from "../game/types";
+import { gameStore } from "../game/GameStore";
+import { ProceduralAudioManager, deriveAudioCues, type SoundManagerAdapter } from "./AudioManager";
 
-function state(changes: Partial<SaveData> = {}): SaveData {
+function state(changes: Partial<GameState> = {}): GameState {
   return { ...new GameStore(undefined).getState(), ...changes };
 }
 
@@ -23,5 +24,66 @@ describe("deriveAudioCues", () => {
     const previous = state({ questStage: "return_to_jeremy" });
     expect(deriveAudioCues(previous, state({ questStage: "complete" })))
       .toEqual(["questComplete"]);
+  });
+});
+
+class FakeSoundManager implements SoundManagerAdapter {
+  mute = false;
+  volume = 1;
+  readonly calls: string[] = [];
+
+  setMute(value: boolean): this {
+    this.mute = value;
+    this.calls.push(`mute:${value}`);
+    return this;
+  }
+
+  setVolume(value: number): this {
+    this.volume = value;
+    this.calls.push(`volume:${value}`);
+    return this;
+  }
+}
+
+class FakeGameEvents {
+  private destroyListener?: { callback: () => void; context?: unknown };
+
+  once(event: string, callback: () => void, context?: unknown): this {
+    if (event === "destroy") this.destroyListener = { callback, context };
+    return this;
+  }
+
+  off(event: string, callback: () => void, context?: unknown): this {
+    if (event === "destroy" && this.destroyListener?.callback === callback && this.destroyListener.context === context) {
+      this.destroyListener = undefined;
+    }
+    return this;
+  }
+
+  destroy(): void { this.destroyListener?.callback.call(this.destroyListener.context); }
+}
+
+describe("ProceduralAudioManager", () => {
+  it("uses Phaser's manager for preference changes and detaches on game destroy", () => {
+    const previous = gameStore.getState().settings;
+    const sound = new FakeSoundManager();
+    const lifecycle = new FakeGameEvents();
+    const audio = new ProceduralAudioManager();
+
+    try {
+      audio.install(sound, lifecycle);
+      expect(sound.calls).toEqual([`mute:${previous.muted}`, `volume:${previous.masterVolume}`]);
+
+      gameStore.updateSettings({ muted: true, masterVolume: 0.5 });
+      expect(sound.calls.slice(-2)).toEqual(["mute:true", "volume:0.5"]);
+
+      lifecycle.destroy();
+      const callsBeforeDetachedUpdate = sound.calls.length;
+      gameStore.updateSettings({ muted: false, masterVolume: 0.25 });
+      expect(sound.calls).toHaveLength(callsBeforeDetachedUpdate);
+    } finally {
+      audio.dispose();
+      gameStore.updateSettings(previous);
+    }
   });
 });

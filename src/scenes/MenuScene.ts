@@ -1,14 +1,17 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
-import { selectMissingControllerQuestDisplay } from "../content/questHistory";
-import { getMapDefinition } from "../content/maps";
-import { EVENT, gameEvents, type InputActionEvent, type MenuPage } from "../game/events";
+import { CHAPTER_REGISTRY, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
+import { getMapDefinition, projectRegionalMapPoint, selectActiveObjectiveMarker } from "../content/maps";
+import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
-import type { PlayerSettings, SaveData } from "../game/types";
+import type { GameState, PlayerSettings } from "../game/types";
+import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
+import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 
-const PAGES: readonly MenuPage[] = ["resume", "quests", "map", "save", "settings"];
+const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "map", "save", "settings"];
 const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
   resume: "RESUME",
+  chapters: "CHAPTERS",
   quests: "QUESTS",
   map: "MAP",
   save: "SAVE",
@@ -22,14 +25,22 @@ export class MenuScene extends Phaser.Scene {
   private activePage: MenuPage = "resume";
   private isOpen = false;
   private restartArmed = false;
-  private state: SaveData = gameStore.getState();
-  private previousStage = this.state.questStage;
-  private focusableButtons: Phaser.GameObjects.Text[] = [];
-  private focusedButtonIndex = 0;
+  private state: GameState = gameStore.getState();
+  private readonly focus = new TextFocusController();
+  private selectedQuestIndex = 0;
 
   constructor() { super("menu"); }
 
   create(): void {
+    // Phaser may restart this scene instance. These values describe one
+    // rendered backpack, not durable player state (which lives in GameStore).
+    this.tabs = [];
+    this.focus.reset();
+    this.activePage = "resume";
+    this.isOpen = false;
+    this.restartArmed = false;
+    this.selectedQuestIndex = 0;
+    this.state = gameStore.getState();
     this.sound.mute = this.state.settings.muted;
     this.sound.volume = this.state.settings.masterVolume;
     const shade = this.add.rectangle(0, 0, 960, 540, 0x09130f, 0.9).setOrigin(0);
@@ -42,13 +53,13 @@ export class MenuScene extends Phaser.Scene {
     const headerStrip = this.add.rectangle(49, 39, 862, 48, 0x315f4c, 1).setOrigin(0);
     const title = this.add.text(68, 49, "BILLY'S BACKPACK", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "24px", color: "#fff3c9", fontStyle: "bold",
-    });
-    const stitched = this.add.text(72, 75, "FIELD NOTES  •  SUMMER '06", {
+    }).setFontSize(createPresentationPolicy(this.state.settings).fontSize(24));
+    const stitched = this.add.text(72, 75, "FIELD NOTES  •  SUMMER 2007", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "10px", color: "#d7e0bc", fontStyle: "bold",
-    });
+    }).setFontSize(createPresentationPolicy(this.state.settings).fontSize(10));
     const closeHint = this.add.text(892, 54, "ESC  CLOSE ×", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "13px", color: "#fff3c9", fontStyle: "bold",
-    }).setOrigin(1, 0);
+    }).setFontSize(createPresentationPolicy(this.state.settings).fontSize(13)).setOrigin(1, 0);
 
     this.pageContent = this.add.container(0, 0);
     this.overlay = this.add.container(0, 0, [shade, pack, binding, paper, headerStrip, title, stitched, closeHint, this.pageContent])
@@ -63,15 +74,14 @@ export class MenuScene extends Phaser.Scene {
 
   private buildTabs(): void {
     PAGES.forEach((page, index) => {
-      const tab = this.add.text(65 + index * 171, 96, PAGE_LABELS[page], {
+      const tab = scrapbookText(this, this.overlay, 65 + index * 130, 96, PAGE_LABELS[page], {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "15px", color: "#efe1ba", fontStyle: "bold",
         backgroundColor: "#8b4f36", padding: { x: 12, y: 9 },
-      }).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      }, createPresentationPolicy(this.state.settings).textScale).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
         gameEvents.emit(EVENT.audioCue, "menuNavigate");
         this.selectPage(page);
       });
       this.tabs.push(tab);
-      this.overlay.add(tab);
     });
   }
 
@@ -88,6 +98,7 @@ export class MenuScene extends Phaser.Scene {
   private openMenu(page: MenuPage): void {
     if (!this.isOpen) {
       this.isOpen = true;
+      inputCapture.capture("menu");
       this.scene.bringToTop();
       this.scene.pause(gameStore.getState().currentMap);
       this.scene.pause("ui");
@@ -99,11 +110,11 @@ export class MenuScene extends Phaser.Scene {
   private closeMenu(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
+    inputCapture.release("menu");
     this.restartArmed = false;
     this.overlay.setVisible(false);
     this.scene.resume("ui");
     this.scene.resume(gameStore.getState().currentMap);
-    gameEvents.emit(EVENT.menuClosed);
   }
 
   private previousPage(): void {
@@ -133,102 +144,88 @@ export class MenuScene extends Phaser.Scene {
 
   private renderPage(): void {
     this.pageContent.removeAll(true);
-    this.focusableButtons = [];
-    this.focusedButtonIndex = 0;
+    this.focus.reset();
     switch (this.activePage) {
       case "resume": this.renderResume(); break;
+      case "chapters": this.renderChapters(); break;
       case "quests": this.renderQuests(); break;
       case "map": this.renderMap(); break;
       case "save": this.renderSave(); break;
       case "settings": this.renderSettings(); break;
     }
-    this.refreshButtonFocus();
+    this.focus.refresh();
   }
 
   private heading(text: string, subtitle?: string): void {
-    this.pageContent.add(this.add.text(68, 154, text, {
+    const title = scrapbookText(this, this.pageContent, 68, 154, text, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "26px", color: "#3c3026", fontStyle: "bold",
-    }));
-    if (subtitle) this.pageContent.add(this.add.text(68, 190, subtitle, {
+    }, createPresentationPolicy(this.state.settings).textScale);
+    this.fitText(title, 800, 30, 17);
+    if (subtitle) {
+      const subtitleText = scrapbookText(this, this.pageContent, 68, 190, subtitle, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "16px", color: "#675544", wordWrap: { width: 800 },
-    }));
+      }, createPresentationPolicy(this.state.settings).textScale);
+      this.fitText(subtitleText, 800, 26, 12);
+    }
   }
 
   private button(x: number, y: number, label: string, action: () => void, width = 260): Phaser.GameObjects.Text {
-    const button = this.add.text(x, y, label, {
-      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "17px", color: "#2e2820", fontStyle: "bold",
-      backgroundColor: "#f3c95f", fixedWidth: width, align: "center", padding: { x: 12, y: 11 },
-    }).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+    return scrapbookButton(this, this.pageContent, this.focus, x, y, label, () => {
       gameEvents.emit(EVENT.audioCue, "confirm");
       action();
-    });
-    button.setData("action", action).setData("baseColor", "#f3c95f");
-    button.on("pointerover", () => {
-      this.focusedButtonIndex = this.focusableButtons.indexOf(button);
-      this.refreshButtonFocus();
-    });
-    this.focusableButtons.push(button);
-    this.pageContent.add(button);
-    return button;
+    }, { width, color: "#f3c95f", ink: "#2e2820", focusColor: "#fff2a1", focusInk: "#172735", textScale: createPresentationPolicy(this.state.settings).textScale });
   }
 
   private moveButtonFocus(delta: number): void {
-    if (!this.isOpen || !this.focusableButtons.length) return;
-    this.focusedButtonIndex = (this.focusedButtonIndex + delta + this.focusableButtons.length) % this.focusableButtons.length;
+    if (!this.isOpen || !this.focus.hasButtons) return;
     gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.refreshButtonFocus();
-  }
-
-  private refreshButtonFocus(): void {
-    this.focusableButtons.forEach((button, index) => {
-      const focused = index === this.focusedButtonIndex;
-      const baseColor = button.getData("baseColor") as string | undefined;
-      button.setBackgroundColor(focused ? "#fff2a1" : (baseColor ?? "#f3c95f"));
-      button.setColor(focused ? "#172735" : "#2e2820");
-      button.setShadow(focused ? 0 : 0, focused ? 0 : 0, focused ? "#315f4c" : "#000000", focused ? 8 : 0, false, true);
-    });
+    this.focus.move(delta);
   }
 
   private activateFocusedButton(): void {
-    const button = this.focusableButtons[this.focusedButtonIndex];
-    const action = button?.getData("action") as (() => void) | undefined;
-    if (!action) return;
-    gameEvents.emit(EVENT.audioCue, "confirm");
-    action();
+    if (!this.focus.hasButtons) return;
+    this.focus.activate();
   }
 
   private handleInputAction(event: InputActionEvent): void {
     if (!event.pressed) return;
     if (!this.isOpen) {
-      if (event.action === "menu" || event.action === "back") this.toggleMenu();
+      if (event.action === "menu" || event.action === "back") {
+        this.toggleMenu();
+      }
       return;
     }
     switch (event.action) {
       case "menu":
       case "back": this.toggleMenu(); break;
-      case "tabPrevious":
-      case "moveLeft": this.previousPage(); break;
-      case "tabNext":
-      case "moveRight": this.nextPage(); break;
+      case "tabPrevious": this.previousPage(); break;
+      case "tabNext": this.nextPage(); break;
+      case "moveLeft": this.activePage === "quests" ? this.selectPreviousQuest() : this.previousPage(); break;
+      case "moveRight": this.activePage === "quests" ? this.selectNextQuest() : this.nextPage(); break;
       case "moveUp": this.moveButtonFocus(-1); break;
       case "moveDown": this.moveButtonFocus(1); break;
       case "interact": this.activateFocusedButton(); break;
     }
   }
 
-  private card(x: number, y: number, width: number, height: number, color = 0xfff8df): Phaser.GameObjects.Rectangle {
-    const card = this.add.rectangle(x, y, width, height, color, 1)
-      .setOrigin(0).setStrokeStyle(2, 0xa7865f, 0.8);
-    this.pageContent.add(card);
-    return card;
+  private card(x: number, y: number, width: number, height: number, color: number = SCRAPBOOK.card): Phaser.GameObjects.Graphics {
+    return scrapbookCard(this, this.pageContent, x, y, width, height, color, false);
   }
 
   private note(x: number, y: number, text: string, options: Phaser.Types.GameObjects.Text.TextStyle = {}): Phaser.GameObjects.Text {
-    const note = this.add.text(x, y, text, {
+    const note = scrapbookText(this, this.pageContent, x, y, text, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "16px", color: "#43372d", ...options,
-    });
-    this.pageContent.add(note);
+    }, createPresentationPolicy(this.state.settings).textScale);
     return note;
+  }
+
+  /** Shrinks before clipping so player-facing copy never escapes a paper card. */
+  private fitText(text: Phaser.GameObjects.Text, maxWidth: number, maxHeight: number, minimumSize: number): void {
+    text.setWordWrapWidth(maxWidth, true);
+    const preferredSize = Number.parseInt(String(text.style.fontSize ?? 16), 10);
+    for (let size = preferredSize; text.height > maxHeight && size > minimumSize; size -= 1) {
+      text.setFontSize(size - 1);
+    }
   }
 
   private drawController(x: number, y: number, owned: boolean): void {
@@ -245,7 +242,7 @@ export class MenuScene extends Phaser.Scene {
 
   private renderResume(): void {
     const hasController = this.state.inventory.includes(CONTROLLER_ITEM);
-    this.heading("Summer afternoon — paused", `Pinned: ${getObjective(this.state.questStage)}`);
+    this.heading("Summer afternoon — paused", `Pinned: ${getObjective(this.state.questStage, this.state.activeQuestId)}`);
     this.card(68, 231, 500, 132);
     this.note(88, 248, "TODAY'S FIELD NOTE", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
     this.note(88, 274, getMapDefinition(this.state.currentMap).label, { fontSize: "21px", fontStyle: "bold" });
@@ -264,47 +261,131 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private renderQuests(): void {
-    const quest = selectMissingControllerQuestDisplay(this.state.questStage, this.state.questHistory, this.state.secrets);
-    this.heading("Quest journal", quest.status === "completed" ? "Case closed — but Milton Estates is still yours to explore." : "One mystery, tracked clue by clue.");
-    this.card(68, 224, 796, 228);
-    this.note(88, 240, "MAIN QUEST  •  REQUIRED", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
-    this.note(88, 260, quest.title, { fontSize: "22px", fontStyle: "bold" });
-    this.note(690, 244, quest.status === "completed" ? "✓ COMPLETE" : "● ACTIVE", {
-      fontSize: "14px", color: quest.status === "completed" ? "#315f4c" : "#a45337", fontStyle: "bold",
+    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
+    const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0]!;
+    const status = selectQuestState(selected, this.state);
+    this.heading("Quest journal", "Browse every Chapter 1 memory — active, optional, locked, or complete.");
+    this.card(68, 222, 260, 264, 0xe9d29e);
+    chapter.quests.forEach((quest, index) => {
+      const questStatus = selectQuestState(quest, this.state);
+      const y = 230 + index * 40;
+      const selectedRow = index === this.selectedQuestIndex;
+      const row = this.add.rectangle(80, y, 236, 34, selectedRow ? 0xfff2a1 : 0xf8dfb5, 1)
+        .setOrigin(0).setStrokeStyle(selectedRow ? 3 : 1, selectedRow ? 0x315f4c : 0xa7865f, 0.9)
+        .setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+          this.selectedQuestIndex = index;
+          this.renderPage();
+        });
+      this.pageContent.add(row);
+      const title = this.note(94, y + 3, `${index + 1}. ${quest.title}`, { fontSize: "12px", fontStyle: "bold" });
+      this.fitText(title, 210, 14, 9);
+      this.note(94, y + 19, this.questStatusLabel(questStatus), { fontSize: "10px", color: this.questStatusColor(questStatus), fontStyle: "bold" });
     });
-    const lines = quest.checklist.map((item) => {
-      const icon = item.status === "completed" ? "✓" : item.status === "current" ? "➜" : "○";
-      return `${icon}  ${item.checklistCopy}`;
+    this.card(348, 222, 514, 264);
+    this.note(372, 240, `${selected.kind.toUpperCase()} MEMORY`, { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
+    const selectedTitle = this.note(372, 265, selected.title, { fontSize: "23px", fontStyle: "bold", wordWrap: { width: 450 } });
+    this.fitText(selectedTitle, 450, 50, 15);
+    const description = this.note(372, 322, selected.description, { fontSize: "15px", color: "#675544", wordWrap: { width: 450 } });
+    this.fitText(description, 450, 42, 11);
+    const detail = this.note(372, 371, this.questDetail(selected, status), { fontSize: "14px", color: status === "locked" ? "#a34237" : "#315f4c", wordWrap: { width: 450 }, lineSpacing: 6 });
+    this.fitText(detail, 450, 52, 10);
+    if (status !== "locked") {
+      const action = status === "completed" ? "REPLAY QUEST" : status === "active" ? "CONTINUE QUEST" : "START QUEST";
+      this.button(590, 432, action, () => this.playQuest(selected), 248);
+    } else {
+      this.note(590, 438, "LOCKED — inspect the prerequisite above", { fontSize: "13px", fontStyle: "bold", color: "#a34237" });
+    }
+    this.note(372, 463, "← / → changes the selected quest", { fontSize: "12px", color: "#76624f", fontStyle: "italic" });
+  }
+
+  private renderChapters(): void {
+    this.heading("Chapter scrapbook", "Browse the story structure before you choose a quest.");
+    CHAPTER_REGISTRY.forEach((chapter, index) => {
+      const progress = selectChapterProgress(chapter, this.state.completedQuestIds);
+      const optional = selectOptionalProgress(chapter, this.state.completedQuestIds);
+      const cardY = 230 + index * 116;
+      this.card(68, cardY, 796, 96, index === 0 ? 0xfff8df : 0xe9d29e);
+      this.note(90, cardY + 14, `CHAPTER ${chapter.number}  •  ${chapter.dateLabel}`, { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
+      this.note(90, cardY + 36, chapter.title, { fontSize: "21px", fontStyle: "bold" });
+      const description = this.note(90, cardY + 66, chapter.description, { fontSize: "14px", color: "#675544", wordWrap: { width: 490 } });
+      this.fitText(description, 490, 18, 10);
+      this.note(645, cardY + 23, `${progress.completed}/${progress.total} memories`, { fontSize: "16px", fontStyle: "bold", color: "#315f4c" });
+      this.note(645, cardY + 49, `${optional.completed}/${optional.total} optional`, { fontSize: "13px", color: "#675544" });
     });
-    this.note(94, 299, lines.join("\n"), { fontSize: "15px", lineSpacing: 7, color: "#4b4035" });
-    if (quest.discoveries.length) {
-      this.note(525, 302, `★ SECRET NOTE\n${quest.discoveries[0]!.text}`, {
-        fontSize: "14px", lineSpacing: 7, color: "#315f4c", wordWrap: { width: 305 },
-      });
-    }
-    if (quest.status === "completed") {
-      this.button(560, 402, "CONTINUE EXPLORING", () => this.closeMenu(), 280);
-      this.button(560, 455, "RESTART OPTIONS…", () => this.selectPage("save"), 280);
-    }
+    this.button(68, 442, "OPEN QUEST JOURNAL", () => this.selectPage("quests"), 300);
+    this.note(388, 454, "Live registry view — new quest definitions appear here automatically.", { fontSize: "13px", color: "#76624f", fontStyle: "italic", wordWrap: { width: 430 } });
+  }
+
+  private questStatusLabel(status: ReturnType<typeof selectQuestState>): string {
+    return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
+  }
+
+  private questStatusColor(status: ReturnType<typeof selectQuestState>): string {
+    return status === "completed" || status === "active" ? "#315f4c" : status === "available" ? "#275c73" : "#a34237";
+  }
+
+  private questDetail(quest: QuestDefinition, status: ReturnType<typeof selectQuestState>): string {
+    if (status === "completed") return "✓ Complete. Replay is isolated from your canonical save.";
+    if (status === "active") return `● Current objective: ${getObjective(this.state.questStage, this.state.activeQuestId)}`;
+    if (status === "available") return "○ Ready to begin whenever you are.";
+    if (!quest.implemented) return quest.kind === "finale" ? "🔒 Finish the required memories to reveal the finale." : "🔒 This memory is planned but not implemented yet.";
+    const prereqs = quest.prerequisiteQuestIds.map((id) => CHAPTER_REGISTRY.flatMap((candidate) => candidate.quests).find((candidate) => candidate.id === id)?.title ?? id);
+    return `🔒 Complete first: ${prereqs.join(", ") || "the previous memory"}.`;
+  }
+
+  private selectPreviousQuest(): void {
+    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
+    this.selectedQuestIndex = (this.selectedQuestIndex + chapter.quests.length - 1) % chapter.quests.length;
+    gameEvents.emit(EVENT.audioCue, "menuNavigate");
+    this.renderPage();
+  }
+
+  private selectNextQuest(): void {
+    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
+    this.selectedQuestIndex = (this.selectedQuestIndex + 1) % chapter.quests.length;
+    gameEvents.emit(EVENT.audioCue, "menuNavigate");
+    this.renderPage();
+  }
+
+  private playQuest(quest: QuestDefinition): void {
+    const status = selectQuestState(quest, this.state);
+    if (status === "locked" || !quest.implemented) return;
+    const oldMap = gameStore.getState().currentMap;
+    if (status === "completed") gameStore.startQuestReplay(quest.id);
+    else gameStore.setActiveQuest(quest.chapterId, quest.id);
+    gameStore.setCurrentMap("neighborhood");
+    this.closeMenu();
+    this.launchNeighborhood(oldMap);
   }
 
   private renderMap(): void {
     const map = this.add.image(480, 301, "regional-foldout-map").setDisplaySize(620, 349);
     this.pageContent.add(map);
-    const inCreek = this.state.currentMap === "creek";
-    const playerPosition = inCreek ? { x: 292, y: 292 } : { x: 454, y: 300 };
-    const objectivePosition = inCreek ? { x: 285, y: 247 } : { x: 474, y: 276 };
+    const definition = getMapDefinition(this.state.currentMap);
+    // The regional illustration uses metadata, not the live scene's TMJ.
+    const playerPosition = projectRegionalMapPoint(
+      definition,
+      definition.markers.find(({ id }) => id === "billy_home") ?? { x: 0.5, y: 0.5 },
+    );
+    const objective = selectActiveObjectiveMarker({
+      currentMap: this.state.currentMap,
+      stage: this.state.questStage,
+      discoveredIds: [],
+    });
+    const objectivePosition = objective ? projectRegionalMapPoint(definition, objective) : undefined;
     this.pageContent.add(this.add.circle(playerPosition.x, playerPosition.y, 12, 0xc94b3f, 1).setStrokeStyle(3, 0xfff4cd, 1));
-    this.pageContent.add(this.add.text(playerPosition.x, playerPosition.y, "B", {
+    scrapbookText(this, this.pageContent, playerPosition.x, playerPosition.y, "B", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#ffffff", fontStyle: "bold",
-    }).setOrigin(0.5));
-    this.pageContent.add(this.add.text(objectivePosition.x, objectivePosition.y, "★", {
-      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "25px", color: "#c94b3f", stroke: "#fff4cd", strokeThickness: 3,
-    }).setOrigin(0.5));
-    this.pageContent.add(this.add.text(73, 126, "REGIONAL FOLD-OUT  •  B = BILLY  ★ = CURRENT CLUE", {
+    }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
+    if (objectivePosition) {
+      scrapbookText(this, this.pageContent, objectivePosition.x, objectivePosition.y, "★", {
+        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "25px", color: "#c94b3f", stroke: "#fff4cd", strokeThickness: 3,
+      }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
+    }
+    scrapbookText(this, this.pageContent, 73, 126, "REGIONAL FOLD-OUT  •  B = BILLY  ★ = CURRENT CLUE", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff4cd", fontStyle: "bold",
       backgroundColor: "#315f4c", padding: { x: 8, y: 5 },
-    }));
+    }, createPresentationPolicy(this.state.settings).textScale);
   }
 
   private renderSave(): void {
@@ -341,9 +422,17 @@ export class MenuScene extends Phaser.Scene {
     const oldMap = gameStore.getState().currentMap;
     gameStore.reset();
     this.closeMenu();
-    if (oldMap !== "neighborhood") this.scene.stop(oldMap);
-    this.scene.start("neighborhood", { spawn: "home" });
+    this.launchNeighborhood(oldMap);
     gameEvents.emit(EVENT.toast, "Mission restarted.");
+  }
+
+  private launchNeighborhood(oldMap: GameState["currentMap"]): void {
+    // ScenePlugin.start would shut down the calling MenuScene and permanently
+    // remove its Escape/B listeners. Stop/start only the world scene instead.
+    this.scene.stop(oldMap);
+    this.scene.launch("neighborhood", { spawn: "home" });
+    this.scene.bringToTop("ui");
+    this.scene.bringToTop();
   }
 
   private renderSettings(): void {
@@ -354,17 +443,15 @@ export class MenuScene extends Phaser.Scene {
     this.note(88, 263, "Move  WASD / arrows     Talk & inspect  E / Space     Backpack  Esc", { fontSize: "15px", fontStyle: "bold" });
     this.button(68, 315, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }));
     this.button(360, 315, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
-      const next = settings.masterVolume >= 1 ? 0 : Math.round((settings.masterVolume + 0.25) * 100) / 100;
-      this.changeSettings({ masterVolume: next });
+      this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });
     });
     this.button(68, 382, `TEXT: ${settings.textSize.toUpperCase()}`, () => {
-      const sizes = ["small", "medium", "large"] as const;
-      this.changeSettings({ textSize: sizes[(sizes.indexOf(settings.textSize) + 1) % sizes.length] });
+      this.changeSettings({ textSize: cycleTextSize(settings.textSize) });
     });
     this.button(360, 382, settings.reducedMotion ? "REDUCED MOTION: ON" : "REDUCED MOTION: OFF", () => this.changeSettings({ reducedMotion: !settings.reducedMotion }), 300);
     this.note(690, 320, "← click to cycle", { fontSize: "13px", color: "#76624f", fontStyle: "italic" });
     this.note(690, 389, "Comfort option", { fontSize: "13px", color: "#76624f", fontStyle: "italic" });
-    this.note(68, 456, "Tip: Left / Right changes backpack tabs.", { fontSize: "14px", color: "#675544" });
+    this.note(68, 456, "Tip: Q / R or the shoulder buttons change backpack tabs.", { fontSize: "14px", color: "#675544" });
   }
 
   private changeSettings(changes: Partial<PlayerSettings>): void {
@@ -375,15 +462,15 @@ export class MenuScene extends Phaser.Scene {
     this.renderPage();
   }
 
-  private handleStateChanged(state: SaveData): void {
-    const justCompleted = this.previousStage !== "complete" && state.questStage === "complete";
-    this.previousStage = state.questStage;
+  private handleStateChanged(state: GameState): void {
     this.state = state;
-    if (justCompleted) this.openMenu("quests");
-    else if (this.isOpen) this.renderPage();
+    // A completion should leave the world responsive. The HUD already shows
+    // the completion toast, and the player can open the journal deliberately.
+    if (this.isOpen) this.renderPage();
   }
 
   private cleanup(): void {
+    inputCapture.release("menu");
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     gameEvents.off(EVENT.menuRequested, this.handleMenuRequest, this);
     gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);

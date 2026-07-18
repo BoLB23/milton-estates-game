@@ -9,13 +9,15 @@ import {
 import { EVENT, gameEvents, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { PlayerSettings, SaveData } from "../game/types";
+import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
+import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 
 type FrontPage = "title" | "chapters" | "quests" | "settings";
 
-const PAPER = 0xf3e7c5;
-const INK = "#26352f";
-const MUTED_INK = "#687068";
-const BLUE_INK = "#275c73";
+const PAPER = SCRAPBOOK.paper;
+const INK = SCRAPBOOK.ink;
+const MUTED_INK = SCRAPBOOK.mutedInk;
+const BLUE_INK = SCRAPBOOK.blueInk;
 const RED_INK = "#a34237";
 
 export class FrontEndScene extends Phaser.Scene {
@@ -24,16 +26,18 @@ export class FrontEndScene extends Phaser.Scene {
   private state: SaveData = gameStore.getState();
   private newGameArmed = false;
   private selectedQuestIndex = 0;
-  private focusables: Phaser.GameObjects.Text[] = [];
-  private focusedIndex = 0;
+  private readonly focus = new TextFocusController();
 
   constructor() { super("front-end"); }
 
   create(): void {
+    this.page = "title";
+    this.newGameArmed = false;
+    this.selectedQuestIndex = 0;
+    this.focus.reset();
     this.cameras.main.setBackgroundColor("#315948");
     this.content = this.add.container(0, 0);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
-    gameStore.getState();
     this.render();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
   }
@@ -41,7 +45,7 @@ export class FrontEndScene extends Phaser.Scene {
   private render(): void {
     this.state = gameStore.getState();
     this.content.removeAll(true);
-    this.focusables = [];
+    this.focus.reset();
     this.drawDesk();
     switch (this.page) {
       case "title": this.renderTitle(); break;
@@ -49,8 +53,7 @@ export class FrontEndScene extends Phaser.Scene {
       case "quests": this.renderQuests(); break;
       case "settings": this.renderSettings(); break;
     }
-    this.focusedIndex = Phaser.Math.Clamp(this.focusedIndex, 0, Math.max(0, this.focusables.length - 1));
-    this.refreshFocus();
+    this.focus.refresh();
   }
 
   private drawDesk(): void {
@@ -72,15 +75,17 @@ export class FrontEndScene extends Phaser.Scene {
     return g;
   }
 
+  private card(x: number, y: number, width: number, height: number, color = 0xfff8df): Phaser.GameObjects.Graphics {
+    return scrapbookCard(this, this.content, x, y, width, height, color);
+  }
+
   private tape(x: number, y: number, angle = 0): void {
     const tape = this.add.rectangle(x, y, 72, 19, 0xe6d78f, 0.72).setAngle(angle);
     this.content.add(tape);
   }
 
   private text(x: number, y: number, value: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
-    const object = this.add.text(x, y, value, { fontFamily: "Trebuchet MS, Arial, sans-serif", ...style });
-    this.content.add(object);
-    return object;
+    return scrapbookText(this, this.content, x, y, value, style, createPresentationPolicy(this.state.settings).textScale);
   }
 
   private button(x: number, y: number, label: string, action: () => void, options?: {
@@ -91,26 +96,10 @@ export class FrontEndScene extends Phaser.Scene {
     focusInk?: string;
     audio?: boolean;
   }): Phaser.GameObjects.Text {
-    const button = this.text(x, y, label, {
-      fontSize: "17px", fontStyle: "bold", color: options?.ink ?? "#f9f1d7",
-      backgroundColor: options?.color ?? "#275c73", fixedWidth: options?.width ?? 250,
-      align: "center", padding: { x: 12, y: 11 },
-    }).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+    return scrapbookButton(this, this.content, this.focus, x, y, label, () => {
       if (options?.audio !== false) gameEvents.emit(EVENT.audioCue, "confirm");
       action();
-    });
-    button
-      .setData("action", action)
-      .setData("baseColor", options?.color ?? "#275c73")
-      .setData("baseInk", options?.ink ?? "#f9f1d7")
-      .setData("focusColor", options?.focusColor ?? "#f3c95f")
-      .setData("focusInk", options?.focusInk ?? INK);
-    button.on("pointerover", () => {
-      this.focusedIndex = this.focusables.indexOf(button);
-      this.refreshFocus();
-    });
-    this.focusables.push(button);
-    return button;
+    }, { ...options, textScale: createPresentationPolicy(this.state.settings).textScale });
   }
 
   private renderTitle(): void {
@@ -121,7 +110,8 @@ export class FrontEndScene extends Phaser.Scene {
     photo.fillStyle(0xfaf4df).fillRoundedRect(520, 92, 330, 318, 4);
     photo.lineStyle(3, 0x475f50, 0.8).strokeRoundedRect(520, 92, 330, 318, 4);
     this.content.add(photo);
-    this.content.add(this.add.image(685, 213, "chapter-1-cover").setDisplaySize(298, 210));
+    const coverKey = CHAPTER_REGISTRY[0]?.coverAssetKey ?? "chapter-1-cover";
+    this.content.add(this.add.image(685, 213, coverKey).setDisplaySize(298, 210));
     this.tape(542, 102, -8);
     this.tape(827, 101, 9);
     this.text(685, 337, "Wheatfield Drive, Summer 2007", {
@@ -159,15 +149,20 @@ export class FrontEndScene extends Phaser.Scene {
     const chapter = CHAPTER_REGISTRY[0];
     const progress = selectChapterProgress(chapter, this.state.completedQuestIds);
     const optional = selectOptionalProgress(chapter, this.state.completedQuestIds);
-    this.drawBrowserArt();
-    this.text(97, 472, `${chapter.dateLabel}  •  ${progress.completed}/${progress.total} memories  •  ${optional.completed}/${optional.total} secrets`, {
-      fontSize: "13px", color: "#4f5b51", fontStyle: "bold", backgroundColor: "#f3e7c5dd", padding: { x: 7, y: 4 },
-    });
-    // The illustrated book already provides the prominent red action plate.
-    // Put the live hit target on that plate instead of adding a second UI bar.
-    this.button(702, 359, "JOURNAL  →", () => this.openPage("quests"), {
-      width: 126, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
-    });
+    this.paper(45, 42, 870, 456);
+    this.tape(480, 48, -2);
+    this.text(80, 76, "CHAPTER SCRAPBOOK", { fontSize: "31px", fontStyle: "bold", color: BLUE_INK });
+    this.text(80, 121, `CHAPTER ${chapter.number}  •  ${chapter.dateLabel}`, { fontSize: "13px", fontStyle: "bold", color: RED_INK });
+    this.text(80, 153, chapter.title, { fontSize: "25px", fontStyle: "bold", color: INK, wordWrap: { width: 475 } });
+    this.text(80, 198, chapter.description, { fontSize: "16px", color: MUTED_INK, wordWrap: { width: 480 }, lineSpacing: 5 });
+    this.text(80, 270, `${chapter.quests.length} memories in this chapter`, { fontSize: "15px", fontStyle: "bold", color: BLUE_INK });
+    this.text(80, 298, `${progress.completed}/${progress.total} complete  •  ${optional.completed}/${optional.total} optional`, { fontSize: "14px", color: MUTED_INK });
+    this.card(80, 340, 500, 116, 0xe9d29e);
+    this.text(100, 358, "QUEST JOURNAL", { fontSize: "13px", fontStyle: "bold", color: RED_INK });
+    this.text(100, 386, chapter.quests.map((quest, index) => `${index + 1}. ${quest.title}`).join("\n"), { fontSize: "14px", color: INK, lineSpacing: 5 });
+    this.content.add(this.add.image(735, 220, chapter.coverAssetKey).setDisplaySize(230, 162));
+    this.text(735, 314, "Summer 2007", { fontFamily: "Comic Sans MS, cursive", fontSize: "15px", color: MUTED_INK }).setOrigin(0.5);
+    this.button(630, 402, "OPEN QUEST JOURNAL  →", () => this.openPage("quests"), { width: 230, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7" });
     this.backButton();
   }
 
@@ -175,23 +170,29 @@ export class FrontEndScene extends Phaser.Scene {
     const chapter = CHAPTER_REGISTRY[0];
     const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0];
     const state = selectQuestState(selected, this.state);
-    this.drawBrowserArt();
-    // The bottom image card sits behind the primary action area. Keep its
-    // keyboard navigation, but avoid a transparent pointer target swallowing
-    // Start/Continue/Replay on the rendered button.
-    chapter.quests.slice(0, 3).forEach((_, index) => {
-      const zone = this.add.rectangle(627, 154 + index * 74, 304, 62, 0xffffff, 0.001)
+    this.paper(45, 42, 870, 456);
+    this.tape(480, 48, 2);
+    this.text(80, 76, "QUEST JOURNAL", { fontSize: "31px", fontStyle: "bold", color: BLUE_INK });
+    this.text(80, 121, "CHAPTER 1  •  SELECT A MEMORY", { fontSize: "13px", fontStyle: "bold", color: RED_INK });
+    chapter.quests.forEach((quest, index) => {
+      const questState = selectQuestState(quest, this.state);
+      const y = 154 + index * 50;
+      const zone = this.add.rectangle(80, y, 330, 42, index === this.selectedQuestIndex ? 0xfff2a1 : 0xe9d29e, 1)
+        .setOrigin(0).setStrokeStyle(index === this.selectedQuestIndex ? 3 : 1, index === this.selectedQuestIndex ? 0x315f4c : 0xa7865f, 0.9)
         .setInteractive({ useHandCursor: true })
         .on("pointerdown", () => {
           gameEvents.emit(EVENT.audioCue, "menuNavigate");
           this.selectedQuestIndex = index;
           this.render();
-        });
+      });
       this.content.add(zone);
+      this.text(100, y + 4, quest.title, { fontSize: "12px", fontStyle: "bold", color: INK, wordWrap: { width: 285 } });
+      this.text(100, y + 23, this.frontQuestStatus(questState), { fontSize: "10px", color: this.frontQuestStatusColor(questState), fontStyle: "bold" });
     });
-    this.text(523, 347, `${selected.title}  •  ${state.toUpperCase()}`, {
-      fontSize: "13px", color: "#344438", fontStyle: "bold", backgroundColor: "#f3e7c5ee", padding: { x: 7, y: 5 }, wordWrap: { width: 295 },
-    });
+    this.card(450, 154, 415, 248, 0xfff8df);
+    this.text(474, 176, `${selected.kind.toUpperCase()}  •  ${state.toUpperCase()}`, { fontSize: "12px", color: state === "locked" ? RED_INK : BLUE_INK, fontStyle: "bold" });
+    this.text(474, 206, selected.title, { fontSize: "23px", fontStyle: "bold", color: INK, wordWrap: { width: 360 } });
+    this.text(474, 262, selected.description, { fontSize: "15px", color: MUTED_INK, wordWrap: { width: 355 }, lineSpacing: 5 });
     if (state === "locked") {
       const prereq = selected.prerequisiteQuestIds.length
         ? selected.prerequisiteQuestIds.map((id) => chapter.quests.find((quest) => quest.id === id)?.title ?? id).join(", ")
@@ -199,30 +200,32 @@ export class FrontEndScene extends Phaser.Scene {
       const reason = !selected.implemented
         ? selected.kind === "finale" ? "Finish every required Chapter 1 memory to reveal the finale." : "This memory has not been added to the game yet."
         : `Complete ${prereq} first.`;
-      this.text(523, 390, `🔒 ${reason}`, { fontSize: "13px", color: RED_INK, backgroundColor: "#f3e7c5ee", padding: { x: 7, y: 5 }, wordWrap: { width: 300 } });
+      this.text(474, 335, `🔒 ${reason}`, { fontSize: "13px", color: RED_INK, wordWrap: { width: 350 }, lineSpacing: 4 });
     } else {
-      const action = state === "completed" ? "REPLAY" : this.state.questStage === "talk_to_jeremy" ? "START" : "CONTINUE";
-      this.button(709, 359, `${action}  →`, () => this.playQuest(selected), {
-        width: 119, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
+      const action = state === "completed" ? "REPLAY" : state === "active" ? "CONTINUE" : "START";
+      this.text(474, 335, state === "completed" ? "Replay is isolated from your canonical save." : "Ready whenever you are.", { fontSize: "13px", color: "#315f4c", wordWrap: { width: 350 } });
+      this.button(585, 420, `${action} QUEST  →`, () => this.playQuest(selected), {
+        width: 220, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
       });
-      if (state === "completed") {
-        this.text(523, 450, "Replay uses a temporary scrapbook copy. Your real progress stays safe.", {
-          fontSize: "11px", color: MUTED_INK, wordWrap: { width: 300 },
-        });
-      }
     }
+    this.text(474, 468, "← / → changes the selected quest", { fontSize: "12px", color: MUTED_INK, fontStyle: "italic" });
     this.backButton();
   }
 
-  private drawBrowserArt(): void {
-    this.content.add(this.add.image(480, 270, "chapter-quest-browser-target").setDisplaySize(892, 502));
+  private frontQuestStatus(status: ReturnType<typeof selectQuestState>): string {
+    return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
+  }
+
+  private frontQuestStatusColor(status: ReturnType<typeof selectQuestState>): string {
+    return status === "locked" ? RED_INK : status === "completed" || status === "active" ? "#3b765b" : BLUE_INK;
   }
 
   private playQuest(quest: QuestDefinition): void {
     const state = selectQuestState(quest, this.state);
-    if (quest.id !== "missing_controller" || state === "locked") return;
+    if (!quest.implemented || state === "locked") return;
     if (state === "completed") gameStore.startQuestReplay(quest.id);
     else gameStore.setActiveQuest(quest.chapterId, quest.id);
+    gameStore.setCurrentMap("neighborhood");
     this.launchGameplay();
   }
 
@@ -236,12 +239,10 @@ export class FrontEndScene extends Phaser.Scene {
     });
     this.button(205, 205, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }), { width: 550 });
     this.button(205, 263, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
-      const volume = settings.masterVolume >= 1 ? 0 : Math.round((settings.masterVolume + 0.25) * 100) / 100;
-      this.changeSettings({ masterVolume: volume });
+      this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });
     }, { width: 550 });
     this.button(205, 321, `TEXT SIZE: ${settings.textSize.toUpperCase()}`, () => {
-      const sizes = ["small", "medium", "large"] as const;
-      this.changeSettings({ textSize: sizes[(sizes.indexOf(settings.textSize) + 1) % sizes.length] });
+      this.changeSettings({ textSize: cycleTextSize(settings.textSize) });
     }, { width: 550 });
     this.button(205, 379, settings.reducedMotion ? "REDUCED MOTION: ON" : "REDUCED MOTION: OFF", () => {
       this.changeSettings({ reducedMotion: !settings.reducedMotion });
@@ -260,7 +261,6 @@ export class FrontEndScene extends Phaser.Scene {
   private openPage(page: FrontPage): void {
     this.page = page;
     this.newGameArmed = false;
-    this.focusedIndex = 0;
     this.render();
   }
 
@@ -292,26 +292,14 @@ export class FrontEndScene extends Phaser.Scene {
   }
 
   private moveFocus(delta: number): void {
-    if (!this.focusables.length) return;
-    this.focusedIndex = (this.focusedIndex + delta + this.focusables.length) % this.focusables.length;
+    if (!this.focus.hasButtons) return;
     gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.refreshFocus();
-  }
-
-  private refreshFocus(): void {
-    this.focusables.forEach((item, index) => {
-      const focused = index === this.focusedIndex;
-      item.setBackgroundColor(focused ? item.getData("focusColor") : item.getData("baseColor"));
-      item.setColor(focused ? item.getData("focusInk") : item.getData("baseInk"));
-      item.setShadow(0, 0, focused ? "#173026" : "#000000", focused ? 8 : 0, false, true);
-    });
+    this.focus.move(delta);
   }
 
   private activateFocused(): void {
-    const action = this.focusables[this.focusedIndex]?.getData("action") as (() => void) | undefined;
-    if (!action) return;
-    gameEvents.emit(EVENT.audioCue, "confirm");
-    action();
+    if (!this.focus.hasButtons) return;
+    this.focus.activate();
   }
 
   private handleInputAction(event: InputActionEvent): void {
@@ -319,8 +307,8 @@ export class FrontEndScene extends Phaser.Scene {
     switch (event.action) {
       case "moveUp": this.moveFocus(-1); break;
       case "moveDown": this.moveFocus(1); break;
-      case "moveLeft": this.moveFocus(-1); break;
-      case "moveRight": this.moveFocus(1); break;
+      case "moveLeft": this.page === "quests" ? this.selectPreviousQuest() : this.moveFocus(-1); break;
+      case "moveRight": this.page === "quests" ? this.selectNextQuest() : this.moveFocus(1); break;
       case "tabPrevious": this.selectPreviousQuest(); break;
       case "tabNext": this.selectNextQuest(); break;
       case "interact": this.activateFocused(); break;

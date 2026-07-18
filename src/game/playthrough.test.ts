@@ -15,7 +15,6 @@ class PlaythroughStorage implements Storage {
 const EVENTS: readonly QuestEvent[] = [
   { type: "talked_to_jeremy" },
   { type: "talked_to_andrew" },
-  { type: "inspected_creek_clue" },
   { type: "picked_up_controller" },
   { type: "returned_controller" },
 ];
@@ -30,12 +29,11 @@ describe("complete playthrough scenarios", () => {
 
     advance(store, EVENTS[0]!);
     advance(store, EVENTS[1]!);
-    advance(store, EVENTS[2]!);
     store.setCurrentMap("creek");
     store.addInventoryItem(CONTROLLER_ITEM);
-    advance(store, EVENTS[3]!);
+    advance(store, EVENTS[2]!);
     store.setCurrentMap("neighborhood");
-    advance(store, EVENTS[4]!);
+    advance(store, EVENTS[3]!);
 
     expect(store.getState()).toMatchObject({
       questStage: "complete",

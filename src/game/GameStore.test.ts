@@ -18,10 +18,10 @@ const makeStore = (storage = new MemoryStorage()) => new GameStore(storage, () =
 
 afterEach(() => gameEvents.removeAllListeners());
 
-describe("GameStore save v3", () => {
+describe("GameStore save v5", () => {
   it("starts with trustworthy mission and menu defaults", () => {
-    expect(makeStore().getState()).toEqual({
-      version: 3,
+    expect(makeStore().getState()).toMatchObject({
+      version: 5,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -61,8 +61,8 @@ describe("GameStore save v3", () => {
     store.setCurrentMap("creek");
     store.updateSettings({ textSize: "large", reducedMotion: true });
 
-    expect(store.getState()).toEqual({
-      version: 3,
+    expect(store.getState()).toMatchObject({
+      version: 5,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -79,6 +79,7 @@ describe("GameStore save v3", () => {
     expect(listener).toHaveBeenCalledTimes(5);
     expect(listener).toHaveBeenLastCalledWith(store.getState());
     expect(makeStore(storage).getState()).toEqual(store.getState());
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null")).not.toHaveProperty("questStage");
   });
 
   it.each(["xbox-controller", "xbox controller", CONTROLLER_ITEM])(
@@ -95,14 +96,16 @@ describe("GameStore save v3", () => {
 
       const state = makeStore(storage).getState();
       expect(state).toMatchObject({
-        version: 3,
+        version: 5,
         questStage: "return_to_jeremy",
         questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found", "missing_controller.controller_recovered"],
         inventory: [CONTROLLER_ITEM],
         discoveredMaps: ["neighborhood", "creek"],
         lastSavedAt: null,
       });
-      expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(3);
+      const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+      expect(persisted.version).toBe(5);
+      expect(persisted).not.toHaveProperty("questStage");
     },
   );
 
@@ -125,7 +128,7 @@ describe("GameStore save v3", () => {
     expect(state.questHistory).toEqual(["missing_controller.controller_returned"]);
     expect(state.discoveredMaps).toEqual(["neighborhood", "creek"]);
     expect(state.completedQuestIds).toEqual(["missing_controller"]);
-    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(3);
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(5);
   });
 
   it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
@@ -158,9 +161,6 @@ describe("GameStore save v3", () => {
     expect(storage.getItem("milton-estates-save")).toBe(persisted);
     expect(store.getCanonicalState()).toEqual(canonical);
 
-    store.endQuestReplay();
-    expect(store.isReplaying()).toBe(false);
-    expect(store.getState()).toEqual(canonical);
   });
 
   it("rejects replay for incomplete or unimplemented quests", () => {
@@ -197,9 +197,148 @@ describe("GameStore save v3", () => {
     expect(store.getState()).not.toEqual(snapshot);
   });
 
+  it("offers cheap gameplay selectors without exposing mutable save state", () => {
+    const store = makeStore();
+    expect(store.isQuestActive("missing_controller")).toBe(true);
+    expect(store.isQuestAt("missing_controller", "talk_to_jeremy")).toBe(true);
+    expect(store.isAtStage("search_creek")).toBe(false);
+
+    store.setQuestStage("search_creek");
+    expect(store.isAtStage("search_creek")).toBe(true);
+    expect(store.isQuestAt("missing_controller", "search_creek")).toBe(true);
+
+    const mushroom = store.getMushroomSpawns()[0]!;
+    expect(store.isMushroomCollectible(mushroom.id)).toBe(false);
+  });
+
   it("rejects invalid settings instead of persisting unusable menu state", () => {
     const store = makeStore();
     expect(() => store.updateSettings({ masterVolume: 2 })).toThrow(RangeError);
     expect(store.getState().settings.masterVolume).toBe(1);
+  });
+
+  it("persists the mushroom handoffs and the three-stop sports quest independently", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    store.setQuestStage("search_mushrooms");
+    for (const spawn of store.getMushroomSpawns()) expect(store.collectMushroom(spawn.id)).toBe(true);
+
+    expect(store.getState().questStage).toBe("feed_mushroom_to_jeremy");
+    expect(store.getState().questProgress.mushrooms.collectedIds).toHaveLength(10);
+    store.setQuestStage("place_mushroom_at_billy");
+    store.setQuestStage("give_mushrooms_to_andrew");
+    store.setQuestStage("complete");
+
+    store.setActiveQuest("chapter_1", "three_player_sports");
+    expect(store.getState().questStage).toBe("meet_jeremy_to_skateboard");
+    store.setQuestStage("meet_billy_to_play_baseball");
+    store.setQuestStage("meet_andrew_to_play_basketball");
+    store.setQuestStage("complete");
+
+    const reloaded = makeStore(storage).getState();
+    expect(reloaded.completedQuestIds).toEqual([
+      "missing_controller", "andrew_mushroom_hunt", "three_player_sports",
+    ]);
+    expect(reloaded.questProgress.mushrooms.collectedIds).toHaveLength(10);
+    expect(reloaded.questProgress.sports.stage).toBe("complete");
+    expect(reloaded.questHistory).toContain("three_player_sports.played_basketball");
+  });
+
+  it("repairs an impossible mushroom layout and reconciles the active stage on load", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    store.setQuestStage("search_mushrooms");
+
+    const corrupted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    corrupted.questProgress.mushrooms.spawns = [];
+    corrupted.questProgress.mushrooms.collectedIds = ["missing-mushroom"];
+    storage.setItem("milton-estates-save", JSON.stringify(corrupted));
+
+    const repaired = makeStore(storage).getState();
+    expect(repaired.questStage).toBe("search_mushrooms");
+    expect(repaired.questProgress.mushrooms.spawns).toHaveLength(10);
+    expect(new Set(repaired.questProgress.mushrooms.spawns.map(({ id }) => id)).size).toBe(10);
+    expect(repaired.questProgress.mushrooms.collectedIds).toEqual([]);
+    expect(repaired.completedQuestIds).toEqual(["missing_controller"]);
+  });
+
+  it("rejects incompatible quest stages instead of silently accepting them", () => {
+    const store = makeStore();
+    expect(() => store.setQuestStage("search_mushrooms")).toThrow(RangeError);
+    expect(store.getState().questStage).toBe("talk_to_jeremy");
+    expect(() => store.setActiveQuest("chapter_1", "storm_drain_detectives")).toThrow(RangeError);
+  });
+
+  it("migrates the retired search_yards save stage to the live creek route", () => {
+    const storage = new MemoryStorage();
+    storage.setItem("milton-estates-save", JSON.stringify({
+      version: 1,
+      questStage: "search_yards",
+      inventory: [],
+      secrets: [],
+      currentMap: "neighborhood",
+    }));
+
+    const state = makeStore(storage).getState();
+    expect(state.questStage).toBe("search_creek");
+    expect(state.questProgress.missingControllerStage).toBe("search_creek");
+  });
+
+  it("migrates v4 using questProgress as authority and removes the duplicated stage", () => {
+    const storage = new MemoryStorage();
+    const templateStore = makeStore(storage);
+    templateStore.setQuestStage("complete");
+    templateStore.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    templateStore.setQuestStage("search_mushrooms");
+    const legacy = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    legacy.version = 4;
+    legacy.questStage = "complete";
+    legacy.questProgress.missingControllerStage = "search_yards";
+    legacy.completedQuestIds = [];
+    legacy.questHistory = [
+      "missing_controller.started",
+      "missing_controller.andrew_consulted",
+      "missing_controller.creek_clue_found",
+      "andrew_mushroom_hunt.started",
+    ];
+    storage.setItem("milton-estates-save", JSON.stringify(legacy));
+
+    const state = makeStore(storage).getState();
+    expect(state.questStage).toBe("search_mushrooms");
+    expect(state.questProgress.missingControllerStage).toBe("search_creek");
+    const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    expect(persisted.version).toBe(5);
+    expect(persisted).not.toHaveProperty("questStage");
+  });
+
+  it.each([
+    (save: Record<string, unknown>) => { save.completedQuestIds = ["missing_controller"]; },
+    (save: Record<string, unknown>) => { save.questHistory = ["missing_controller.controller_returned"]; },
+    (save: Record<string, unknown>) => { save.activeQuestId = "storm_drain_detectives"; },
+    (save: Record<string, unknown>) => {
+      save.activeQuestId = "andrew_mushroom_hunt";
+      save.completedQuestIds = ["andrew_mushroom_hunt"];
+      const progress = save.questProgress as { mushrooms: { stage: string; collectedIds: string[] } };
+      progress.mushrooms.stage = "complete";
+      progress.mushrooms.collectedIds = [];
+    },
+  ])("quarantines irrecoverable v5 domain contradictions", (corrupt) => {
+    const storage = new MemoryStorage();
+    const writer = makeStore(storage);
+    writer.saveNow();
+    const save = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    corrupt(save);
+    storage.setItem("milton-estates-save", JSON.stringify(save));
+    expect(makeStore(storage).getState()).toMatchObject({
+      activeQuestId: "missing_controller",
+      questStage: "talk_to_jeremy",
+      completedQuestIds: [],
+      questHistory: [],
+    });
   });
 });

@@ -9,16 +9,17 @@ import { UIScene } from "./scenes/UIScene";
 import { FrontEndScene } from "./scenes/FrontEndScene";
 import { InputRouterScene } from "./scenes/InputRouterScene";
 
-audioManager.install();
-
-new Phaser.Game({
-  type: Phaser.AUTO,
+const game = new Phaser.Game({
+  // The browser behavior suite uses Phaser 3's Canvas backend to avoid
+  // accumulating headless WebGL driver contexts across long quest runs.
+  // Production remains AUTO (WebGL where available).
+  type: import.meta.env.VITE_E2E_RENDERER === "canvas" ? Phaser.CANVAS : Phaser.AUTO,
   parent: "game",
   width: 960,
   height: 540,
   backgroundColor: "#7fcf76",
   pixelArt: false,
-  roundPixels: false,
+  roundPixels: true,
   physics: {
     default: "arcade",
     arcade: { debug: false },
@@ -29,3 +30,6 @@ new Phaser.Game({
   },
   scene: [BootScene, InputRouterScene, FrontEndScene, NeighborhoodScene, CreekScene, UIScene, MenuScene],
 });
+
+// Phaser owns the sole SoundManager, its AudioContext, and autoplay unlock.
+audioManager.install(game.sound, game.events);

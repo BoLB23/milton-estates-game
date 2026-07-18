@@ -1,13 +1,10 @@
 import Phaser from "phaser";
-import { EVENT, gameEvents, type InputActionEvent } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
+import { MushroomHuntController } from "../world/MushroomHuntController";
+import type { RegionInteraction } from "../world/contracts";
+import type { WorldPoint } from "../world/tiledRuntime";
 import { inputState } from "./InputRouterScene";
-import type { DialogueLine, Interactable } from "../game/types";
-
-interface RegionInteraction extends Interactable {
-  width: number;
-  height: number;
-  isAvailable?: () => boolean;
-}
+import type { DialogueLine, Interactable, MapId } from "../game/types";
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
@@ -19,8 +16,31 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private lastHint = "";
   private nearbyInteractable?: Interactable;
   private playerFacing: "up" | "down" | "left" | "right" = "down";
+  private mushroomHunt?: MushroomHuntController;
 
   protected initializeWorld(spawn: { x: number; y: number }): void {
+    // Phaser reuses Scene instances after stop/start. All references below
+    // belong to one world run and must not survive a map revisit; stale pickup
+    // closures can otherwise target destroyed sprites instead of current ones.
+    this.interactables = [];
+    this.regionInteractables = [];
+    this.nearbyInteractable = undefined;
+    this.inputLocked = false;
+    this.interactionBlockedUntil = 0;
+    this.lastHint = "";
+    this.playerFacing = "down";
+    this.mushroomHunt = new MushroomHuntController({
+      world: this,
+      registerInteraction: (interactable) => this.registerInteraction(interactable),
+      unregisterInteraction: (id) => this.unregisterInteraction(id),
+      registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
+      unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
+      showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
+      objectPoint: (name) => this.objectPoint(name),
+    });
+    gameEvents.emit(EVENT.hint, "");
+
     this.obstacles = this.physics.add.staticGroup();
     this.player = this.physics.add.sprite(spawn.x, spawn.y, "billy").setName("player");
     this.player
@@ -30,17 +50,24 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       .setSize(110, 95)
       .setOffset(145, 275);
     this.physics.add.collider(this.player, this.obstacles);
-    this.input.keyboard?.on("keydown-F4", this.debugTeleportToObjective, this);
-    this.input.keyboard?.on("keydown-F6", this.debugTeleportToObjective, this);
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    // F4 is a development-only playtest hook. Playwright uses Vite's dev
+    // server, so this is unavailable from production builds by design.
+    if (import.meta.env.DEV) window.addEventListener("keydown", this.handleDebugKeyDown);
+    this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+    this.cameras.main.setRoundPixels(true);
     this.cameras.main.setZoom(1.25);
     gameEvents.on(EVENT.interactRequested, this.handleRequestedInteraction, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.input.keyboard?.off("keydown-F4", this.debugTeleportToObjective, this);
-      this.input.keyboard?.off("keydown-F6", this.debugTeleportToObjective, this);
+      if (import.meta.env.DEV) window.removeEventListener("keydown", this.handleDebugKeyDown);
       gameEvents.off(EVENT.interactRequested, this.handleRequestedInteraction, this);
       gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
+      gameEvents.emit(EVENT.dialogueCancelled);
+      this.nearbyInteractable = undefined;
+      this.lastHint = "";
+      gameEvents.emit(EVENT.hint, "");
+      this.mushroomHunt?.dispose();
+      this.mushroomHunt = undefined;
     });
   }
 
@@ -64,19 +91,33 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
 
   protected addObstacle(x: number, y: number, width: number, height: number): void {
     const zone = this.add.zone(x + width / 2, y + height / 2, width, height);
-    this.physics.add.existing(zone, true);
+    // StaticGroup creates the static Arcade body when the zone is added.
+    // Enabling it first creates and then re-registers the same body.
     this.obstacles.add(zone);
   }
 
-  protected registerInteraction(interactable: Interactable): void {
+  public registerInteraction(interactable: Interactable): void {
     this.interactables.push(interactable);
   }
 
-  protected registerRegionInteraction(interactable: RegionInteraction): void {
+  public unregisterInteraction(id: string): void {
+    this.interactables = this.interactables.filter((interactable) => interactable.id !== id);
+  }
+
+  /** Adds the currently authored mushrooms for this map and keeps pickups save-safe. */
+  protected addMushroomHunt(map: MapId): void {
+    this.mushroomHunt?.mount(map);
+  }
+
+  public registerRegionInteraction(interactable: RegionInteraction): void {
     this.regionInteractables.push(interactable);
   }
 
-  protected showDialogue(lines: DialogueLine[], onComplete?: () => void): void {
+  public unregisterRegionInteraction(id: string): void {
+    this.regionInteractables = this.regionInteractables.filter((interactable) => interactable.id !== id);
+  }
+
+  public showDialogue(lines: DialogueLine[], onComplete?: () => void): void {
     gameEvents.emit(EVENT.audioCue, "interaction");
     this.inputLocked = true;
     this.player.setVelocity(0, 0);
@@ -92,8 +133,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     });
   }
 
-  protected addLabel(x: number, y: number, text: string, color = "#173d32"): void {
-    this.add.text(x, y, text, {
+  public addLabel(x: number, y: number, text: string, color = "#173d32"): Phaser.GameObjects.Text {
+    return this.add.text(x, y, text, {
       fontFamily: "system-ui, sans-serif",
       fontSize: "15px",
       fontStyle: "bold",
@@ -101,6 +142,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       backgroundColor: "#fff9d8cc",
       padding: { x: 6, y: 3 },
     }).setOrigin(0.5).setDepth(20);
+  }
+
+  /** Subclasses with a TMJ runtime override this for their world controllers. */
+  public objectPoint(name: string): WorldPoint {
+    throw new Error(`No authored object source is active for ${name}`);
   }
 
   protected getDebugObjectivePosition(): { x: number; y: number } | undefined {
@@ -131,7 +177,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   private debugTeleportToObjective(): void {
-    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) return;
+    if (!import.meta.env.DEV) return;
     const target = this.getDebugObjectivePosition();
     if (!target) return;
     this.player.setPosition(target.x, target.y).setVelocity(0, 0);
@@ -146,20 +192,28 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     gameEvents.emit(EVENT.toast, "Playtest: moved to the current objective.");
   }
 
+  private handleDebugKeyDown = (event: KeyboardEvent): void => {
+    if (event.code === "F4" && !event.repeat) this.debugTeleportToObjective();
+  };
+
   private handleRequestedInteraction(): void {
-    if (this.sys.isPaused() || this.inputLocked || this.time.now < this.interactionBlockedUntil) return;
+    if (!this.sys.isActive() || this.sys.isPaused() || this.inputLocked || this.time.now < this.interactionBlockedUntil) return;
     this.nearbyInteractable?.interact();
   }
 
   private handleInputAction(event: InputActionEvent): void {
-    if (event.action !== "interact" || !event.pressed) return;
-    this.handleRequestedInteraction();
+    if (inputCapture.isCaptured() || event.action !== "interact" || !event.pressed) return;
+    // Let every listener finish handling this key event before opening world
+    // dialogue. A microtask is independent of the scene clock, so an input
+    // queued just before pause cannot survive and fire later on resume.
+    queueMicrotask(() => this.handleRequestedInteraction());
   }
 
   private closestInteractable(maxDistance: number): Interactable | undefined {
     let closest: Interactable | undefined;
     let distance = maxDistance;
     for (const candidate of this.interactables) {
+      if (candidate.isAvailable && !candidate.isAvailable()) continue;
       const next = Phaser.Math.Distance.Between(this.player.x, this.player.y, candidate.x, candidate.y);
       if (next < distance) {
         closest = candidate;

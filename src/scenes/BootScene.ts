@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { ILLUSTRATED_MAP_LAYERS, validateIllustratedMapLayers } from "../content/illustratedMapLayers";
+import { assetUrl } from "../content/assets";
+import { MAP_DEFINITIONS, validateMapDefinitions } from "../content/maps";
 import { gameStore } from "../game/GameStore";
 
 export class BootScene extends Phaser.Scene {
@@ -8,18 +9,20 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image("chapter-1-cover", "/assets/concepts/chapter-1-neighborhood-concept.png");
-    this.load.image("chapter-quest-browser-target", "/assets/concepts/phase-a/chapter-quest-browser-target.png");
-    this.load.image("regional-foldout-map", "/assets/concepts/phase-a/regional-foldout-map-target.png");
-    for (const layer of ILLUSTRATED_MAP_LAYERS) this.load.image(layer.textureKey, layer.imagePath);
-    this.load.spritesheet("billy", "/assets/characters/billy-hd-movement.png", {
+    this.load.image("chapter-1-cover", assetUrl("assets/concepts/chapter-1-neighborhood-concept.png"));
+    this.load.image("regional-foldout-map", assetUrl("assets/concepts/phase-a/regional-foldout-map-target.png"));
+    for (const map of Object.values(MAP_DEFINITIONS)) {
+      this.load.tilemapTiledJSON(map.tiledMapKey, assetUrl(map.tiledMapPath));
+      for (const layer of map.layers) this.load.image(layer.textureKey, layer.imagePath);
+    }
+    this.load.spritesheet("billy", assetUrl("assets/characters/billy-hd-movement.png"), {
       frameWidth: 400,
       frameHeight: 450,
     });
   }
 
   create(): void {
-    validateIllustratedMapLayers();
+    validateMapDefinitions();
     this.makeTextures();
     this.makeBillyAnimations();
     this.scene.launch("input-router");
@@ -49,6 +52,13 @@ export class BootScene extends Phaser.Scene {
     secret.lineStyle(2, 0x8d5f2b).strokeCircle(12, 11, 7);
     secret.fillStyle(0x8d5f2b).fillRect(10, 6, 4, 10).fillRect(7, 9, 10, 4);
     secret.generateTexture("secret", 24, 24).destroy();
+
+    const mushroom = this.make.graphics({ x: 0, y: 0 });
+    mushroom.fillStyle(0x6b3c2c).fillRoundedRect(11, 17, 7, 12, 3);
+    mushroom.fillStyle(0xb9433e).fillEllipse(14, 14, 25, 17);
+    mushroom.fillStyle(0xe6785b).fillEllipse(14, 12, 18, 10);
+    mushroom.fillStyle(0xffe8b0).fillCircle(9, 11, 2).fillCircle(15, 8, 2).fillCircle(19, 13, 2);
+    mushroom.generateTexture("mushroom", 28, 32).destroy();
   }
 
   private makeBillyAnimations(): void {

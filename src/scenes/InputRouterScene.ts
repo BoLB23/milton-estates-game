@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { EVENT, gameEvents } from "../game/events";
 import {
+  ActionOwnership,
   GAMEPAD_BUTTON_ACTIONS,
   actionForKeyboardCode,
   gamepadMovement,
@@ -12,25 +13,31 @@ import {
 const MOVE_ACTIONS: readonly SemanticAction[] = ["moveUp", "moveDown", "moveLeft", "moveRight"];
 
 class InputState {
-  private readonly pressed = new Set<SemanticAction>();
+  private readonly actions = new ActionOwnership();
+  private readonly movementActions = new ActionOwnership();
   private gamepad: MovementVector = { x: 0, y: 0 };
 
-  set(action: SemanticAction, pressed: boolean): void {
-    if (pressed) this.pressed.add(action); else this.pressed.delete(action);
+  set(action: SemanticAction, token: string, pressed: boolean, contributesToMovement: boolean): boolean {
+    const changed = this.actions.set(action, token, pressed);
+    if (contributesToMovement && MOVE_ACTIONS.includes(action)) {
+      this.movementActions.set(action, token, pressed);
+    }
+    return changed;
   }
 
   setGamepadMovement(movement: MovementVector): void { this.gamepad = movement; }
 
   movement(): MovementVector {
     const keyboardOrTouch = normalizeMovement(
-      Number(this.pressed.has("moveRight")) - Number(this.pressed.has("moveLeft")),
-      Number(this.pressed.has("moveDown")) - Number(this.pressed.has("moveUp")),
+      Number(this.movementActions.isPressed("moveRight")) - Number(this.movementActions.isPressed("moveLeft")),
+      Number(this.movementActions.isPressed("moveDown")) - Number(this.movementActions.isPressed("moveUp")),
     );
     return keyboardOrTouch.x || keyboardOrTouch.y ? keyboardOrTouch : this.gamepad;
   }
 
   clear(): void {
-    this.pressed.clear();
+    this.actions.clear();
+    this.movementActions.clear();
     this.gamepad = { x: 0, y: 0 };
   }
 }
@@ -41,6 +48,7 @@ export class InputRouterScene extends Phaser.Scene {
   private previousButtons = new Map<number, boolean>();
   private previousDirections = new Map<SemanticAction, boolean>();
   private touchReleases = new Map<HTMLElement, () => void>();
+  private nextTouchControlId = 0;
 
   constructor() { super("input-router"); }
 
@@ -51,14 +59,15 @@ export class InputRouterScene extends Phaser.Scene {
     document.querySelectorAll<HTMLElement>("[data-game-action]").forEach((element) => {
       const action = element.dataset.gameAction as SemanticAction | undefined;
       if (!action) return;
+      const controlId = this.nextTouchControlId++;
       const press = (event: PointerEvent) => {
         event.preventDefault();
         element.setPointerCapture?.(event.pointerId);
-        this.setAction(action, true, "touch");
+        this.setAction(action, true, "touch", `touch:${controlId}:${event.pointerId}`);
       };
       const release = (event: PointerEvent) => {
         event.preventDefault();
-        this.setAction(action, false, "touch");
+        this.setAction(action, false, "touch", `touch:${controlId}:${event.pointerId}`);
       };
       element.addEventListener("pointerdown", press);
       element.addEventListener("pointerup", release);
@@ -86,7 +95,7 @@ export class InputRouterScene extends Phaser.Scene {
     ];
     for (const [action, pressed] of directions) {
       if (pressed !== (this.previousDirections.get(action) ?? false)) {
-        this.setAction(action, pressed, "gamepad");
+        this.setAction(action, pressed, "gamepad", `gamepad:direction:${action}`);
         this.previousDirections.set(action, pressed);
       }
     }
@@ -94,7 +103,7 @@ export class InputRouterScene extends Phaser.Scene {
       const index = Number(button);
       const pressed = gamepad?.buttons[index]?.pressed ?? false;
       if (pressed !== (this.previousButtons.get(index) ?? false)) {
-        this.setAction(action, pressed, "gamepad");
+        this.setAction(action, pressed, "gamepad", `gamepad:button:${index}`);
         this.previousButtons.set(index, pressed);
       }
     }
@@ -102,22 +111,36 @@ export class InputRouterScene extends Phaser.Scene {
 
   private handleKeyDown = (event: KeyboardEvent): void => {
     const action = actionForKeyboardCode(event.code);
-    if (!action || event.repeat) return;
-    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
-    this.setAction(action, true, "keyboard");
+    if (!action) return;
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape"].includes(event.code)) event.preventDefault();
+    // Browser key repeat can otherwise make Escape/B appear unreliable: the
+    // first repeated keydown may close a newly opened menu immediately.
+    if (event.repeat) return;
+    this.setAction(action, true, "keyboard", `keyboard:${event.code}`);
   };
 
   private handleKeyUp = (event: KeyboardEvent): void => {
     const action = actionForKeyboardCode(event.code);
-    if (action) this.setAction(action, false, "keyboard");
+    if (action) this.setAction(action, false, "keyboard", `keyboard:${event.code}`);
   };
 
-  private setAction(action: SemanticAction, pressed: boolean, source: "keyboard" | "gamepad" | "touch"): void {
-    if (source !== "gamepad" && MOVE_ACTIONS.includes(action)) inputState.set(action, pressed);
-    gameEvents.emit(EVENT.inputAction, { action, pressed, source });
+  private setAction(
+    action: SemanticAction,
+    pressed: boolean,
+    source: "keyboard" | "gamepad" | "touch",
+    token: string,
+  ): void {
+    const changed = inputState.set(action, token, pressed, source !== "gamepad");
+    if (changed) gameEvents.emit(EVENT.inputAction, { action, pressed, source });
   }
 
-  private handleBlur = (): void => inputState.clear();
+  private handleBlur = (): void => this.resetInputState();
+
+  private resetInputState(): void {
+    inputState.clear();
+    this.previousButtons.clear();
+    this.previousDirections.clear();
+  }
 
   private cleanup(): void {
     window.removeEventListener("keydown", this.handleKeyDown);
@@ -125,6 +148,7 @@ export class InputRouterScene extends Phaser.Scene {
     window.removeEventListener("blur", this.handleBlur);
     this.touchReleases.forEach((release) => release());
     this.touchReleases.clear();
-    inputState.clear();
+    this.nextTouchControlId = 0;
+    this.resetInputState();
   }
 }

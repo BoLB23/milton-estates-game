@@ -92,7 +92,7 @@ Build one shared selection model used by both the front end and Backpack:
 
 The front end should render a horizontally browseable Chapter Scrapbook with visible arrows, page count, focus state, and a selected-page detail panel. The Quest Journal should show a scrollable/card list and a selected-quest detail page. Mouse wheel/pointer, keyboard, gamepad, and touch must all expose the same navigation.
 
-Billy's Backpack should gain a registry-backed **Journal** experience rather than displaying only `selectMissingControllerQuestDisplay(...)`. It may still open focused on the active quest, but the player must be able to browse every configured Chapter 1 quest and switch to the chapter pages. Add an explicit “Return to title / Chapter Select” action behind confirmation if it exits active gameplay.
+Billy's Backpack should use the registry-backed **Journal** experience rather than a single-quest checklist. It may still open focused on the active quest, but the player must be able to browse every configured Chapter 1 quest and switch to the chapter pages. Add an explicit “Return to title / Chapter Select” action behind confirmation if it exits active gameplay.
 
 Do not invent named future chapters without narrative approval. Undefined pages should still be selectable mystery pages. The selection system and UI tests should nevertheless support defined locked chapters when content is added later.
 

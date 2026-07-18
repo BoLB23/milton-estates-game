@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionForKeyboardCode, applyDeadzone, gamepadMovement } from "./actions";
+import { ActionOwnership, actionForKeyboardCode, applyDeadzone, gamepadMovement } from "./actions";
 
 function pad(axes: number[], pressed: number[] = []): Pick<Gamepad, "axes" | "buttons"> {
   return {
@@ -14,6 +14,7 @@ describe("semantic input mapping", () => {
     expect(actionForKeyboardCode("ArrowUp")).toBe("moveUp");
     expect(actionForKeyboardCode("Space")).toBe("interact");
     expect(actionForKeyboardCode("Escape")).toBe("back");
+    expect(actionForKeyboardCode("KeyB")).toBe("menu");
   });
 
   it("removes stick drift and rescales deliberate input", () => {
@@ -27,5 +28,29 @@ describe("semantic input mapping", () => {
     const diagonal = gamepadMovement(pad([1, 1]));
     expect(diagonal.x).toBeCloseTo(Math.SQRT1_2);
     expect(diagonal.y).toBeCloseTo(Math.SQRT1_2);
+  });
+
+  it("keeps an action pressed until every keyboard alias releases", () => {
+    const ownership = new ActionOwnership();
+
+    expect(ownership.set("moveUp", "keyboard:KeyW", true)).toBe(true);
+    expect(ownership.set("moveUp", "keyboard:ArrowUp", true)).toBe(false);
+    expect(ownership.set("moveUp", "keyboard:KeyW", false)).toBe(false);
+    expect(ownership.isPressed("moveUp")).toBe(true);
+    expect(ownership.set("moveUp", "keyboard:ArrowUp", false)).toBe(true);
+    expect(ownership.isPressed("moveUp")).toBe(false);
+  });
+
+  it("keeps keyboard and multi-touch owners independent", () => {
+    const ownership = new ActionOwnership();
+
+    ownership.set("moveLeft", "keyboard:KeyA", true);
+    ownership.set("moveLeft", "touch:3:11", true);
+    ownership.set("moveLeft", "touch:3:12", true);
+
+    expect(ownership.set("moveLeft", "touch:3:11", false)).toBe(false);
+    expect(ownership.set("moveLeft", "keyboard:KeyA", false)).toBe(false);
+    expect(ownership.isPressed("moveLeft")).toBe(true);
+    expect(ownership.set("moveLeft", "touch:3:12", false)).toBe(true);
   });
 });
