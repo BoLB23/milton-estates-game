@@ -1,135 +1,20 @@
+import type {
+  ChapterDefinition,
+  QuestDefinition,
+} from "../engine/content/contracts";
 import type { ChapterId, QuestId } from "../game/types";
+import {
+  CHAPTER_BY_ID,
+  CHAPTER_REGISTRY,
+  QUEST_BY_ID,
+} from "./registry";
 
-export type QuestKind = "main" | "side" | "finale";
-
-export interface QuestDefinition {
-  id: QuestId;
-  chapterId: ChapterId;
-  title: string;
-  description: string;
-  kind: QuestKind;
-  required: boolean;
-  optional: boolean;
-  prerequisiteQuestIds: readonly QuestId[];
-  implemented: boolean;
-}
-
-export interface ChapterDefinition {
-  id: ChapterId;
-  number: number;
-  title: string;
-  description: string;
-  dateLabel: string;
-  coverAssetKey: string;
-  prerequisiteChapterId?: ChapterId;
-  quests: readonly QuestDefinition[];
-}
-
-const chapterOneQuests = [
-  {
-    id: "missing_controller",
-    chapterId: "chapter_1",
-    title: "The Missing Controller",
-    description: "Help Jeremy track down his missing Xbox controller.",
-    kind: "main",
-    required: true,
-    optional: false,
-    prerequisiteQuestIds: [],
-    implemented: true,
-  },
-  {
-    id: "andrew_mushroom_hunt",
-    chapterId: "chapter_1",
-    title: "Mushrooms for Andrew",
-    description: "Find ten mushrooms across Milton's backyards and Creek Woods, then share them with the neighborhood.",
-    kind: "side",
-    required: false,
-    optional: true,
-    prerequisiteQuestIds: ["missing_controller"],
-    implemented: true,
-  },
-  {
-    id: "three_player_sports",
-    chapterId: "chapter_1",
-    title: "Three-Player Sports Day",
-    description: "Meet Jeremy to skateboard, Billy to play baseball, and Andrew to play basketball together.",
-    kind: "side",
-    required: false,
-    optional: true,
-    prerequisiteQuestIds: ["andrew_mushroom_hunt"],
-    implemented: true,
-  },
-  {
-    id: "catch_ryan",
-    chapterId: "chapter_1",
-    title: "Catch Ryan",
-    description: "Ryan challenges Billy to a bicycle ride out to Reidenbaugh.",
-    kind: "side",
-    required: false,
-    optional: true,
-    prerequisiteQuestIds: ["three_player_sports"],
-    implemented: true,
-  },
-  {
-    id: "storm_drain_detectives",
-    chapterId: "chapter_1",
-    title: "Storm Drain Detectives",
-    description: "A future neighborhood mystery, penciled into Billy's journal.",
-    kind: "main",
-    required: true,
-    optional: false,
-    prerequisiteQuestIds: ["missing_controller"],
-    implemented: false,
-  },
-  {
-    id: "creek_token_hunt",
-    chapterId: "chapter_1",
-    title: "Creek Token Hunt",
-    description: "A future optional hunt through Creek Woods.",
-    kind: "side",
-    required: false,
-    optional: true,
-    prerequisiteQuestIds: ["missing_controller"],
-    implemented: false,
-  },
-  {
-    id: "last_day_of_summer",
-    chapterId: "chapter_1",
-    title: "The Last Day of Summer",
-    description: "Chapter finale. Finish every required memory to unlock it.",
-    kind: "finale",
-    required: true,
-    optional: false,
-    prerequisiteQuestIds: [],
-    implemented: false,
-  },
-] as const satisfies readonly QuestDefinition[];
-
-export const CHAPTER_REGISTRY = [
-  {
-    id: "chapter_1",
-    number: 1,
-    title: "Summer in Milton Estates",
-    description: "Long afternoons, neighborhood mysteries, and the paths into Creek Woods.",
-    dateLabel: "Summer 2007",
-    coverAssetKey: "chapter-1-cover",
-    quests: chapterOneQuests,
-  },
-] as const satisfies readonly ChapterDefinition[];
-
-export const CHAPTER_BY_ID: Readonly<Record<ChapterId, ChapterDefinition>> = Object.freeze({
-  chapter_1: CHAPTER_REGISTRY[0],
-});
-
-export const QUEST_BY_ID: Readonly<Record<QuestId, QuestDefinition>> = Object.freeze({
-  missing_controller: chapterOneQuests[0],
-  andrew_mushroom_hunt: chapterOneQuests[1],
-  three_player_sports: chapterOneQuests[2],
-  catch_ryan: chapterOneQuests[3],
-  storm_drain_detectives: chapterOneQuests[4],
-  creek_token_hunt: chapterOneQuests[5],
-  last_day_of_summer: chapterOneQuests[6],
-});
+export type {
+  ChapterDefinition,
+  QuestDefinition,
+  QuestKind,
+} from "../engine/content/contracts";
+export { CHAPTER_BY_ID, CHAPTER_REGISTRY, QUEST_BY_ID };
 
 export interface RegistryProgress {
   activeChapterId: ChapterId;

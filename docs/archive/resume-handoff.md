@@ -17,7 +17,7 @@ Implemented systems include SaveData v2 migration, autosave/manual save, confirm
 ## Start the next session
 
 1. Read `README.md` for local run commands.
-2. Read `docs/next-steps.md`; begin at **Recommended next milestone**.
+2. Read `docs/archive/next-steps.md`; begin at **Recommended next milestone**.
 3. Run `git status --short --branch` and `npm run check:full` before editing.
 4. Use F3 for local state diagnostics and F4 to jump to the current objective during rapid playtesting. These shortcuts work in development builds only.
 
@@ -25,4 +25,4 @@ Implemented systems include SaveData v2 migration, autosave/manual save, confirm
 
 Focus on navigation and feedback polish: first-launch controls, clearer side-yard/creek route cues, an inventory indicator, stronger pickup/completion feedback, and two observed new-player sessions. Keep the graybox and its stable quest/transition IDs until those sessions pass.
 
-Do not start the Tiled map/art conversion in the same slice. Once navigation polish passes, the production-map work is already specified in `docs/maps/first-area-plan.md` and the production section of `docs/next-steps.md`.
+Do not start the Tiled map/art conversion in the same slice. Once navigation polish passes, the production-map work is already specified in `docs/archive/first-area-plan.md` and the production section of `docs/archive/next-steps.md`.

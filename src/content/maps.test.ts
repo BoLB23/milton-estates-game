@@ -24,6 +24,7 @@ describe("map content", () => {
   it("always shows exits and initially visible landmarks", () => {
     const markers = selectVisibleMapMarkers({
       currentMap: "neighborhood",
+      questId: "missing_controller",
       stage: "talk_to_jeremy",
       discoveredIds: [],
     });
@@ -39,6 +40,7 @@ describe("map content", () => {
     const discovered = ["jeremy_home"] as const;
     const markers = selectVisibleMapMarkers({
       currentMap: "neighborhood",
+      questId: "missing_controller",
       stage: "complete",
       discoveredIds: discovered,
     });
@@ -50,13 +52,24 @@ describe("map content", () => {
   it("selects only the objective for the supplied map and quest stage", () => {
     expect(selectActiveObjectiveMarker({
       currentMap: "creek",
+      questId: "missing_controller",
       stage: "search_creek",
       discoveredIds: new Set(),
     })?.id).toBe("obj_controller");
 
     expect(selectActiveObjectiveMarker({
       currentMap: "creek",
+      questId: "missing_controller",
       stage: "complete",
+      discoveredIds: [],
+    })).toBeUndefined();
+  });
+
+  it("does not reveal another quest's objective when stage names overlap", () => {
+    expect(selectActiveObjectiveMarker({
+      currentMap: "creek",
+      questId: "andrew_mushroom_hunt",
+      stage: "search_creek",
       discoveredIds: [],
     })).toBeUndefined();
   });

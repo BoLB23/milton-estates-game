@@ -74,12 +74,16 @@ During development builds, F3 toggles a state panel and F4 moves Billy to the cu
 
 ## Project shape
 
-- `src/scenes/` contains Phaser scene orchestration and placeholder map presentation.
-- `src/content/` contains typed dialogue and pure quest progression.
+- `src/engine/` contains content contracts and validation that authored modules depend on.
+- `src/content/chapters/` contains chapter and quest-owned definitions, rules, dialogue, and bindings.
+- `src/content/registry.ts` is the explicit composition root for the shipped content catalog.
+- `src/scenes/` contains Phaser scene orchestration and map presentation.
 - `src/game/` contains shared types, events, and the versioned local save store.
-- `docs/` contains the durable concept and first-area map contract.
+- `docs/` contains the durable concept, architecture and art contracts, provenance, and archived implementation records.
 
-The current production pass uses original programmatic pixel art governed by [the art contract](docs/art-direction.md), with a generated fictionalized Chapter 1 cover. The map contract remains compatible with a later Tiled export while preserving stable interaction and quest IDs. Checkpoint assets, temporary-art notes, and risks are tracked in [the production-polish manifest](docs/production-polish-manifest.md).
+The illustrated presentation is governed by [the art contract](docs/art-direction.md), with a generated fictionalized Chapter 1 cover. Stable interaction and quest IDs remain independent of map artwork. Completed production checkpoints and their historical temporary-art notes are preserved in the [production-polish archive](docs/archive/production-polish-manifest.md).
+
+See [content architecture and authoring](docs/content-architecture.md) before adding a chapter or quest.
 
 ## Validation
 
