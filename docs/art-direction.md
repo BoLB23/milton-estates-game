@@ -42,4 +42,4 @@ This contract keeps Chapter 1 assets coherent while the game grows. The supplied
 
 ## Asset status
 
-The current production pass uses original code-authored pixel shapes so collision and quest coordinates remain exact. Generated concept art may guide composition and chapter-cover mood, but gameplay art must be cleaned into this scale/palette before shipping. Temporary assets and outstanding replacements are tracked in `docs/production-polish-manifest.md`.
+The original production pass and its temporary-asset decisions are recorded in the [archived checkpoint manifest](archive/production-polish-manifest.md). Generated concept art may guide composition and chapter-cover mood, but gameplay art should remain consistent with this scale and palette.

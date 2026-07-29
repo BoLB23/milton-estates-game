@@ -389,6 +389,7 @@ export class MenuScene extends Phaser.Scene {
     const playerPosition = projectRegionalMapPoint(definition, playerLocation);
     const objective = selectActiveObjectiveMarker({
       currentMap: this.state.currentMap,
+      questId: this.state.activeQuestId,
       stage: this.state.questStage,
       discoveredIds: [],
     });

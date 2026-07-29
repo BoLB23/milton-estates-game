@@ -41,6 +41,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
       objectPoint: (name) => this.tiledWorld.point(name),
       enterWoods: () => this.enterWoods(),
       refreshMushroomHunt: () => this.addMushroomHunt("neighborhood"),
+      refreshQuestBindings: () => this.questController?.mount(),
       onRideSelected: () => this.startRide(),
       enterReidenbaughRoad: () => this.enterReidenbaughRoad(),
     });
