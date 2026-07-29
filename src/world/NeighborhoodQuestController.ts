@@ -20,15 +20,19 @@ import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import type { MissingControllerStage } from "../game/types";
 import type { ExplorationInteractionHost } from "./contracts";
 import { isSportsMeetupStage, SPORTS_MEETUPS, type SportsMeetupStage } from "./neighborhoodPresentation";
+import { RYAN_DECLINE, RYAN_DEPARTURE, RYAN_DESTINATION_LEAD, RYAN_INVITATION } from "../content/ryanRideDialogue";
 
 const INTERACTION_IDS = [
   "jeremy", "andrew", "billy_home", "side_yard_gap", "woods_gate",
   "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville",
+  "ryan", "reidenbaugh_exit",
 ] as const;
 
 export interface NeighborhoodQuestControllerHost extends ExplorationInteractionHost {
   enterWoods(): void;
   refreshMushroomHunt(): void;
+  onRideSelected(): void;
+  enterReidenbaughRoad(): void;
 }
 
 /**
@@ -62,6 +66,12 @@ export class NeighborhoodQuestController {
     if (state.activeQuestId === "three_player_sports" && isSportsMeetupStage(state.questStage)) {
       this.addSportsMeetup(state.questStage);
       return;
+    }
+
+    if (state.activeQuestId === "catch_ryan" && (state.questStage === "invite" || state.questStage === "choose_destination")) {
+      const ryan = this.host.objectPoint("ryan_invite");
+      this.characters.push(this.host.world.add.sprite(ryan.x, ryan.y, "ryan").setDepth(45).setScale(1.2));
+      this.characters.push(this.host.addLabel(ryan.x, ryan.y - 48, "Ryan!", "#315f92"));
     }
 
     const finaleMeetup = state.activeQuestId === "missing_controller"
@@ -114,6 +124,11 @@ export class NeighborhoodQuestController {
       interact: () => this.talkToJeremy(),
     });
     this.host.registerRegionInteraction({
+      id: "ryan", ...this.host.objectPoint("ryan_invite"), width: 180, height: 110, label: "Talk to Ryan",
+      isAvailable: () => gameStore.isRyanRideStage("invite") || gameStore.isRyanRideStage("choose_destination"),
+      interact: () => this.talkToRyan(),
+    });
+    this.host.registerRegionInteraction({
       id: "andrew", ...this.host.objectPoint("andrew"), width: 190, height: 105, label: "Talk to Andrew",
       isAvailable: () => gameStore.isQuestAt("missing_controller", "talk_to_andrew")
         || gameStore.isQuestAt("andrew_mushroom_hunt", "talk_to_andrew_for_mushrooms")
@@ -144,6 +159,12 @@ export class NeighborhoodQuestController {
         interact: () => this.host.showDialogue(getBlockedRouteDialogue(route, gameStore.getState().questStage)),
       });
     }
+    const exit = this.host.objectPoint("reidenbaugh_exit");
+    this.host.registerRegionInteraction({
+      id: "reidenbaugh_exit", ...exit, width: 170, height: 120, label: "Ride to Reidenbaugh",
+      isAvailable: () => gameStore.isRyanRideStage("complete"),
+      interact: () => this.host.enterReidenbaughRoad(),
+    });
   }
 
   private talkToJeremy(): void {
@@ -189,6 +210,47 @@ export class NeighborhoodQuestController {
     } else if (state.activeQuestId === "three_player_sports" && state.questStage === "meet_billy_to_play_baseball") {
       this.host.showDialogue(getSportsDialogue("billy"), () => this.advanceSports({ type: "played_baseball_with_billy" }));
     }
+  }
+
+  private talkToRyan(): void {
+    if (gameStore.isRyanRideStage("choose_destination")) {
+      this.host.showDialogue([...RYAN_DESTINATION_LEAD], () => this.showDestinationChoice());
+      return;
+    }
+    this.host.showDialogue([...RYAN_INVITATION], () => this.host.showChoice({
+      speaker: "Ryan",
+      prompt: "Want to go for a bike ride?",
+      options: [{ id: "yes", label: "Yes" }, { id: "later", label: "Not right now" }],
+      onSelect: (id) => {
+        if (id === "later") this.host.showDialogue([...RYAN_DECLINE]);
+        else {
+          gameStore.acceptRyanRide();
+          this.host.showDialogue([...RYAN_DESTINATION_LEAD], () => this.showDestinationChoice());
+        }
+      },
+    }));
+  }
+
+  private showDestinationChoice(): void {
+    this.host.showChoice({
+      speaker: "Ryan",
+      prompt: "Where should we go?",
+      options: [
+        { id: "reidenbaugh", label: "Reidenbaugh" },
+        { id: "bent_creek", label: "Bent Creek — Coming later", enabled: false, disabledReason: "Coming later" },
+        { id: "back", label: "Back" },
+      ],
+      onSelect: (id) => {
+        if (id === "back") {
+          gameStore.returnToRyanRideInvitation();
+          return;
+        }
+        if (id !== "reidenbaugh") return;
+        gameStore.selectRyanRideDestination();
+        this.host.world.events.emit("ryan-map-reveal");
+        this.host.showDialogue([...RYAN_DEPARTURE], () => this.host.onRideSelected());
+      },
+    });
   }
 
   private inspectGap(): void {

@@ -15,6 +15,7 @@ describe("semantic input mapping", () => {
     expect(actionForKeyboardCode("Space")).toBe("interact");
     expect(actionForKeyboardCode("Escape")).toBe("back");
     expect(actionForKeyboardCode("KeyB")).toBe("menu");
+    expect(actionForKeyboardCode("KeyF")).toBe("toggleBicycle");
   });
 
   it("removes stick drift and rescales deliberate input", () => {

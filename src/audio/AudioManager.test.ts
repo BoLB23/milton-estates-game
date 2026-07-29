@@ -25,6 +25,12 @@ describe("deriveAudioCues", () => {
     expect(deriveAudioCues(previous, state({ questStage: "complete" })))
       .toEqual(["questComplete"]);
   });
+
+  it("keeps the Sports Day completion cue when Catch Ryan activates in the same save", () => {
+    const previous = state({ activeQuestId: "three_player_sports", questStage: "meet_andrew_to_play_basketball", completedQuestIds: [] });
+    const next = state({ activeQuestId: "catch_ryan", questStage: "invite", completedQuestIds: ["three_player_sports"] });
+    expect(deriveAudioCues(previous, next)).toEqual(["questComplete"]);
+  });
 });
 
 class FakeSoundManager implements SoundManagerAdapter {

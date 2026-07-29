@@ -1,10 +1,12 @@
 import Phaser from "phaser";
-import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type ChoiceRequest, type InputActionEvent } from "../game/events";
 import { MushroomHuntController } from "../world/MushroomHuntController";
+import { PlayerLocomotionController, type PlayerTravelMode } from "../world/PlayerLocomotionController";
 import type { RegionInteraction } from "../world/contracts";
 import type { WorldPoint } from "../world/tiledRuntime";
 import { inputState } from "./InputRouterScene";
 import type { DialogueLine, Interactable, MapId } from "../game/types";
+import { getMapDefinition, normalizeWorldMapPoint } from "../content/maps";
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
@@ -17,8 +19,13 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private nearbyInteractable?: Interactable;
   private playerFacing: "up" | "down" | "left" | "right" = "down";
   private mushroomHunt?: MushroomHuntController;
+  private locomotion = new PlayerLocomotionController();
+  private travelMode: PlayerTravelMode = "walking";
+  private bicycleAvailable = false;
+  private bicycleVisual?: Phaser.GameObjects.Graphics;
+  private mapId!: MapId;
 
-  protected initializeWorld(spawn: { x: number; y: number }): void {
+  protected initializeWorld(mapId: MapId, spawn: { x: number; y: number }): void {
     // Phaser reuses Scene instances after stop/start. All references below
     // belong to one world run and must not survive a map revisit; stale pickup
     // closures can otherwise target destroyed sprites instead of current ones.
@@ -29,6 +36,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.interactionBlockedUntil = 0;
     this.lastHint = "";
     this.playerFacing = "down";
+    this.travelMode = "walking";
+    this.locomotion = new PlayerLocomotionController();
+    this.bicycleAvailable = false;
+    this.bicycleVisual = undefined;
+    this.mapId = mapId;
     this.mushroomHunt = new MushroomHuntController({
       world: this,
       registerInteraction: (interactable) => this.registerInteraction(interactable),
@@ -36,6 +48,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
       unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
       showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      showChoice: (request) => this.showChoice(request),
       addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
       objectPoint: (name) => this.objectPoint(name),
     });
@@ -49,6 +62,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       .setCollideWorldBounds(true)
       .setSize(110, 95)
       .setOffset(145, 275);
+    this.bicycleVisual = this.add.graphics().setDepth(49).setVisible(false);
+    this.drawBicycleVisual();
+    this.emitPlayerLocation();
     this.physics.add.collider(this.player, this.obstacles);
     // F4 is a development-only playtest hook. Playwright uses Vite's dev
     // server, so this is unavailable from production builds by design.
@@ -63,6 +79,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       gameEvents.off(EVENT.interactRequested, this.handleRequestedInteraction, this);
       gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
       gameEvents.emit(EVENT.dialogueCancelled);
+      gameEvents.emit(EVENT.choiceCancelled);
       this.nearbyInteractable = undefined;
       this.lastHint = "";
       gameEvents.emit(EVENT.hint, "");
@@ -71,13 +88,13 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     });
   }
 
-  update(): void {
+  update(_time = 0, delta = 16.67): void {
     const movement = inputState.movement();
-    this.player.setVelocity(
-      this.inputLocked ? 0 : movement.x * 190,
-      this.inputLocked ? 0 : movement.y * 190,
-    );
-    this.updatePlayerPresentation(movement);
+    const next = this.locomotion.update(movement, delta, this.inputLocked);
+    this.player.setVelocity(next.velocityX, next.velocityY);
+    this.updatePlayerPresentation({ x: next.velocityX, y: next.velocityY }, next.speed > 0);
+    this.syncBicycleVisual();
+    this.emitPlayerLocation();
 
     const nearby = this.closestInteractable(62);
     this.nearbyInteractable = nearby;
@@ -87,6 +104,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.lastHint = hint;
     }
 
+  }
+
+  private emitPlayerLocation(): void {
+    const point = normalizeWorldMapPoint(getMapDefinition(this.mapId), this.player);
+    gameEvents.emit(EVENT.playerLocationChanged, { map: this.mapId, ...point });
   }
 
   protected addObstacle(x: number, y: number, width: number, height: number): void {
@@ -105,7 +127,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   /** Adds the currently authored mushrooms for this map and keeps pickups save-safe. */
-  protected addMushroomHunt(map: MapId): void {
+  protected addMushroomHunt(map: Extract<MapId, "neighborhood" | "creek">): void {
     this.mushroomHunt?.mount(map);
   }
 
@@ -133,6 +155,48 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     });
   }
 
+  /** Opens a UI-owned choice while retaining the world movement lock. */
+  public showChoice(request: ChoiceRequest): void {
+    this.inputLocked = true;
+    this.player.setVelocity(0, 0);
+    gameEvents.emit(EVENT.choice, {
+      ...request,
+      onSelect: (optionId) => {
+        this.inputLocked = false;
+        this.interactionBlockedUntil = this.time.now + 180;
+        request.onSelect(optionId);
+      },
+      onCancel: () => {
+        this.inputLocked = false;
+        this.interactionBlockedUntil = this.time.now + 180;
+        request.onCancel?.();
+      },
+    });
+  }
+
+  /** Selects the shared movement core and updates collision immediately. */
+  protected setPlayerTravelMode(mode: PlayerTravelMode): void {
+    if (this.travelMode === mode) return;
+    this.travelMode = mode;
+    this.locomotion.setMode(mode);
+    this.player.setVelocity(0, 0);
+    if (mode === "bicycle") this.player.setSize(150, 105).setOffset(125, 260);
+    else this.player.setSize(110, 95).setOffset(145, 275);
+    (this.player.body as Phaser.Physics.Arcade.Body).reset(this.player.x, this.player.y);
+    this.syncBicycleVisual();
+  }
+
+  /** Enables the post-quest F-key bicycle switch without changing the current mode. */
+  protected enableBicycleToggle(): void {
+    this.bicycleAvailable = true;
+  }
+
+  protected getPlayerPosition(): { x: number; y: number } {
+    return { x: this.player.x, y: this.player.y };
+  }
+
+  protected getPlayerSprite(): Phaser.Physics.Arcade.Sprite { return this.player; }
+
   public addLabel(x: number, y: number, text: string, color = "#173d32"): Phaser.GameObjects.Text {
     return this.add.text(x, y, text, {
       fontFamily: "system-ui, sans-serif",
@@ -153,8 +217,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     return undefined;
   }
 
-  private updatePlayerPresentation(movement: { x: number; y: number }): void {
-    const moving = !this.inputLocked && (movement.x !== 0 || movement.y !== 0);
+  private updatePlayerPresentation(movement: { x: number; y: number }, moving: boolean): void {
     if (moving) {
       if (Math.abs(movement.x) > Math.abs(movement.y)) {
         this.playerFacing = movement.x < 0 ? "left" : "right";
@@ -170,10 +233,35 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     // is the mirrored case. Keeping this here makes player intent and visual
     // direction share a single source of truth.
     this.player.setFlipX(this.playerFacing === "left");
+    const prefix = this.travelMode === "bicycle" ? "billy-bike" : "billy";
+    const motion = this.travelMode === "bicycle" ? "ride" : "walk";
     this.player.anims.play(
-      moving ? `billy-walk-${presentationFacing}` : `billy-idle-${presentationFacing}`,
+      moving ? `${prefix}-${motion}-${presentationFacing}` : `${prefix}-idle-${presentationFacing}`,
       true,
     );
+  }
+
+  /** Drawn behind Billy so bicycle mode is visually distinct from walking. */
+  private drawBicycleVisual(): void {
+    const bike = this.bicycleVisual;
+    if (!bike) return;
+    bike.clear();
+    bike.lineStyle(4, 0x202d38, 1).strokeCircle(-25, 10, 12).strokeCircle(25, 10, 12);
+    bike.lineStyle(4, 0xc84c3f, 1)
+      .lineBetween(-25, 10, -3, -11)
+      .lineBetween(-3, -11, 8, 10)
+      .lineBetween(8, 10, -25, 10)
+      .lineBetween(-3, -11, 19, -11)
+      .lineBetween(19, -11, 25, 10)
+      .lineBetween(19, -11, 26, -21)
+      .lineBetween(23, -21, 31, -21);
+    bike.fillStyle(0xf2c35c, 1).fillCircle(-3, -11, 3);
+  }
+
+  private syncBicycleVisual(): void {
+    this.bicycleVisual
+      ?.setPosition(this.player.x, this.player.y + 28)
+      .setVisible(this.travelMode === "bicycle");
   }
 
   private debugTeleportToObjective(): void {
@@ -202,7 +290,15 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   private handleInputAction(event: InputActionEvent): void {
-    if (inputCapture.isCaptured() || event.action !== "interact" || !event.pressed) return;
+    if (!event.pressed || inputCapture.isCaptured()) return;
+    if (event.action === "toggleBicycle") {
+      if (!this.bicycleAvailable || this.inputLocked) return;
+      const next = this.travelMode === "bicycle" ? "walking" : "bicycle";
+      this.setPlayerTravelMode(next);
+      gameEvents.emit(EVENT.toast, next === "bicycle" ? "Bicycle enabled — press F to walk." : "Walking — press F to ride your bike.");
+      return;
+    }
+    if (event.action !== "interact") return;
     // Let every listener finish handling this key event before opening world
     // dialogue. A microtask is independent of the scene clock, so an input
     // queued just before pause cannot survive and fire later on resume.

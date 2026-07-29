@@ -10,7 +10,7 @@ export class MushroomHuntController {
 
   public constructor(private readonly host: ExplorationInteractionHost) {}
 
-  public mount(map: MapId): void {
+  public mount(map: Extract<MapId, "neighborhood" | "creek">): void {
     this.dispose();
     const state = gameStore.getState();
     if (state.activeQuestId !== "andrew_mushroom_hunt"

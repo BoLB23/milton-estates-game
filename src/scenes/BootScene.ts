@@ -25,6 +25,7 @@ export class BootScene extends Phaser.Scene {
     validateMapDefinitions();
     this.makeTextures();
     this.makeBillyAnimations();
+    this.makeBikeAnimations();
     this.scene.launch("input-router");
     // Persist migrations and establish an initial autosave before play begins.
     gameStore.saveNow();
@@ -34,6 +35,7 @@ export class BootScene extends Phaser.Scene {
   private makeTextures(): void {
     this.makePerson("andrew", 0xf29f3d, 0xe5b887);
     this.makePerson("jeremy", 0xd85b63, 0xd7a36d);
+    this.makePerson("ryan", 0x4f8cc9, 0xe0ad8b);
 
     const controller = this.make.graphics({ x: 0, y: 0 });
     controller.fillStyle(0x182127).fillRoundedRect(2, 8, 28, 18, 7);
@@ -80,6 +82,33 @@ export class BootScene extends Phaser.Scene {
     makeWalk("billy-walk-side", [4, 5]);
     makeIdle("billy-idle-up", 6);
     makeWalk("billy-walk-up", [6, 7]);
+  }
+
+  /** First-release bike presentation reuses the authored four-direction Billy sheet. */
+  private makeBikeAnimations(): void {
+    const make = (key: string, frames: number[], moving: boolean) => {
+      if (this.anims.exists(key)) return;
+      this.anims.create({
+        key,
+        frames: frames.map((frame) => ({ key: "billy", frame })),
+        frameRate: moving ? 10 : 1,
+        repeat: moving ? -1 : 0,
+      });
+    };
+    make("billy-bike-idle-down", [0], false);
+    make("billy-bike-ride-down", [0, 1], true);
+    make("billy-bike-idle-side", [4], false);
+    make("billy-bike-ride-side", [4, 5], true);
+    make("billy-bike-idle-up", [6], false);
+    make("billy-bike-ride-up", [6, 7], true);
+    for (const facing of ["down", "side", "up"] as const) {
+      for (const state of ["idle", "ride"] as const) {
+        const key = `ryan-bike-${state}-${facing}`;
+        if (!this.anims.exists(key)) {
+          this.anims.create({ key, frames: [{ key: "ryan" }], frameRate: 1, repeat: state === "ride" ? -1 : 0 });
+        }
+      }
+    }
   }
 
   private makePerson(key: string, shirt: number, skin: number): void {

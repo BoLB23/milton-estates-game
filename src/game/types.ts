@@ -1,4 +1,4 @@
-export type MapId = "neighborhood" | "creek";
+export type MapId = "neighborhood" | "creek" | "reidenbaugh_road" | "reidenbaugh";
 
 /** Stable content IDs. These values are persisted and must not be renamed. */
 export type ChapterId = "chapter_1";
@@ -6,6 +6,7 @@ export type QuestId =
   | "missing_controller"
   | "andrew_mushroom_hunt"
   | "three_player_sports"
+  | "catch_ryan"
   | "storm_drain_detectives"
   | "creek_token_hunt"
   | "last_day_of_summer";
@@ -14,7 +15,8 @@ export type QuestId =
 export type ImplementedQuestId =
   | "missing_controller"
   | "andrew_mushroom_hunt"
-  | "three_player_sports";
+  | "three_player_sports"
+  | "catch_ryan";
 
 export type MissingControllerStage =
   | "talk_to_jeremy"
@@ -37,14 +39,24 @@ export type SportsQuestStage =
   | "meet_andrew_to_play_basketball"
   | "complete";
 
+export type RideDestination = "reidenbaugh";
+export type RyanRideStage =
+  | "invite"
+  | "choose_destination"
+  | "depart_neighborhood"
+  | "ride_reidenbaugh_road"
+  | "chase_reidenbaugh"
+  | "complete";
+
 /** The stage belonging to the currently selected quest. */
-export type QuestStage = MissingControllerStage | MushroomQuestStage | SportsQuestStage;
+export type QuestStage = MissingControllerStage | MushroomQuestStage | SportsQuestStage | RyanRideStage;
 
 /** Associates a persisted quest ID with the only stages it may own. */
 export type StageForQuest<Q extends ImplementedQuestId> =
   Q extends "missing_controller" ? MissingControllerStage
     : Q extends "andrew_mushroom_hunt" ? MushroomQuestStage
-      : SportsQuestStage;
+      : Q extends "three_player_sports" ? SportsQuestStage
+        : RyanRideStage;
 
 /** Stable, non-presentational IDs used to build the quest checklist/history. */
 export type QuestMilestone =
@@ -61,7 +73,12 @@ export type QuestMilestone =
   | "three_player_sports.started"
   | "three_player_sports.skateboarded"
   | "three_player_sports.played_baseball"
-  | "three_player_sports.played_basketball";
+  | "three_player_sports.played_basketball"
+  | "catch_ryan.started"
+  | "catch_ryan.destination_selected"
+  | "catch_ryan.neighborhood_departed"
+  | "catch_ryan.reidenbaugh_reached"
+  | "catch_ryan.ryan_caught";
 
 export interface MushroomSpawn {
   id: string;
@@ -81,10 +98,17 @@ export interface SportsQuestState {
   stage: SportsQuestStage;
 }
 
+export interface RyanRideQuestState {
+  stage: RyanRideStage;
+  selectedDestination: RideDestination | null;
+  routeSeed: number | null;
+}
+
 export interface QuestProgress {
   missingControllerStage: MissingControllerStage;
   mushrooms: MushroomQuestState;
   sports: SportsQuestState;
+  ryanRide: RyanRideQuestState;
 }
 
 export interface PlayerSettings {
@@ -95,7 +119,7 @@ export interface PlayerSettings {
 }
 
 export interface SaveData {
-  version: 5;
+  version: 6;
   activeChapterId: ChapterId;
   activeQuestId: QuestId;
   completedChapterIds: ChapterId[];
@@ -107,6 +131,8 @@ export interface SaveData {
   secrets: string[];
   currentMap: MapId;
   discoveredMaps: MapId[];
+  /** Maps legally accessible to the player; discovery remains separate. */
+  unlockedMaps: MapId[];
   settings: PlayerSettings;
   /** ISO timestamp of the most recent successful persistence operation. */
   lastSavedAt: string | null;

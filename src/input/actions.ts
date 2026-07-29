@@ -6,6 +6,7 @@ export type SemanticAction =
   | "interact"
   | "back"
   | "menu"
+  | "toggleBicycle"
   | "tabPrevious"
   | "tabNext";
 
@@ -70,6 +71,7 @@ const KEY_ACTIONS: Readonly<Record<string, SemanticAction>> = {
   ArrowRight: "moveRight", KeyD: "moveRight",
   KeyE: "interact", Space: "interact", Enter: "interact",
   Escape: "back", KeyB: "menu",
+  KeyF: "toggleBicycle",
   BracketLeft: "tabPrevious", KeyQ: "tabPrevious",
   BracketRight: "tabNext", KeyR: "tabNext",
 };

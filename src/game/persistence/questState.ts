@@ -18,6 +18,7 @@ export function stageFromProgress(progress: QuestProgress, questId: QuestId): Qu
     case "missing_controller": return progress.missingControllerStage;
     case "andrew_mushroom_hunt": return progress.mushrooms.stage;
     case "three_player_sports": return progress.sports.stage;
+    case "catch_ryan": return progress.ryanRide.stage;
     default: return undefined;
   }
 }
@@ -37,7 +38,8 @@ export function progressAtStage(
   if (questId === "andrew_mushroom_hunt") {
     return { ...progress, mushrooms: { ...progress.mushrooms, stage: stage as QuestProgress["mushrooms"]["stage"] } };
   }
-  return { ...progress, sports: { ...progress.sports, stage: stage as QuestProgress["sports"]["stage"] } };
+  if (questId === "three_player_sports") return { ...progress, sports: { ...progress.sports, stage: stage as QuestProgress["sports"]["stage"] } };
+  return { ...progress, ryanRide: { ...progress.ryanRide, stage: stage as QuestProgress["ryanRide"]["stage"] } };
 }
 
 export interface QuestProgressInvariantViolation {
@@ -59,6 +61,18 @@ export function validateQuestProgress(progress: QuestProgress): QuestProgressInv
   }
   if (!isStageForQuest("three_player_sports", progress.sports.stage)) {
     violations.push({ path: "questProgress.sports.stage", message: "Unknown sports quest stage" });
+  }
+  if (!isStageForQuest("catch_ryan", progress.ryanRide.stage)) {
+    violations.push({ path: "questProgress.ryanRide.stage", message: "Unknown Catch Ryan stage" });
+  }
+  const ride = progress.ryanRide;
+  const selected = ride.selectedDestination === "reidenbaugh";
+  const hasSeed = typeof ride.routeSeed === "number" && Number.isFinite(ride.routeSeed);
+  if ((ride.stage === "invite" || ride.stage === "choose_destination") && (ride.selectedDestination !== null || ride.routeSeed !== null)) {
+    violations.push({ path: "questProgress.ryanRide", message: "Ride selection is not valid before departure" });
+  }
+  if (["depart_neighborhood", "ride_reidenbaugh_road", "chase_reidenbaugh", "complete"].includes(ride.stage) && (!selected || !hasSeed)) {
+    violations.push({ path: "questProgress.ryanRide", message: "Ride departure requires Reidenbaugh and a route seed" });
   }
   const spawnIds = new Set(progress.mushrooms.spawns.map((spawn) => spawn.id));
   const neighborhoodCount = progress.mushrooms.spawns.filter((spawn) => spawn.map === "neighborhood").length;
@@ -90,7 +104,7 @@ export function validateSaveInvariants(save: SaveData): QuestProgressInvariantVi
     violations.push({ path: "activeQuestId", message: "Active quest must have runtime rules" });
     return violations;
   }
-  for (const questId of ["missing_controller", "andrew_mushroom_hunt", "three_player_sports"] as const) {
+  for (const questId of ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan"] as const) {
     const stage = stageFromProgress(save.questProgress, questId);
     if (save.completedQuestIds.includes(questId) && stage !== "complete") {
       violations.push({ path: "completedQuestIds", message: `Quest ${questId} is recorded complete but its progress is not complete` });
@@ -99,6 +113,13 @@ export function validateSaveInvariants(save: SaveData): QuestProgressInvariantVi
     if (save.questHistory.some((milestone) => milestone.startsWith(`${questId}.`) && !allowedMilestones.has(milestone))) {
       violations.push({ path: "questHistory", message: `Quest ${questId} history is ahead of its authoritative progress` });
     }
+  }
+  if (!save.unlockedMaps.includes(save.currentMap)) {
+    violations.push({ path: "currentMap", message: "Current map must be unlocked" });
+  }
+  if (save.questProgress.ryanRide.selectedDestination === "reidenbaugh"
+    && (!save.unlockedMaps.includes("reidenbaugh_road") || !save.unlockedMaps.includes("reidenbaugh"))) {
+    violations.push({ path: "unlockedMaps", message: "Selecting Reidenbaugh unlocks both ride maps" });
   }
   return violations;
 }

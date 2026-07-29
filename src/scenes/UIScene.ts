@@ -1,9 +1,10 @@
 import Phaser from "phaser";
-import { QUEST_BY_ID } from "../content/chapters";
+import { hasAvailableQuest, QUEST_BY_ID } from "../content/chapters";
 import { getObjective } from "../content/quest";
-import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type ChoiceOption, type ChoiceRequest, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { DialogueRequest, GameState, QuestId, QuestStage } from "../game/types";
+import { selectHudInventory } from "../presentation/hudInventory";
 import { createPresentationPolicy } from "../presentation/presentationPolicy";
 
 const UI_DEPTH = 1_000;
@@ -11,17 +12,16 @@ const UI_FONT = '"Courier New", monospace';
 const INK = 0x172735;
 const PAPER = 0xfff5d6;
 const GOLD = 0xf4d37b;
-const CONTROLLER_ITEM = "xbox_controller";
 
 export class UIScene extends Phaser.Scene {
   private objectivePanel!: Phaser.GameObjects.Container;
   private objectiveCard!: Phaser.GameObjects.Rectangle;
   private objectiveHeading!: Phaser.GameObjects.Text;
   private objectiveText!: Phaser.GameObjects.Text;
+  private inventoryIcon!: Phaser.GameObjects.Image;
   private inventoryText!: Phaser.GameObjects.Text;
   private saveStatusText!: Phaser.GameObjects.Text;
   private debugText?: Phaser.GameObjects.Text;
-  private controlsPanel!: Phaser.GameObjects.Container;
   private dialoguePanel!: Phaser.GameObjects.Container;
   private dialogueSpeaker!: Phaser.GameObjects.Text;
   private dialogueText!: Phaser.GameObjects.Text;
@@ -35,13 +35,17 @@ export class UIScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private dialogue?: DialogueRequest;
   private dialogueIndex = 0;
+  private choice?: ChoiceRequest;
+  private choicePanel?: Phaser.GameObjects.Container;
+  private choiceEntries: Array<{ option: ChoiceOption; card: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; reason?: Phaser.GameObjects.Text }> = [];
+  private choiceFocus = 0;
   private previousStage?: QuestStage;
   private previousQuestId?: QuestId;
+  private previousCompletedQuestIds?: readonly QuestId[];
   private previousSavedAt?: string | null;
   private toastTimer?: Phaser.Time.TimerEvent;
   private objectiveTimer?: Phaser.Time.TimerEvent;
   private saveTimer?: Phaser.Time.TimerEvent;
-  private controlsTimer?: Phaser.Time.TimerEvent;
   private objectiveFontSize = 16;
   private dialogueFontSize = 17;
 
@@ -53,7 +57,6 @@ export class UIScene extends Phaser.Scene {
     this.resetRunState();
     this.cameras.main.setScroll(0, 0);
     this.buildObjectivePanel();
-    this.buildControlsGuide();
     this.buildDialoguePanel();
     this.buildToast();
     this.buildHint();
@@ -64,6 +67,8 @@ export class UIScene extends Phaser.Scene {
     gameEvents.on(EVENT.stateChanged, this.handleStateChanged, this);
     gameEvents.on(EVENT.dialogue, this.handleDialogue, this);
     gameEvents.on(EVENT.dialogueCancelled, this.cancelDialogue, this);
+    gameEvents.on(EVENT.choice, this.handleChoice, this);
+    gameEvents.on(EVENT.choiceCancelled, this.cancelChoice, this);
     gameEvents.on(EVENT.toast, this.handleToast, this);
     gameEvents.on(EVENT.hint, this.handleHint, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
@@ -100,43 +105,6 @@ export class UIScene extends Phaser.Scene {
     this.objectivePanel = this.add
       .container(0, 0, [shadow, this.objectiveCard, tape, rule, this.objectiveHeading, this.objectiveText])
       .setDepth(UI_DEPTH);
-  }
-
-  private buildControlsGuide(): void {
-    const shadow = this.add.rectangle(489, 25, 190, 78, 0x07131c, 0.42).setOrigin(0.5, 0);
-    const card = this.add
-      .rectangle(480, 20, 190, 78, PAPER, 0.94)
-      .setOrigin(0.5, 0)
-      .setStrokeStyle(2, INK, 0.9);
-    const tape = this.add.rectangle(480, 17, 46, 11, 0xf2cf79, 0.7).setAngle(2);
-    const heading = this.add.text(480, 31, "BILLY'S FIELD NOTES", {
-      fontFamily: UI_FONT, fontSize: "12px", color: "#914833", fontStyle: "bold",
-    }).setOrigin(0.5, 0);
-    const controls = this.add.text(480, 52, "MOVE   WASD / ARROWS\nACT    E / SPACE   •   BAG   B / ESC", {
-      fontFamily: UI_FONT, fontSize: "10px", color: "#172735", fontStyle: "bold",
-      align: "center", lineSpacing: 3,
-    }).setOrigin(0.5, 0);
-    this.controlsPanel = this.add.container(0, 0, [shadow, card, tape, heading, controls])
-      .setDepth(UI_DEPTH)
-      .setAlpha(0);
-    if (this.policy.reducedMotion) this.controlsPanel.setAlpha(1);
-    else this.tweens.add({ targets: this.controlsPanel, alpha: 1, duration: this.policy.duration(220) });
-    this.controlsTimer = this.time.delayedCall(7_500, () => this.hideControlsGuide());
-  }
-
-  private hideControlsGuide(): void {
-    if (!this.controlsPanel.visible) return;
-    if (this.policy.reducedMotion) {
-      this.controlsPanel.setAlpha(0).setY(-6).setVisible(false);
-      return;
-    }
-    this.tweens.add({
-      targets: this.controlsPanel,
-      alpha: 0,
-      y: -6,
-      duration: this.policy.duration(250),
-      onComplete: () => this.controlsPanel.setVisible(false),
-    });
   }
 
   private buildDialoguePanel(): void {
@@ -194,15 +162,15 @@ export class UIScene extends Phaser.Scene {
     const card = this.add.rectangle(934, 49, 178, 48, PAPER, 0.95)
       .setOrigin(1, 0)
       .setStrokeStyle(2, INK, 1);
-    const controller = this.add.image(778, 73, "controller").setScale(0.8).setTint(INK);
-    this.inventoryText = this.add.text(798, 61, "BACKPACK\nCONTROLLER 0/1\nMUSHROOMS 0/10", {
+    this.inventoryIcon = this.add.image(778, 73, "controller").setScale(0.8).setTint(INK).setVisible(false);
+    this.inventoryText = this.add.text(798, 61, "BACKPACK\nEMPTY", {
       fontFamily: UI_FONT,
       fontSize: "11px",
       color: "#172735",
       fontStyle: "bold",
       lineSpacing: 1,
     });
-    this.add.container(0, 0, [shadow, card, controller, this.inventoryText]).setDepth(UI_DEPTH);
+    this.add.container(0, 0, [shadow, card, this.inventoryIcon, this.inventoryText]).setDepth(UI_DEPTH);
   }
 
   private buildDebugPanel(): void {
@@ -271,6 +239,9 @@ export class UIScene extends Phaser.Scene {
     const saveChanged = this.previousSavedAt !== undefined
       && state.lastSavedAt !== null
       && state.lastSavedAt !== this.previousSavedAt;
+    const newlyCompleted = this.previousCompletedQuestIds === undefined
+      ? []
+      : state.completedQuestIds.filter((questId) => !this.previousCompletedQuestIds!.includes(questId));
 
     const questTitle = QUEST_BY_ID[state.activeQuestId]?.title ?? "Current Memory";
     this.setObjectiveHeading(`QUEST JOURNAL  •  ${questTitle.toUpperCase()}`);
@@ -279,18 +250,38 @@ export class UIScene extends Phaser.Scene {
     this.objectiveFontSize = this.policy.fontSize(16);
     this.dialogueFontSize = this.objectiveFontSize + 1;
     this.fitText(this.objectiveText, getObjective(state.questStage, state.activeQuestId), this.objectiveFontSize, 328, 62, 12);
-    const hasController = state.inventory.includes(CONTROLLER_ITEM);
-    const mushroomCount = state.questProgress.mushrooms.collectedIds.length;
+    const carried = selectHudInventory(state);
+    const itemLines = [
+      carried.controllerCount > 0 ? "CONTROLLER 1/1" : undefined,
+      carried.mushroomCount > 0 ? `MUSHROOMS ${carried.mushroomCount}/10` : undefined,
+    ].filter((line): line is string => line !== undefined);
+    const hasCarriedItems = itemLines.length > 0;
     this.inventoryText
-      .setText(`BACKPACK\nCONTROLLER ${hasController ? "1/1 ✓" : "0/1"}\nMUSHROOMS ${mushroomCount}/10`)
-      .setColor(hasController || mushroomCount > 0 ? "#32704a" : "#172735");
+      .setText(["BACKPACK", ...(hasCarriedItems ? itemLines : ["EMPTY"])])
+      .setColor(hasCarriedItems ? "#32704a" : "#172735");
+    this.inventoryIcon
+      .setTexture(carried.controllerCount > 0 ? "controller" : "mushroom")
+      .setVisible(hasCarriedItems);
     this.setSavedStatus(state.lastSavedAt);
 
-    if (stageChanged) {
+    // A completed save resumes without re-pinning an already acknowledged quest.
+    if (this.previousStage === undefined && state.questStage === "complete") {
+      this.objectivePanel.setVisible(false);
+    }
+
+    if (newlyCompleted.length > 0) {
+      const completedQuestId = newlyCompleted[newlyCompleted.length - 1]!;
+      const completedTitle = QUEST_BY_ID[completedQuestId]?.title ?? "Current Memory";
+      this.showObjectiveUpdate("complete", completedQuestId);
+      const newQuestNote = hasAvailableQuest(state) ? " A new quest is waiting in your backpack." : "";
+      this.handleToast(`Quest complete — ${completedTitle}!${newQuestNote}`);
+    } else if (stageChanged) {
       this.showObjectiveUpdate(state.questStage, state.activeQuestId);
-      this.hideControlsGuide();
       if (state.questStage === "complete") {
-        this.handleToast(`Quest complete — ${questTitle}!`);
+        const newQuestNote = hasAvailableQuest(state)
+          ? " A new quest is waiting in your backpack."
+          : "";
+        this.handleToast(`Quest complete — ${questTitle}!${newQuestNote}`);
       }
     }
     if (saveChanged) this.pulseSavedStatus(state.lastSavedAt);
@@ -304,6 +295,7 @@ export class UIScene extends Phaser.Scene {
     ]);
     this.previousStage = state.questStage;
     this.previousQuestId = state.activeQuestId;
+    this.previousCompletedQuestIds = [...state.completedQuestIds];
     this.previousSavedAt = state.lastSavedAt;
   }
 
@@ -315,7 +307,7 @@ export class UIScene extends Phaser.Scene {
       ? `★ QUEST COMPLETE  •  ${questTitle.toUpperCase()}`
       : `✦ JOURNAL UPDATED  •  ${questTitle.toUpperCase()}`);
     this.objectiveCard.setFillStyle(stage === "complete" ? 0xffe7a6 : 0xfff1bd, 1);
-    this.objectivePanel.setAlpha(this.policy.reducedMotion ? 1 : 0.7).setScale(1);
+    this.objectivePanel.setVisible(true).setAlpha(this.policy.reducedMotion ? 1 : 0.7).setScale(1);
     if (!this.policy.reducedMotion) {
       this.tweens.add({
         targets: this.objectivePanel,
@@ -327,8 +319,27 @@ export class UIScene extends Phaser.Scene {
       });
     }
     this.objectiveTimer = this.time.delayedCall(1_800, () => {
+      if (stage === "complete") {
+        this.hideCompletedObjectivePanel();
+        return;
+      }
       this.setObjectiveHeading(`QUEST JOURNAL  •  ${questTitle.toUpperCase()}`);
       this.objectiveCard.setFillStyle(PAPER, 0.96);
+    });
+  }
+
+  /** Completion is acknowledged briefly, then leaves the world HUD uncluttered. */
+  private hideCompletedObjectivePanel(): void {
+    if (this.policy.reducedMotion) {
+      this.objectivePanel.setVisible(false).setAlpha(1).setY(0);
+      return;
+    }
+    this.tweens.add({
+      targets: this.objectivePanel,
+      alpha: 0,
+      y: -10,
+      duration: this.policy.duration(220),
+      onComplete: () => this.objectivePanel.setVisible(false).setAlpha(1).setY(0),
     });
   }
 
@@ -360,6 +371,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private handleDialogue(request: DialogueRequest): void {
+    if (this.choice) this.cancelChoice();
     if (!request.lines.length) {
       request.onComplete?.();
       return;
@@ -407,9 +419,107 @@ export class UIScene extends Phaser.Scene {
     this.dialoguePanel.setVisible(false).setAlpha(1);
   }
 
+  private handleChoice(request: ChoiceRequest): void {
+    if (!request.options.some((option) => option.enabled !== false)) {
+      request.onCancel?.();
+      return;
+    }
+    this.cancelDialogue();
+    this.clearChoice();
+    this.choice = request;
+    this.choiceFocus = Math.max(0, request.options.findIndex((option) => option.enabled !== false));
+    inputCapture.capture("choice");
+
+    const shadow = this.add.rectangle(480, 315, 660, 250, 0x07131c, 0.58);
+    const paper = this.add.rectangle(480, 310, 660, 250, PAPER, 0.99).setStrokeStyle(4, INK, 1);
+    const tape = this.add.rectangle(480, 184, 72, 14, 0xf2cf79, 0.72).setAngle(-1);
+    const speaker = this.add.text(170, 204, request.speaker.toUpperCase(), {
+      fontFamily: UI_FONT, fontSize: "18px", color: "#914833", fontStyle: "bold",
+    });
+    const prompt = this.add.text(170, 232, request.prompt, {
+      fontFamily: UI_FONT, fontSize: "18px", color: "#172735", fontStyle: "bold", wordWrap: { width: 620 },
+    });
+    const children: Phaser.GameObjects.GameObject[] = [shadow, paper, tape, speaker, prompt];
+    this.choiceEntries = request.options.map((option, index) => {
+      const y = 290 + index * 48;
+      const enabled = option.enabled !== false;
+      const card = this.add.rectangle(480, y, 590, 38, enabled ? 0xe8f3c7 : 0xd5d0c1, 1)
+        .setStrokeStyle(2, INK, enabled ? 0.72 : 0.3);
+      const label = this.add.text(204, y, option.label, {
+        fontFamily: UI_FONT, fontSize: "16px", color: enabled ? "#172735" : "#6c6d6c", fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      const reason = !enabled && option.disabledReason
+        ? this.add.text(748, y, option.disabledReason, {
+          fontFamily: UI_FONT, fontSize: "11px", color: "#6c6d6c", fontStyle: "italic",
+        }).setOrigin(1, 0.5)
+        : undefined;
+      if (enabled) card.setInteractive({ useHandCursor: true }).on("pointerdown", () => this.selectChoice(index));
+      children.push(card, label);
+      if (reason) children.push(reason);
+      return { option, card, label, reason };
+    });
+    const footer = this.add.text(810, 418, "↑ ↓ / TAP  •  E CONFIRM  •  ESC BACK", {
+      fontFamily: UI_FONT, fontSize: "11px", color: "#536575", fontStyle: "bold",
+    }).setOrigin(1, 0.5);
+    children.push(footer);
+    this.choicePanel = this.add.container(0, 0, children).setDepth(UI_DEPTH + 5);
+    this.updateChoiceFocus();
+  }
+
+  private selectChoice(index = this.choiceFocus): void {
+    const entry = this.choiceEntries[index];
+    const request = this.choice;
+    if (!entry || !request || entry.option.enabled === false) return;
+    this.clearChoice();
+    request.onSelect(entry.option.id);
+  }
+
+  private cancelChoice(): void {
+    const request = this.choice;
+    this.clearChoice();
+    request?.onCancel?.();
+  }
+
+  private clearChoice(): void {
+    inputCapture.release("choice");
+    this.choicePanel?.destroy(true);
+    this.choicePanel = undefined;
+    this.choice = undefined;
+    this.choiceEntries = [];
+    this.choiceFocus = 0;
+  }
+
+  private moveChoiceFocus(direction: -1 | 1): void {
+    if (!this.choiceEntries.length) return;
+    for (let offset = 1; offset <= this.choiceEntries.length; offset += 1) {
+      const candidate = (this.choiceFocus + direction * offset + this.choiceEntries.length) % this.choiceEntries.length;
+      if (this.choiceEntries[candidate]?.option.enabled !== false) {
+        this.choiceFocus = candidate;
+        this.updateChoiceFocus();
+        gameEvents.emit(EVENT.audioCue, "menuNavigate");
+        return;
+      }
+    }
+  }
+
+  private updateChoiceFocus(): void {
+    this.choiceEntries.forEach((entry, index) => {
+      const focused = index === this.choiceFocus && entry.option.enabled !== false;
+      entry.card.setFillStyle(focused ? 0xf4d37b : entry.option.enabled === false ? 0xd5d0c1 : 0xe8f3c7, 1);
+      entry.card.setStrokeStyle(focused ? 3 : 2, INK, focused ? 1 : entry.option.enabled === false ? 0.3 : 0.72);
+    });
+  }
+
   private handleInputAction(event: InputActionEvent): void {
-    if (event.action !== "interact" || !event.pressed || this.sys.isPaused()) return;
-    if (this.dialogue && this.dialoguePanel.visible) this.advanceDialogue();
+    if (!event.pressed || this.sys.isPaused()) return;
+    if (this.choice) {
+      if (event.action === "moveUp") this.moveChoiceFocus(-1);
+      else if (event.action === "moveDown") this.moveChoiceFocus(1);
+      else if (event.action === "interact") this.selectChoice();
+      else if (event.action === "back") this.cancelChoice();
+      return;
+    }
+    if (event.action === "interact" && this.dialogue && this.dialoguePanel.visible) this.advanceDialogue();
   }
 
   private handleToast(message: string): void {
@@ -452,9 +562,12 @@ export class UIScene extends Phaser.Scene {
 
   private cleanup(): void {
     inputCapture.release("dialogue");
+    this.clearChoice();
     gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);
     gameEvents.off(EVENT.dialogue, this.handleDialogue, this);
     gameEvents.off(EVENT.dialogueCancelled, this.cancelDialogue, this);
+    gameEvents.off(EVENT.choice, this.handleChoice, this);
+    gameEvents.off(EVENT.choiceCancelled, this.cancelChoice, this);
     gameEvents.off(EVENT.toast, this.handleToast, this);
     gameEvents.off(EVENT.hint, this.handleHint, this);
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
@@ -462,7 +575,6 @@ export class UIScene extends Phaser.Scene {
     this.toastTimer?.remove(false);
     this.objectiveTimer?.remove(false);
     this.saveTimer?.remove(false);
-    this.controlsTimer?.remove(false);
   }
 
   /** Keeps dynamic copy inside its card even at the player's large-text setting. */
@@ -495,13 +607,17 @@ export class UIScene extends Phaser.Scene {
   private resetRunState(): void {
     this.dialogue = undefined;
     this.dialogueIndex = 0;
+    this.choice = undefined;
+    this.choicePanel = undefined;
+    this.choiceEntries = [];
+    this.choiceFocus = 0;
     this.previousStage = undefined;
     this.previousQuestId = undefined;
+    this.previousCompletedQuestIds = undefined;
     this.previousSavedAt = undefined;
     this.toastTimer = undefined;
     this.objectiveTimer = undefined;
     this.saveTimer = undefined;
-    this.controlsTimer = undefined;
     this.objectiveFontSize = this.policy.fontSize(16);
     this.dialogueFontSize = this.policy.fontSize(17);
   }
@@ -525,7 +641,6 @@ export class UIScene extends Phaser.Scene {
     this.tweens.killAll();
     this.objectivePanel.setAlpha(1).setScale(1);
     this.saveStatusText.setScale(1);
-    if (this.controlsPanel.visible) this.controlsPanel.setAlpha(1).setY(0);
     if (this.dialoguePanel.visible) this.dialoguePanel.setAlpha(1);
     if (this.toastPanel.visible) this.toastPanel.setAlpha(1).setY(0);
     if (this.hintPanel.visible) this.hintPanel.setAlpha(1).setScale(1);

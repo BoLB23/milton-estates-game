@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: milton-estates-game
+  namespace: games
+  annotations:
+    cert-manager.io/cluster-issuer: bolblab-cf-issuer
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - games.bolblab.org
+      secretName: games-bolblab-org-tls
+  rules:
+    - host: games.bolblab.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: milton-estates-game
+                port:
+                  name: http

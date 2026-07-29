@@ -6,6 +6,7 @@ import type {
   QuestMilestone,
   QuestStage,
   SportsQuestStage,
+  RyanRideStage,
   StageForQuest,
 } from "../types";
 
@@ -24,6 +25,12 @@ export type SportsQuestEvent =
   | { type: "skateboarded_with_jeremy" }
   | { type: "played_baseball_with_billy" }
   | { type: "played_basketball_with_andrew" };
+export type RyanRideQuestEvent =
+  | { type: "accepted_ride" }
+  | { type: "selected_destination"; destination: "reidenbaugh" }
+  | { type: "departed_neighborhood" }
+  | { type: "reached_reidenbaugh" }
+  | { type: "caught_ryan" };
 
 /**
  * Quest rules live here rather than being spread across the store, UI copy, and
@@ -33,6 +40,7 @@ export const IMPLEMENTED_QUEST_IDS = [
   "missing_controller",
   "andrew_mushroom_hunt",
   "three_player_sports",
+  "catch_ryan",
 ] as const satisfies readonly ImplementedQuestId[];
 
 export const MUSHROOM_COUNT = 10;
@@ -47,6 +55,9 @@ export const MUSHROOM_STAGES = [
 export const SPORTS_STAGES = [
   "meet_jeremy_to_skateboard", "meet_billy_to_play_baseball", "meet_andrew_to_play_basketball", "complete",
 ] as const satisfies readonly SportsQuestStage[];
+export const RYAN_RIDE_STAGES = [
+  "invite", "choose_destination", "depart_neighborhood", "ride_reidenbaugh_road", "chase_reidenbaugh", "complete",
+] as const satisfies readonly RyanRideStage[];
 
 export const QUEST_MILESTONES = [
   "missing_controller.started", "missing_controller.andrew_consulted",
@@ -56,6 +67,8 @@ export const QUEST_MILESTONES = [
   "andrew_mushroom_hunt.billy_supplied", "andrew_mushroom_hunt.andrew_supplied",
   "three_player_sports.started", "three_player_sports.skateboarded",
   "three_player_sports.played_baseball", "three_player_sports.played_basketball",
+  "catch_ryan.started", "catch_ryan.destination_selected", "catch_ryan.neighborhood_departed",
+  "catch_ryan.reidenbaugh_reached", "catch_ryan.ryan_caught",
 ] as const satisfies readonly QuestMilestone[];
 
 type QuestSpec<Q extends ImplementedQuestId> = {
@@ -111,6 +124,21 @@ export const QUEST_SPECS: { readonly [Q in ImplementedQuestId]: QuestSpec<Q> } =
     milestones: QUEST_MILESTONES.slice(10),
     completedMilestoneCount: { meet_jeremy_to_skateboard: 0, meet_billy_to_play_baseball: 1, meet_andrew_to_play_basketball: 2, complete: 4 },
   },
+  catch_ryan: {
+    id: "catch_ryan",
+    stages: RYAN_RIDE_STAGES,
+    initialStage: "invite",
+    objectives: {
+      invite: "Talk to Ryan near his house.",
+      choose_destination: "Choose where to ride with Ryan.",
+      depart_neighborhood: "Follow Ryan to the Reidenbaugh exit.",
+      ride_reidenbaugh_road: "Keep up with Ryan on the road to Reidenbaugh.",
+      chase_reidenbaugh: "Find and catch Ryan in Reidenbaugh.",
+      complete: "Ryan's ride complete! Reidenbaugh is open to explore.",
+    },
+    milestones: QUEST_MILESTONES.slice(14),
+    completedMilestoneCount: { invite: 0, choose_destination: 1, depart_neighborhood: 2, ride_reidenbaugh_road: 3, chase_reidenbaugh: 4, complete: 5 },
+  },
 };
 
 export function isImplementedQuestId(value: unknown): value is ImplementedQuestId {
@@ -131,6 +159,7 @@ export function objectiveForQuest(questId: QuestId, stage: QuestStage): string {
   if (questId === "three_player_sports" && isStageForQuest("three_player_sports", stage)) {
     return QUEST_SPECS.three_player_sports.objectives[stage];
   }
+  if (questId === "catch_ryan" && isStageForQuest("catch_ryan", stage)) return QUEST_SPECS.catch_ryan.objectives[stage];
   return QUEST_SPECS.missing_controller.objectives.talk_to_jeremy;
 }
 
@@ -145,6 +174,10 @@ export function milestonesForQuestStage(questId: QuestId, stage: QuestStage): Qu
   }
   if (questId === "three_player_sports" && isStageForQuest("three_player_sports", stage)) {
     const spec = QUEST_SPECS.three_player_sports;
+    return spec.milestones.slice(0, spec.completedMilestoneCount[stage]);
+  }
+  if (questId === "catch_ryan" && isStageForQuest("catch_ryan", stage)) {
+    const spec = QUEST_SPECS.catch_ryan;
     return spec.milestones.slice(0, spec.completedMilestoneCount[stage]);
   }
   return [];
@@ -176,6 +209,17 @@ export function advanceSportsStage(current: SportsQuestStage, event: SportsQuest
     case "meet_jeremy_to_skateboard": return event.type === "skateboarded_with_jeremy" ? "meet_billy_to_play_baseball" : current;
     case "meet_billy_to_play_baseball": return event.type === "played_baseball_with_billy" ? "meet_andrew_to_play_basketball" : current;
     case "meet_andrew_to_play_basketball": return event.type === "played_basketball_with_andrew" ? "complete" : current;
+    default: return current;
+  }
+}
+
+export function advanceRyanRideStage(current: RyanRideStage, event: RyanRideQuestEvent): RyanRideStage {
+  switch (current) {
+    case "invite": return event.type === "accepted_ride" ? "choose_destination" : current;
+    case "choose_destination": return event.type === "selected_destination" ? "depart_neighborhood" : current;
+    case "depart_neighborhood": return event.type === "departed_neighborhood" ? "ride_reidenbaugh_road" : current;
+    case "ride_reidenbaugh_road": return event.type === "reached_reidenbaugh" ? "chase_reidenbaugh" : current;
+    case "chase_reidenbaugh": return event.type === "caught_ryan" ? "complete" : current;
     default: return current;
   }
 }

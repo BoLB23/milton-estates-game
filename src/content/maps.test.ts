@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAP_DEFINITIONS,
   getMapDefinition,
+  normalizeWorldMapPoint,
   selectActiveObjectiveMarker,
   selectVisibleMapMarkers,
 } from "./maps";
@@ -66,5 +67,11 @@ describe("map content", () => {
       worldWidth: 2048,
       worldHeight: 1536,
     });
+  });
+
+  it("normalizes and clamps exact world positions for the regional fold-out", () => {
+    const map = getMapDefinition("creek");
+    expect(normalizeWorldMapPoint(map, { x: 1024, y: 768 })).toEqual({ x: 0.5, y: 0.5 });
+    expect(normalizeWorldMapPoint(map, { x: -12, y: 9_999 })).toEqual({ x: 0, y: 1 });
   });
 });

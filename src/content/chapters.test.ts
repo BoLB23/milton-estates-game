@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHAPTER_REGISTRY,
+  hasAvailableQuest,
   QUEST_BY_ID,
   isFinaleUnlocked,
   selectChapterProgress,
@@ -42,6 +43,15 @@ describe("chapter and quest registry", () => {
     });
     expect(selectQuestState(QUEST_BY_ID.andrew_mushroom_hunt, progress(["missing_controller"]))).toBe("available");
     expect(selectQuestState(QUEST_BY_ID.three_player_sports, progress(["missing_controller"]))).toBe("locked");
+    expect(selectQuestState(QUEST_BY_ID.catch_ryan, {
+      ...progress(["missing_controller", "andrew_mushroom_hunt", "three_player_sports"]),
+      activeQuestId: "catch_ryan",
+    })).toBe("active");
+    expect(hasAvailableQuest(progress(["missing_controller"]))).toBe(true);
+  });
+
+  it("does not flag the journal until a playable quest has been unlocked", () => {
+    expect(hasAvailableQuest(progress())).toBe(false);
   });
 
   it("keeps linear future quests locked until prerequisites and implementation exist", () => {
@@ -61,8 +71,8 @@ describe("chapter and quest registry", () => {
     expect(isFinaleUnlocked(chapter, completed)).toBe(true);
     expect(selectChapterProgress(chapter, completed)).toMatchObject({
       completed: 2,
-      total: 6,
-      percentage: 33,
+      total: 7,
+      percentage: 29,
       finaleUnlocked: true,
     });
   });

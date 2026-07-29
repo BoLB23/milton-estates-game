@@ -8,18 +8,21 @@ import { MenuScene } from "./scenes/MenuScene";
 import { UIScene } from "./scenes/UIScene";
 import { FrontEndScene } from "./scenes/FrontEndScene";
 import { InputRouterScene } from "./scenes/InputRouterScene";
+import { ReidenbaughRoadScene } from "./scenes/ReidenbaughRoadScene";
+import { ReidenbaughScene } from "./scenes/ReidenbaughScene";
 
 const game = new Phaser.Game({
-  // The browser behavior suite uses Phaser 3's Canvas backend to avoid
+  // The browser behavior suite uses Canvas to avoid
   // accumulating headless WebGL driver contexts across long quest runs.
-  // Production remains AUTO (WebGL where available).
-  type: import.meta.env.VITE_E2E_RENDERER === "canvas" ? Phaser.CANVAS : Phaser.AUTO,
+  // Production and ordinary development require WebGL.
+  type: import.meta.env.VITE_E2E_RENDERER === "canvas" ? Phaser.CANVAS : Phaser.WEBGL,
   parent: "game",
   width: 960,
   height: 540,
   backgroundColor: "#7fcf76",
   pixelArt: false,
   roundPixels: true,
+  render: { stencil: false },
   physics: {
     default: "arcade",
     arcade: { debug: false },
@@ -28,7 +31,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, InputRouterScene, FrontEndScene, NeighborhoodScene, CreekScene, UIScene, MenuScene],
+  scene: [BootScene, InputRouterScene, FrontEndScene, NeighborhoodScene, CreekScene, ReidenbaughRoadScene, ReidenbaughScene, UIScene, MenuScene],
 });
 
 // Phaser owns the sole SoundManager, its AudioContext, and autoplay unlock.

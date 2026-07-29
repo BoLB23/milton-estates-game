@@ -24,6 +24,26 @@ The build is written to `dist/`. To launch the local development server, also wi
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser. Keep the terminal running while you play, and press `Ctrl+C` to stop it. The server reloads automatically when source files change.
 
+The game requires a browser with WebGL or WebGL2 support. Canvas is retained only for the long-running automated regression suite.
+
+## Homelab deployment
+
+Merges (and direct pushes) to `main` first run the unit tests and production build, then publish a container image to GitHub Container Registry. Images are tagged with both `latest` and the commit SHA.
+
+The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the cluster's NGINX ingress controller. ExternalDNS already watches Ingress resources and automatically creates the Cloudflare record from this hostname; no ExternalDNS annotation is needed. TLS uses the cluster's existing Cloudflare DNS-01 `ClusterIssuer`, `bolblab-cf-issuer`.
+
+After making the GHCR package readable by the cluster (public, or via an image-pull secret), deploy a published image with:
+
+```sh
+./scripts/deploy.sh ghcr.io/OWNER/milton-estates-game:latest
+```
+
+Set `NAMESPACE` to use a different namespace or `ROLLOUT_TIMEOUT` to change the default three-minute rollout wait. Check the rollout and the assigned ingress with:
+
+```sh
+./scripts/deploy-status.sh
+```
+
 To select a different address or port, set `HOST` and/or `PORT` when starting the server. For example, this listens on all network interfaces at port 8080:
 
 ```sh
@@ -77,3 +97,5 @@ node_modules/.bin/playwright test
 ```
 
 If Playwright asks for its browser the first time, run `node_modules/.bin/playwright install chromium`, then retry the full validation commands.
+
+The Phaser 4 production bundle is expected to be larger than the Phaser 3 baseline (approximately 1,500.39 kB / 399.82 kB gzip versus 1,321.63 kB / 360.44 kB). This warning is accepted for the migration; bundle splitting is deferred to a separate load-time optimization and should be investigated if the final v4 bundle exceeds the observed size by more than 5%.

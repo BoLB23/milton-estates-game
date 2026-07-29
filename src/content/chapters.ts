@@ -60,6 +60,17 @@ const chapterOneQuests = [
     implemented: true,
   },
   {
+    id: "catch_ryan",
+    chapterId: "chapter_1",
+    title: "Catch Ryan",
+    description: "Ryan challenges Billy to a bicycle ride out to Reidenbaugh.",
+    kind: "side",
+    required: false,
+    optional: true,
+    prerequisiteQuestIds: ["three_player_sports"],
+    implemented: true,
+  },
+  {
     id: "storm_drain_detectives",
     chapterId: "chapter_1",
     title: "Storm Drain Detectives",
@@ -114,9 +125,10 @@ export const QUEST_BY_ID: Readonly<Record<QuestId, QuestDefinition>> = Object.fr
   missing_controller: chapterOneQuests[0],
   andrew_mushroom_hunt: chapterOneQuests[1],
   three_player_sports: chapterOneQuests[2],
-  storm_drain_detectives: chapterOneQuests[3],
-  creek_token_hunt: chapterOneQuests[4],
-  last_day_of_summer: chapterOneQuests[5],
+  catch_ryan: chapterOneQuests[3],
+  storm_drain_detectives: chapterOneQuests[4],
+  creek_token_hunt: chapterOneQuests[5],
+  last_day_of_summer: chapterOneQuests[6],
 });
 
 export interface RegistryProgress {
@@ -154,6 +166,13 @@ export function selectQuestState(
   if (!arePrerequisitesComplete(quest, progress.completedQuestIds)) return "locked";
   if (quest.kind === "finale" && !isFinaleUnlocked(chapter, progress.completedQuestIds)) return "locked";
   return progress.activeQuestId === quest.id ? "active" : "available";
+}
+
+/** Whether the journal has a playable memory the player has not started yet. */
+export function hasAvailableQuest(progress: RegistryProgress): boolean {
+  return CHAPTER_REGISTRY.some((chapter) => chapter.quests.some((quest) =>
+    selectQuestState(quest, progress) === "available",
+  ));
 }
 
 export function selectOptionalProgress(

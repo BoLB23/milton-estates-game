@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import type { ChoiceRequest } from "../game/events";
 import type { DialogueLine, Interactable } from "../game/types";
 import type { WorldPoint } from "./tiledRuntime";
 
@@ -19,6 +20,7 @@ export interface ExplorationInteractionHost {
   registerRegionInteraction(interactable: RegionInteraction): void;
   unregisterRegionInteraction(id: string): void;
   showDialogue(lines: DialogueLine[], onComplete?: () => void): void;
+  showChoice(request: ChoiceRequest): void;
   addLabel(x: number, y: number, text: string, color?: string): Phaser.GameObjects.Text;
   /** Resolves a named gameplay point from the loaded TMJ object layer. */
   objectPoint(name: string): WorldPoint;

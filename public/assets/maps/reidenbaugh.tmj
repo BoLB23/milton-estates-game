@@ -1,0 +1,30 @@
+{
+  "compressionlevel": -1, "height": 941, "infinite": false,
+  "layers": [
+    { "draworder": "topdown", "id": 1, "name": "stable-gameplay-objects", "type": "objectgroup", "visible": true, "opacity": 1, "x": 0, "y": 0,
+      "objects": [
+        { "id": 1, "name": "spawn_road", "type": "spawn", "x": 120, "y": 780 },
+        { "id": 2, "name": "return_road", "type": "transition", "x": 40, "y": 790, "width": 150, "height": 110 },
+        { "id": 3, "name": "bike_rack_reidenbaugh", "type": "bike_rack", "x": 230, "y": 750, "width": 100, "height": 70 },
+        { "id": 4, "name": "ryan_finish", "type": "finish", "x": 850, "y": 450 },
+        { "id": 5, "name": "ryan_post", "type": "npc", "x": 850, "y": 450 },
+        { "id": 6, "name": "chase_a_00", "type": "waypoint", "x": 330, "y": 690 },
+        { "id": 7, "name": "chase_a_01", "type": "waypoint", "x": 690, "y": 640 },
+        { "id": 8, "name": "chase_a_02", "type": "waypoint", "x": 890, "y": 450 },
+        { "id": 9, "name": "chase_b_00", "type": "waypoint", "x": 320, "y": 490 },
+        { "id": 10, "name": "chase_b_01", "type": "waypoint", "x": 710, "y": 340 },
+        { "id": 11, "name": "chase_b_02", "type": "waypoint", "x": 1080, "y": 425 },
+        { "id": 12, "name": "chase_c_00", "type": "waypoint", "x": 900, "y": 710 },
+        { "id": 13, "name": "chase_c_01", "type": "waypoint", "x": 1270, "y": 680 },
+        { "id": 14, "name": "chase_c_02", "type": "waypoint", "x": 1130, "y": 300 }
+      ] },
+    { "draworder": "topdown", "id": 2, "name": "collision-rects", "type": "objectgroup", "visible": true, "opacity": 1, "x": 0, "y": 0,
+      "objects": [
+        { "id": 20, "name": "north_edge", "x": 0, "y": 0, "width": 1672, "height": 20 },
+        { "id": 21, "name": "south_edge", "x": 0, "y": 921, "width": 1672, "height": 20 },
+        { "id": 22, "name": "west_edge", "x": 0, "y": 0, "width": 20, "height": 941 },
+        { "id": 23, "name": "east_edge", "x": 1652, "y": 0, "width": 20, "height": 941 }
+      ] }
+  ],
+  "nextlayerid": 3, "nextobjectid": 24, "orientation": "orthogonal", "renderorder": "right-down", "tiledversion": "1.11.0", "tileheight": 1, "tilesets": [], "tilewidth": 1, "type": "map", "version": "1.10", "width": 1672
+}

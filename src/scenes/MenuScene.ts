@@ -1,14 +1,14 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
-import { CHAPTER_REGISTRY, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
-import { getMapDefinition, projectRegionalMapPoint, selectActiveObjectiveMarker } from "../content/maps";
-import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage } from "../game/events";
+import { CHAPTER_REGISTRY, hasAvailableQuest, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
+import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapPoint, selectActiveObjectiveMarker } from "../content/maps";
+import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage, type PlayerMapLocation } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import type { GameState, PlayerSettings } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 
-const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "map", "save", "settings"];
+const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "map", "save", "settings", "help"];
 const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
   resume: "RESUME",
   chapters: "CHAPTERS",
@@ -16,6 +16,7 @@ const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
   map: "MAP",
   save: "SAVE",
   settings: "SETTINGS",
+  help: "HELP",
 };
 
 export class MenuScene extends Phaser.Scene {
@@ -28,6 +29,8 @@ export class MenuScene extends Phaser.Scene {
   private state: GameState = gameStore.getState();
   private readonly focus = new TextFocusController();
   private selectedQuestIndex = 0;
+  private playerLocation?: PlayerMapLocation;
+  private questTabBadge?: Phaser.GameObjects.Container;
 
   constructor() { super("menu"); }
 
@@ -40,6 +43,7 @@ export class MenuScene extends Phaser.Scene {
     this.isOpen = false;
     this.restartArmed = false;
     this.selectedQuestIndex = 0;
+    this.questTabBadge = undefined;
     this.state = gameStore.getState();
     this.sound.mute = this.state.settings.muted;
     this.sound.volume = this.state.settings.masterVolume;
@@ -69,12 +73,13 @@ export class MenuScene extends Phaser.Scene {
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     gameEvents.on(EVENT.menuRequested, this.handleMenuRequest, this);
     gameEvents.on(EVENT.stateChanged, this.handleStateChanged, this);
+    gameEvents.on(EVENT.playerLocationChanged, this.handlePlayerLocationChanged, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
   }
 
   private buildTabs(): void {
     PAGES.forEach((page, index) => {
-      const tab = scrapbookText(this, this.overlay, 65 + index * 130, 96, PAGE_LABELS[page], {
+      const tab = scrapbookText(this, this.overlay, 60 + index * 112, 96, PAGE_LABELS[page], {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "15px", color: "#efe1ba", fontStyle: "bold",
         backgroundColor: "#8b4f36", padding: { x: 12, y: 9 },
       }, createPresentationPolicy(this.state.settings).textScale).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
@@ -82,7 +87,16 @@ export class MenuScene extends Phaser.Scene {
         this.selectPage(page);
       });
       this.tabs.push(tab);
+      if (page === "quests") {
+        const dot = this.add.circle(306, 101, 9, 0xf3c95f, 1).setStrokeStyle(2, 0x315f4c, 1);
+        const label = this.add.text(306, 101, "!", {
+          fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "13px", color: "#315f4c", fontStyle: "bold",
+        }).setOrigin(0.5);
+        this.questTabBadge = this.add.container(0, 0, [dot, label]);
+        this.overlay.add(this.questTabBadge);
+      }
     });
+    this.updateQuestTabBadge();
   }
 
   private toggleMenu(event?: KeyboardEvent): void {
@@ -152,6 +166,7 @@ export class MenuScene extends Phaser.Scene {
       case "map": this.renderMap(); break;
       case "save": this.renderSave(); break;
       case "settings": this.renderSettings(); break;
+      case "help": this.renderHelp(); break;
     }
     this.focus.refresh();
   }
@@ -264,7 +279,12 @@ export class MenuScene extends Phaser.Scene {
     const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
     const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0]!;
     const status = selectQuestState(selected, this.state);
-    this.heading("Quest journal", "Browse every Chapter 1 memory — active, optional, locked, or complete.");
+    this.heading(
+      "Quest journal",
+      hasAvailableQuest(this.state)
+        ? "New quest available! Choose an unlocked memory to begin."
+        : "Browse every Chapter 1 memory — active, optional, locked, or complete.",
+    );
     this.card(68, 222, 260, 264, 0xe9d29e);
     chapter.quests.forEach((quest, index) => {
       const questStatus = selectQuestState(quest, this.state);
@@ -362,19 +382,38 @@ export class MenuScene extends Phaser.Scene {
     const map = this.add.image(480, 301, "regional-foldout-map").setDisplaySize(620, 349);
     this.pageContent.add(map);
     const definition = getMapDefinition(this.state.currentMap);
-    // The regional illustration uses metadata, not the live scene's TMJ.
-    const playerPosition = projectRegionalMapPoint(
-      definition,
-      definition.markers.find(({ id }) => id === "billy_home") ?? { x: 0.5, y: 0.5 },
-    );
+    // The position comes from the active exploration scene, not a landmark.
+    const playerLocation = this.playerLocation?.map === this.state.currentMap
+      ? this.playerLocation
+      : { map: this.state.currentMap, x: 0.5, y: 0.5 };
+    const playerPosition = projectRegionalMapPoint(definition, playerLocation);
     const objective = selectActiveObjectiveMarker({
       currentMap: this.state.currentMap,
       stage: this.state.questStage,
       discoveredIds: [],
     });
     const objectivePosition = objective ? projectRegionalMapPoint(definition, objective) : undefined;
+    for (const candidate of Object.values(MAP_DEFINITIONS)) {
+      if (this.state.discoveredMaps.includes(candidate.id) || this.state.unlockedMaps.includes(candidate.id)) continue;
+      const bounds = candidate.regionalMapBounds;
+      const cover = this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0x475057, 0.46)
+        .setOrigin(0).setStrokeStyle(2, 0x283033, 0.42);
+      this.pageContent.add(cover);
+      scrapbookText(this, this.pageContent, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, "UNEXPLORED", {
+        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", color: "#e1e5dc", fontStyle: "bold",
+        backgroundColor: "#283033aa", padding: { x: 5, y: 3 },
+      }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
+    }
+    for (const candidate of Object.values(MAP_DEFINITIONS)) {
+      if (this.state.discoveredMaps.includes(candidate.id) || !this.state.unlockedMaps.includes(candidate.id)) continue;
+      const bounds = candidate.regionalMapBounds;
+      scrapbookText(this, this.pageContent, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, "UNLOCKED", {
+        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "10px", color: "#fff4cd", fontStyle: "bold",
+        backgroundColor: "#315f4ccc", padding: { x: 4, y: 2 },
+      }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
+    }
     this.pageContent.add(this.add.circle(playerPosition.x, playerPosition.y, 12, 0xc94b3f, 1).setStrokeStyle(3, 0xfff4cd, 1));
-    scrapbookText(this, this.pageContent, playerPosition.x, playerPosition.y, "B", {
+    scrapbookText(this, this.pageContent, playerPosition.x, playerPosition.y, "YOU", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#ffffff", fontStyle: "bold",
     }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
     if (objectivePosition) {
@@ -382,7 +421,7 @@ export class MenuScene extends Phaser.Scene {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "25px", color: "#c94b3f", stroke: "#fff4cd", strokeThickness: 3,
       }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
     }
-    scrapbookText(this, this.pageContent, 73, 126, "REGIONAL FOLD-OUT  •  B = BILLY  ★ = CURRENT CLUE", {
+    scrapbookText(this, this.pageContent, 73, 126, "REGIONAL FOLD-OUT  •  YOU = EXACT LOCATION  ★ = CURRENT CLUE", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff4cd", fontStyle: "bold",
       backgroundColor: "#315f4c", padding: { x: 8, y: 5 },
     }, createPresentationPolicy(this.state.settings).textScale);
@@ -440,7 +479,7 @@ export class MenuScene extends Phaser.Scene {
     this.heading("Settings & controls", "Everything here saves automatically.");
     this.card(68, 226, 796, 68);
     this.note(88, 242, "KEYBOARD", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
-    this.note(88, 263, "Move  WASD / arrows     Talk & inspect  E / Space     Backpack  Esc", { fontSize: "15px", fontStyle: "bold" });
+    this.note(88, 263, "Move  WASD / arrows     Talk  E / Space     Backpack  Esc     Bike  F", { fontSize: "15px", fontStyle: "bold" });
     this.button(68, 315, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }));
     this.button(360, 315, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
       this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });
@@ -454,6 +493,22 @@ export class MenuScene extends Phaser.Scene {
     this.note(68, 456, "Tip: Q / R or the shoulder buttons change backpack tabs.", { fontSize: "14px", color: "#675544" });
   }
 
+  private renderHelp(): void {
+    this.heading("Field guide", "A quick reference stays here whenever you need it.");
+    this.card(68, 226, 796, 194);
+    this.note(94, 247, "MOVE", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
+    this.note(244, 244, "WASD or arrow keys", { fontSize: "19px", fontStyle: "bold" });
+    this.note(94, 289, "INTERACT", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
+    this.note(244, 286, "E or Space — talk, inspect, and advance dialogue", { fontSize: "17px", fontStyle: "bold" });
+    this.note(94, 331, "BACKPACK", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
+    this.note(244, 328, "B or Esc — open or close this backpack", { fontSize: "17px", fontStyle: "bold" });
+    this.note(94, 373, "TABS", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
+    this.note(244, 370, "Q / R, [ / ], or shoulder buttons", { fontSize: "17px", fontStyle: "bold" });
+    this.note(68, 454, "Tip: an on-screen prompt appears whenever something nearby can be inspected.", {
+      fontSize: "14px", color: "#675544", fontStyle: "italic",
+    });
+  }
+
   private changeSettings(changes: Partial<PlayerSettings>): void {
     gameStore.updateSettings(changes);
     const settings = gameStore.getState().settings;
@@ -464,9 +519,18 @@ export class MenuScene extends Phaser.Scene {
 
   private handleStateChanged(state: GameState): void {
     this.state = state;
+    this.updateQuestTabBadge();
     // A completion should leave the world responsive. The HUD already shows
     // the completion toast, and the player can open the journal deliberately.
     if (this.isOpen) this.renderPage();
+  }
+
+  private handlePlayerLocationChanged(location: PlayerMapLocation): void {
+    this.playerLocation = location;
+  }
+
+  private updateQuestTabBadge(): void {
+    this.questTabBadge?.setVisible(hasAvailableQuest(this.state));
   }
 
   private cleanup(): void {
@@ -474,5 +538,6 @@ export class MenuScene extends Phaser.Scene {
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     gameEvents.off(EVENT.menuRequested, this.handleMenuRequest, this);
     gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);
+    gameEvents.off(EVENT.playerLocationChanged, this.handlePlayerLocationChanged, this);
   }
 }

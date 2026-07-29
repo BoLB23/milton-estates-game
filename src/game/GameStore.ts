@@ -1,6 +1,7 @@
 import { createMushroomSpawns } from "../content/mushrooms";
 import {
   advanceMushroomStage,
+  advanceRyanRideStage,
   IMPLEMENTED_QUEST_IDS,
   MUSHROOM_COUNT,
   QUEST_MILESTONES,
@@ -29,6 +30,8 @@ import type {
   QuestStage,
   SaveData,
   SportsQuestStage,
+  RyanRideStage,
+  RideDestination,
 } from "./types";
 
 const STORAGE_KEY = "milton-estates-save";
@@ -58,12 +61,13 @@ function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
       collectedIds: [],
     },
     sports: { stage: "meet_jeremy_to_skateboard" },
+    ryanRide: { stage: "invite", selectedDestination: null, routeSeed: null },
   };
 }
 
 function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
   return {
-    version: 5,
+    version: 6,
     activeChapterId: "chapter_1",
     activeQuestId: "missing_controller",
     completedChapterIds: [],
@@ -74,6 +78,7 @@ function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
     secrets: [],
     currentMap: "neighborhood",
     discoveredMaps: ["neighborhood"],
+    unlockedMaps: ["neighborhood", "creek"],
     settings: { ...DEFAULT_SETTINGS },
     lastSavedAt: null,
   };
@@ -100,7 +105,7 @@ type SaveDataV3 = Omit<SaveData, "version" | "questProgress"> & {
   questStage: LegacyMissingControllerStage;
 };
 
-type LegacyQuestProgress = Omit<QuestProgress, "missingControllerStage"> & {
+type LegacyQuestProgress = Omit<QuestProgress, "missingControllerStage" | "ryanRide"> & {
   missingControllerStage: LegacyMissingControllerStage;
 };
 
@@ -108,6 +113,10 @@ type SaveDataV4 = Omit<SaveData, "version" | "questProgress"> & {
   version: 4;
   questStage: QuestStage | "search_yards";
   questProgress: LegacyQuestProgress;
+};
+type SaveDataV5 = Omit<SaveData, "version" | "questProgress" | "unlockedMaps"> & {
+  version: 5;
+  questProgress: Omit<QuestProgress, "ryanRide">;
 };
 
 type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & {
@@ -123,6 +132,7 @@ function copyQuestProgress(progress: QuestProgress): QuestProgress {
       collectedIds: [...progress.mushrooms.collectedIds],
     },
     sports: { stage: progress.sports.stage },
+    ryanRide: { ...progress.ryanRide },
   };
 }
 
@@ -136,6 +146,7 @@ function copySave(save: SaveData): SaveData {
     inventory: [...save.inventory],
     secrets: [...save.secrets],
     discoveredMaps: [...save.discoveredMaps],
+    unlockedMaps: [...save.unlockedMaps],
     settings: { ...save.settings },
   };
 }
@@ -186,9 +197,11 @@ function isMushroomQuestStage(value: unknown): value is MushroomQuestStage {
 function isSportsQuestStage(value: unknown): value is SportsQuestStage {
   return isStageForQuest("three_player_sports", value);
 }
+function isRyanRideStage(value: unknown): value is RyanRideStage { return isStageForQuest("catch_ryan", value); }
+function isRideDestination(value: unknown): value is RideDestination { return value === "reidenbaugh"; }
 
-function isMapId(value: unknown): value is "neighborhood" | "creek" {
-  return value === "neighborhood" || value === "creek";
+function isMapId(value: unknown): value is SaveData["currentMap"] {
+  return value === "neighborhood" || value === "creek" || value === "reidenbaugh_road" || value === "reidenbaugh";
 }
 
 function isChapterId(value: unknown): value is ChapterId {
@@ -198,6 +211,7 @@ function isChapterId(value: unknown): value is ChapterId {
 function isQuestId(value: unknown): value is QuestId {
   return value === "missing_controller" || value === "andrew_mushroom_hunt"
     || value === "three_player_sports" || value === "storm_drain_detectives"
+    || value === "catch_ryan"
     || value === "creek_token_hunt" || value === "last_day_of_summer";
 }
 
@@ -223,13 +237,18 @@ function isQuestProgress(value: unknown): value is QuestProgress {
   const progress = value as Partial<QuestProgress>;
   const mushrooms = progress.mushrooms as Partial<QuestProgress["mushrooms"]> | undefined;
   const sports = progress.sports as Partial<QuestProgress["sports"]> | undefined;
+  const ryanRide = progress.ryanRide as Partial<QuestProgress["ryanRide"]> | undefined;
   return isMissingControllerStage(progress.missingControllerStage)
     && typeof mushrooms === "object" && mushrooms !== null
     && isMushroomQuestStage(mushrooms.stage)
     && Array.isArray(mushrooms.spawns) && mushrooms.spawns.every(isMushroomSpawn)
     && isStringArray(mushrooms.collectedIds)
     && typeof sports === "object" && sports !== null
-    && isSportsQuestStage(sports.stage);
+    && isSportsQuestStage(sports.stage)
+    && typeof ryanRide === "object" && ryanRide !== null
+    && isRyanRideStage(ryanRide.stage)
+    && (ryanRide.selectedDestination === null || isRideDestination(ryanRide.selectedDestination))
+    && (ryanRide.routeSeed === null || (typeof ryanRide.routeSeed === "number" && Number.isFinite(ryanRide.routeSeed)));
 }
 
 function isLegacySave(value: unknown): value is LegacySaveData {
@@ -298,21 +317,35 @@ function isLegacyQuestProgress(value: unknown): value is LegacyQuestProgress {
     && isSportsQuestStage(sports.stage);
 }
 
-function isSaveData(value: unknown): value is SaveData {
+function isSaveDataV5(value: unknown): value is SaveDataV5 {
   if (typeof value !== "object" || value === null) return false;
-  const save = value as Partial<SaveData>;
+  const save = value as Partial<SaveDataV5>;
   return save.version === 5 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
     && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
     && isEnumArray(save.completedQuestIds, [
       "missing_controller", "andrew_mushroom_hunt", "three_player_sports",
       "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer",
     ] as const)
-    && isQuestProgress(save.questProgress)
+    && isLegacyQuestProgress(save.questProgress)
     && isEnumArray(save.questHistory, QUEST_MILESTONES)
     && isStringArray(save.inventory) && isStringArray(save.secrets)
     && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek"] as const)
     && isSettings(save.settings)
     && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+function isSaveData(value: unknown): value is SaveData {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveData>;
+  return save.version === 6 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
+    && isQuestProgress(save.questProgress)
+    && isEnumArray(save.questHistory, QUEST_MILESTONES)
+    && isStringArray(save.inventory) && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, ["neighborhood", "creek", "reidenbaugh_road", "reidenbaugh"] as const)
+    && isEnumArray(save.unlockedMaps, ["neighborhood", "creek", "reidenbaugh_road", "reidenbaugh"] as const)
+    && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
 }
 
 function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
@@ -335,12 +368,21 @@ function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
       collectedIds: unique(progress.mushrooms.collectedIds.filter((id) => validIds.has(id))),
     },
     sports: { stage: progress.sports.stage },
+    ryanRide: { ...progress.ryanRide },
   };
 }
 
 function normalizeSave(save: SaveData): SaveData | undefined {
   const questProgress = normalizeQuestProgress(save.questProgress);
   if (!IMPLEMENTED_QUEST_IDS.includes(save.activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) return undefined;
+  // Saves created while the Sports-to-Ryan handoff was being introduced can
+  // legitimately record Sports as complete while still pointing at it as the
+  // active quest. Reconcile that stale pointer on load so the new invitation
+  // is immediately playable instead of remaining hidden in the journal.
+  const shouldActivateRyan = save.activeQuestId === "three_player_sports"
+    && save.completedQuestIds.includes("three_player_sports")
+    && !save.completedQuestIds.includes("catch_ryan")
+    && questProgress.ryanRide.stage === "invite";
   // Recoverable cases are normalized explicitly: duplicate scalar IDs,
   // missing map discovery, controller aliases, invalid mushroom layout, and a
   // missing completion flag when authoritative progress is already complete.
@@ -348,6 +390,7 @@ function normalizeSave(save: SaveData): SaveData | undefined {
     stageFromProgress(questProgress, questId) === "complete");
   const normalized: SaveData = {
     ...save,
+    activeQuestId: shouldActivateRyan ? "catch_ryan" : save.activeQuestId,
     completedChapterIds: unique(save.completedChapterIds),
     completedQuestIds: unique([...save.completedQuestIds, ...completedFromProgress]),
     questProgress,
@@ -355,6 +398,8 @@ function normalizeSave(save: SaveData): SaveData | undefined {
     inventory: normalizeInventory(save.inventory),
     secrets: unique(save.secrets),
     discoveredMaps: unique(["neighborhood", save.currentMap, ...save.discoveredMaps]),
+    unlockedMaps: unique(["neighborhood", "creek", save.currentMap, ...save.unlockedMaps,
+      ...(questProgress.ryanRide.selectedDestination === "reidenbaugh" ? ["reidenbaugh_road", "reidenbaugh"] as const : [])]),
     settings: { ...save.settings },
   };
   return validateSaveInvariants(normalized).length === 0 ? normalized : undefined;
@@ -364,7 +409,7 @@ function migrateV3Save(save: SaveDataV3): SaveData {
   const missingControllerStage = migrateLegacyMissingControllerStage(save.questStage);
   if (!missingControllerStage) return copySave(DEFAULT_SAVE);
   return normalizeSave({
-    version: 5,
+    version: 6,
     activeChapterId: save.activeChapterId,
     activeQuestId: save.activeQuestId,
     completedChapterIds: save.completedChapterIds,
@@ -378,6 +423,7 @@ function migrateV3Save(save: SaveDataV3): SaveData {
     secrets: save.secrets,
     currentMap: save.currentMap,
     discoveredMaps: save.discoveredMaps,
+    unlockedMaps: ["neighborhood", "creek", save.currentMap, ...save.discoveredMaps],
     settings: save.settings,
     lastSavedAt: save.lastSavedAt,
   }) ?? copySave(DEFAULT_SAVE);
@@ -387,19 +433,31 @@ function migrateV4Save(save: SaveDataV4): SaveData {
   const missingControllerStage = migrateLegacyMissingControllerStage(save.questProgress.missingControllerStage);
   if (!missingControllerStage) return copySave(DEFAULT_SAVE);
   return normalizeSave({
-    version: 5,
+    version: 6,
     activeChapterId: save.activeChapterId,
     activeQuestId: save.activeQuestId,
     completedChapterIds: save.completedChapterIds,
     completedQuestIds: save.completedQuestIds,
-    questProgress: { ...save.questProgress, missingControllerStage },
+    questProgress: { ...save.questProgress, missingControllerStage, ryanRide: { stage: "invite", selectedDestination: null, routeSeed: null } },
     questHistory: save.questHistory,
     inventory: save.inventory,
     secrets: save.secrets,
     currentMap: save.currentMap,
     discoveredMaps: save.discoveredMaps,
+    unlockedMaps: ["neighborhood", "creek", save.currentMap, ...save.discoveredMaps],
     settings: save.settings,
     lastSavedAt: save.lastSavedAt,
+  }) ?? copySave(DEFAULT_SAVE);
+}
+
+function migrateV5Save(save: SaveDataV5): SaveData {
+  const sportsComplete = save.completedQuestIds.includes("three_player_sports");
+  return normalizeSave({
+    ...save,
+    version: 6,
+    activeQuestId: sportsComplete && save.activeQuestId === "three_player_sports" ? "catch_ryan" : save.activeQuestId,
+    questProgress: { ...save.questProgress, ryanRide: { stage: "invite", selectedDestination: null, routeSeed: null } },
+    unlockedMaps: unique(["neighborhood", "creek", save.currentMap, ...save.discoveredMaps]),
   }) ?? copySave(DEFAULT_SAVE);
 }
 
@@ -407,7 +465,7 @@ function migrateV2Save(save: SaveDataV2): SaveData {
   const missingControllerStage = migrateLegacyMissingControllerStage(save.questStage);
   if (!missingControllerStage) return copySave(DEFAULT_SAVE);
   return normalizeSave({
-    version: 5,
+    version: 6,
     activeChapterId: "chapter_1",
     activeQuestId: "missing_controller",
     completedChapterIds: [],
@@ -421,6 +479,7 @@ function migrateV2Save(save: SaveDataV2): SaveData {
     secrets: save.secrets,
     currentMap: save.currentMap,
     discoveredMaps: save.discoveredMaps,
+    unlockedMaps: ["neighborhood", "creek", save.currentMap, ...save.discoveredMaps],
     settings: save.settings,
     lastSavedAt: save.lastSavedAt,
   }) ?? copySave(DEFAULT_SAVE);
@@ -506,8 +565,10 @@ export class GameStore {
     const completedQuestIds = !this.replayState && questStage === "complete"
       ? unique([...current.completedQuestIds, current.activeQuestId])
       : current.completedQuestIds;
+    const activatesRyanRide = !this.replayState && current.activeQuestId === "three_player_sports" && questStage === "complete";
     this.update({
       ...current,
+      activeQuestId: activatesRyanRide ? "catch_ryan" : current.activeQuestId,
       completedQuestIds,
       questProgress,
       questHistory: unique([...current.questHistory, ...historyForQuestStage(current.activeQuestId, questStage)]),
@@ -553,8 +614,9 @@ export class GameStore {
     this.update({ ...current, secrets: [...current.secrets, secret] });
   }
 
-  public setCurrentMap(currentMap: "neighborhood" | "creek"): void {
+  public setCurrentMap(currentMap: SaveData["currentMap"]): void {
     const current = this.replayState ?? this.state;
+    if (!current.unlockedMaps.includes(currentMap)) throw new RangeError(`Map ${currentMap} is locked`);
     if (currentMap === current.currentMap && current.discoveredMaps.includes(currentMap)) return;
     this.update({ ...current, currentMap, discoveredMaps: unique([...current.discoveredMaps, currentMap]) });
   }
@@ -578,9 +640,46 @@ export class GameStore {
     });
   }
 
+  public isMapUnlocked(mapId: SaveData["currentMap"]): boolean { return (this.replayState ?? this.state).unlockedMaps.includes(mapId); }
+  public isBicycleUnlocked(): boolean { return (this.replayState ?? this.state).completedQuestIds.includes("catch_ryan"); }
+  public isRyanRideStage(stage: RyanRideStage): boolean { return this.isQuestAt("catch_ryan", stage); }
+
+  public acceptRyanRide(): void { this.advanceRyanRide({ type: "accepted_ride" }); }
+  /** Destination-menu Back returns to Ryan's original invitation without unlocking a map. */
+  public returnToRyanRideInvitation(): void {
+    const current = this.replayState ?? this.state;
+    if (!this.isQuestAt("catch_ryan", "choose_destination")) return;
+    this.update({
+      ...current,
+      questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { stage: "invite", selectedDestination: null, routeSeed: null } },
+      questHistory: current.questHistory.filter((milestone) => !milestone.startsWith("catch_ryan.")),
+    });
+  }
+  public selectRyanRideDestination(destination: RideDestination = "reidenbaugh", seed = Math.floor(Math.random() * 0xffffffff)): void {
+    const current = this.replayState ?? this.state;
+    if (!this.isQuestAt("catch_ryan", "choose_destination")) return;
+    if (!Number.isFinite(seed)) throw new RangeError("Ride route seed must be finite");
+    const next = advanceRyanRideStage(current.questProgress.ryanRide.stage, { type: "selected_destination", destination });
+    this.update({ ...current, questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { stage: next, selectedDestination: destination, routeSeed: seed } }, unlockedMaps: unique([...current.unlockedMaps, "reidenbaugh_road", "reidenbaugh"]), questHistory: unique([...current.questHistory, ...historyForQuestStage("catch_ryan", next)]) });
+  }
+  public departNeighborhoodRide(): void { this.advanceRyanRide({ type: "departed_neighborhood" }, "reidenbaugh_road"); }
+  public reachReidenbaugh(): void { this.advanceRyanRide({ type: "reached_reidenbaugh" }, "reidenbaugh"); }
+  public catchRyan(): void { this.advanceRyanRide({ type: "caught_ryan" }); }
+
+  private advanceRyanRide(event: import("./quests/specs").RyanRideQuestEvent, currentMap?: SaveData["currentMap"]): void {
+    const current = this.replayState ?? this.state;
+    if (!this.isQuestAt("catch_ryan", current.questProgress.ryanRide.stage)) return;
+    const next = advanceRyanRideStage(current.questProgress.ryanRide.stage, event);
+    if (next === current.questProgress.ryanRide.stage) return;
+    const completedQuestIds: QuestId[] = !this.replayState && next === "complete"
+      ? unique<QuestId>([...current.completedQuestIds, "catch_ryan"])
+      : current.completedQuestIds;
+    this.update({ ...current, currentMap: currentMap ?? current.currentMap, discoveredMaps: currentMap ? unique<SaveData["currentMap"]>([...current.discoveredMaps, currentMap]) : current.discoveredMaps, completedQuestIds, questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { ...current.questProgress.ryanRide, stage: next } }, questHistory: unique([...current.questHistory, ...historyForQuestStage("catch_ryan", next)]) });
+  }
+
   /** Starts a temporary replay of any implemented quest. Nothing in this state is persisted. */
   public startQuestReplay(questId: QuestId): void {
-    if (!["missing_controller", "andrew_mushroom_hunt", "three_player_sports"].includes(questId)) {
+    if (!["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan"].includes(questId)) {
       throw new RangeError(`Quest ${questId} cannot be replayed yet`);
     }
     if (!this.state.completedQuestIds.includes(questId)) throw new RangeError("Only completed quests can be replayed");
@@ -590,8 +689,10 @@ export class GameStore {
       questProgress.missingControllerStage = "talk_to_jeremy";
     } else if (questId === "andrew_mushroom_hunt") {
       questProgress.mushrooms = { ...questProgress.mushrooms, stage: "talk_to_andrew_for_mushrooms", collectedIds: [] };
-    } else {
+    } else if (questId === "three_player_sports") {
       questProgress.sports.stage = "meet_jeremy_to_skateboard";
+    } else {
+      questProgress.ryanRide = { stage: "invite", selectedDestination: null, routeSeed: null };
     }
 
     this.replayQuestId = questId;
@@ -605,6 +706,7 @@ export class GameStore {
       secrets: [],
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
+      unlockedMaps: ["neighborhood", "creek"],
     };
     gameEvents.emit(EVENT.stateChanged, this.getState());
   }
@@ -640,6 +742,11 @@ export class GameStore {
       const parsed = decodePersistedJson(serialized);
       if (parsed === undefined) return copySave(DEFAULT_SAVE);
       if (isSaveData(parsed)) return normalizeSave(parsed) ?? copySave(DEFAULT_SAVE);
+      if (isSaveDataV5(parsed)) {
+        const migrated = migrateV5Save(parsed);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); } catch { /* migration remains in memory */ }
+        return migrated;
+      }
       if (isSaveDataV4(parsed)) {
         const migrated = migrateV4Save(parsed);
         try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }

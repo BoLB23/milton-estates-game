@@ -3,7 +3,7 @@ import { gameStore } from "../game/GameStore";
 import type { GameState } from "../game/types";
 
 /**
- * The narrow Phaser 3 SoundManager surface the game owns. Keeping it small
+ * The narrow Phaser SoundManager surface the game owns. Keeping it small
  * makes the procedural layer testable and deliberately supports Web Audio,
  * HTML5 Audio, and Phaser's NoAudio manager.
  */
@@ -35,7 +35,9 @@ export function deriveAudioCues(previous: GameState, next: GameState): AudioCue[
     cues.push("controllerPickup");
   }
   if (next.secrets.some((secret) => !previous.secrets.includes(secret))) cues.push("tokenPickup");
-  if (previous.questStage !== next.questStage) {
+  if (next.completedQuestIds.some((questId) => !previous.completedQuestIds.includes(questId))) {
+    cues.push("questComplete");
+  } else if (previous.questStage !== next.questStage) {
     cues.push(next.questStage === "complete" ? "questComplete" : "objectiveUpdate");
   }
   return cues;

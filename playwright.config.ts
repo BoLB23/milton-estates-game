@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   fullyParallel: false,
-  // The two projects each boot a Phaser/WebGL instance and load multi-megabyte
+  // The projects boot Phaser instances and load multi-megabyte
   // art plates. Keep them serial so asset-loader timing does not make the
   // gameplay suite depend on local machine contention.
   workers: 1,
@@ -13,13 +13,18 @@ export default defineConfig({
   projects: [
     {
       name: "root",
-      testIgnore: "**/subpath-assets.spec.ts",
+      testIgnore: ["**/subpath-assets.spec.ts", "**/webgl-smoke.spec.ts"],
       use: { baseURL: "http://127.0.0.1:4183" },
     },
     {
       name: "subpath",
       testMatch: "**/subpath-assets.spec.ts",
       use: { baseURL: "http://127.0.0.1:4184/milton/" },
+    },
+    {
+      name: "webgl-smoke",
+      testMatch: "**/webgl-smoke.spec.ts",
+      use: { baseURL: "http://127.0.0.1:4185" },
     },
   ],
   webServer: [
@@ -31,6 +36,11 @@ export default defineConfig({
     {
       command: "VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4184 --base=/milton/",
       url: "http://127.0.0.1:4184/milton/",
+      reuseExistingServer: false,
+    },
+    {
+      command: "npm run dev -- --host 127.0.0.1 --port 4185",
+      url: "http://127.0.0.1:4185",
       reuseExistingServer: false,
     },
   ],

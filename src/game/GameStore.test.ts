@@ -18,10 +18,10 @@ const makeStore = (storage = new MemoryStorage()) => new GameStore(storage, () =
 
 afterEach(() => gameEvents.removeAllListeners());
 
-describe("GameStore save v5", () => {
+describe("GameStore save v6", () => {
   it("starts with trustworthy mission and menu defaults", () => {
     expect(makeStore().getState()).toMatchObject({
-      version: 5,
+      version: 6,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -32,6 +32,7 @@ describe("GameStore save v5", () => {
       secrets: [],
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
+      unlockedMaps: ["neighborhood", "creek"],
       settings: { masterVolume: 1, muted: false, textSize: "medium", reducedMotion: false },
       lastSavedAt: null,
     });
@@ -62,7 +63,7 @@ describe("GameStore save v5", () => {
     store.updateSettings({ textSize: "large", reducedMotion: true });
 
     expect(store.getState()).toMatchObject({
-      version: 5,
+      version: 6,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -96,7 +97,7 @@ describe("GameStore save v5", () => {
 
       const state = makeStore(storage).getState();
       expect(state).toMatchObject({
-        version: 5,
+        version: 6,
         questStage: "return_to_jeremy",
         questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found", "missing_controller.controller_recovered"],
         inventory: [CONTROLLER_ITEM],
@@ -104,7 +105,7 @@ describe("GameStore save v5", () => {
         lastSavedAt: null,
       });
       const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-      expect(persisted.version).toBe(5);
+      expect(persisted.version).toBe(6);
       expect(persisted).not.toHaveProperty("questStage");
     },
   );
@@ -128,7 +129,7 @@ describe("GameStore save v5", () => {
     expect(state.questHistory).toEqual(["missing_controller.controller_returned"]);
     expect(state.discoveredMaps).toEqual(["neighborhood", "creek"]);
     expect(state.completedQuestIds).toEqual(["missing_controller"]);
-    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(5);
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(6);
   });
 
   it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
@@ -247,6 +248,56 @@ describe("GameStore save v5", () => {
     expect(reloaded.questHistory).toContain("three_player_sports.played_basketball");
   });
 
+  it("hands off canonical sports completion to Catch Ryan and checkpoints the selected ride", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    store.setQuestStage("search_mushrooms");
+    for (const spawn of store.getMushroomSpawns()) store.collectMushroom(spawn.id);
+    store.setQuestStage("place_mushroom_at_billy");
+    store.setQuestStage("give_mushrooms_to_andrew");
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "three_player_sports");
+    store.setQuestStage("meet_billy_to_play_baseball");
+    store.setQuestStage("meet_andrew_to_play_basketball");
+    store.setQuestStage("complete");
+    expect(store.getState()).toMatchObject({ activeQuestId: "catch_ryan", questStage: "invite" });
+    store.acceptRyanRide();
+    store.returnToRyanRideInvitation();
+    expect(store.getState()).toMatchObject({ questStage: "invite", unlockedMaps: ["neighborhood", "creek"] });
+    store.acceptRyanRide();
+    store.selectRyanRideDestination("reidenbaugh", 42);
+    expect(store.getState()).toMatchObject({ questStage: "depart_neighborhood", unlockedMaps: ["neighborhood", "creek", "reidenbaugh_road", "reidenbaugh"] });
+    store.departNeighborhoodRide();
+    expect(store.getState()).toMatchObject({ currentMap: "reidenbaugh_road", questStage: "ride_reidenbaugh_road" });
+  });
+
+  it("repairs a saved Sports completion that predates the Catch Ryan handoff", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    store.setQuestStage("search_mushrooms");
+    for (const spawn of store.getMushroomSpawns()) store.collectMushroom(spawn.id);
+    store.setQuestStage("place_mushroom_at_billy");
+    store.setQuestStage("give_mushrooms_to_andrew");
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "three_player_sports");
+    store.setQuestStage("meet_billy_to_play_baseball");
+    store.setQuestStage("meet_andrew_to_play_basketball");
+    store.setQuestStage("complete");
+
+    const staleSave = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    staleSave.activeQuestId = "three_player_sports";
+    storage.setItem("milton-estates-save", JSON.stringify(staleSave));
+
+    expect(makeStore(storage).getState()).toMatchObject({
+      activeQuestId: "catch_ryan",
+      questStage: "invite",
+      completedQuestIds: ["missing_controller", "andrew_mushroom_hunt", "three_player_sports"],
+    });
+  });
+
   it("repairs an impossible mushroom layout and reconciles the active stage on load", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
@@ -299,6 +350,7 @@ describe("GameStore save v5", () => {
     legacy.version = 4;
     legacy.questStage = "complete";
     legacy.questProgress.missingControllerStage = "search_yards";
+    delete legacy.questProgress.ryanRide;
     legacy.completedQuestIds = [];
     legacy.questHistory = [
       "missing_controller.started",
@@ -312,7 +364,7 @@ describe("GameStore save v5", () => {
     expect(state.questStage).toBe("search_mushrooms");
     expect(state.questProgress.missingControllerStage).toBe("search_creek");
     const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-    expect(persisted.version).toBe(5);
+    expect(persisted.version).toBe(6);
     expect(persisted).not.toHaveProperty("questStage");
   });
 

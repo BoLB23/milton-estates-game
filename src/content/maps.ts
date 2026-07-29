@@ -52,6 +52,8 @@ export interface MapSelection {
 
 const neighborhood = { width: 2300, height: 1500 };
 const creek = { width: 2048, height: 1536 };
+const reidenbaughRoad = { width: 1672, height: 941 };
+const reidenbaugh = { width: 1672, height: 941 };
 
 /** The canonical world, artwork, collision, and menu metadata for each map. */
 export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
@@ -64,7 +66,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       width: neighborhood.width, height: neighborhood.height, depth: 10,
     }],
     tiledMapKey: "neighborhood-tmj", tiledMapPath: "assets/maps/neighborhood-wheatfield-slice.tmj",
-    authoredObjectIds: ["spawn_home", "spawn_woods", "andrew", "billy", "jeremy", "jeremy_driveway", "side_yard_gap", "woods_gate", "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville"],
+    authoredObjectIds: ["spawn_home", "spawn_woods", "andrew", "billy", "jeremy", "jeremy_driveway", "side_yard_gap", "woods_gate", "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville", "ryan_invite", "bike_mount_milton", "reidenbaugh_exit", "ryan_depart_00", "ryan_depart_01", "ryan_depart_02", "ryan_depart_03"],
     markers: [
       { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.552, y: 0.653, initiallyVisible: true },
       { id: "jeremy_home", kind: "landmark", label: "Jeremy's House", x: 0.817, y: 0.653 },
@@ -79,6 +81,8 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "obj_skateboard", kind: "objective", label: "Meet Jeremy to skateboard", x: 0.817, y: 0.653, stages: ["meet_jeremy_to_skateboard"] },
       { id: "obj_baseball", kind: "objective", label: "Meet Billy to play baseball", x: 0.552, y: 0.653, stages: ["meet_billy_to_play_baseball"] },
       { id: "obj_basketball", kind: "objective", label: "Meet Andrew to play basketball", x: 0.096, y: 0.653, stages: ["meet_andrew_to_play_basketball"] },
+      { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.83, y: 0.2, stages: ["invite", "choose_destination"] },
+      { id: "obj_reidenbaugh_exit", kind: "objective", label: "Follow Ryan to Reidenbaugh", x: 0.89, y: 0.19, stages: ["depart_neighborhood"] },
     ],
     regionalMapBounds: { x: 360, y: 209, width: 210, height: 132 },
   },
@@ -100,10 +104,28 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
     ],
     regionalMapBounds: { x: 200, y: 190, width: 285, height: 190 },
   },
+  reidenbaugh_road: {
+    id: "reidenbaugh_road", label: "Reidenbaugh Road", worldWidth: reidenbaughRoad.width, worldHeight: reidenbaughRoad.height,
+    layers: [{ id: "reidenbaugh_road_illustrated_master", role: "master", textureKey: "reidenbaugh-road-illustrated-master", imagePath: assetUrl("assets/maps/reidenbaugh-road-master-v1.png"), x: 0, y: 0, width: reidenbaughRoad.width, height: reidenbaughRoad.height, depth: 10 }],
+    tiledMapKey: "reidenbaugh-road-tmj", tiledMapPath: "assets/maps/reidenbaugh-road.tmj",
+    authoredObjectIds: ["spawn_milton", "spawn_reidenbaugh", "return_milton", "enter_reidenbaugh", "road_route_00", "road_route_01", "road_route_02", "road_route_03"],
+    markers: [{ id: "road_exit", kind: "exit", label: "Reidenbaugh", x: 0.89, y: 0.15 }],
+    regionalMapBounds: { x: 575, y: 140, width: 85, height: 86 },
+  },
+  reidenbaugh: {
+    id: "reidenbaugh", label: "Reidenbaugh", worldWidth: reidenbaugh.width, worldHeight: reidenbaugh.height,
+    layers: [{ id: "reidenbaugh_illustrated_master", role: "master", textureKey: "reidenbaugh-illustrated-master", imagePath: assetUrl("assets/maps/reidenbaugh-master-v1.png"), x: 0, y: 0, width: reidenbaugh.width, height: reidenbaugh.height, depth: 10 }],
+    tiledMapKey: "reidenbaugh-tmj", tiledMapPath: "assets/maps/reidenbaugh.tmj",
+    authoredObjectIds: ["spawn_road", "return_road", "bike_rack_reidenbaugh", "ryan_finish", "ryan_post", "chase_a_00", "chase_a_01", "chase_a_02", "chase_b_00", "chase_b_01", "chase_b_02", "chase_c_00", "chase_c_01", "chase_c_02"],
+    markers: [{ id: "reidenbaugh_park", kind: "landmark", label: "Reidenbaugh Park", x: 0.82, y: 0.43 }, { id: "reidenbaugh_return", kind: "exit", label: "Reidenbaugh Road", x: 0.08, y: 0.86 }],
+    regionalMapBounds: { x: 605, y: 92, width: 125, height: 115 },
+  },
 };
 
 export const NEIGHBORHOOD_MAP = MAP_DEFINITIONS.neighborhood;
 export const CREEK_MAP = MAP_DEFINITIONS.creek;
+export const REIDENBAUGH_ROAD_MAP = MAP_DEFINITIONS.reidenbaugh_road;
+export const REIDENBAUGH_MAP = MAP_DEFINITIONS.reidenbaugh;
 
 export function getMapDefinition(mapId: MapId): MapDefinition { return MAP_DEFINITIONS[mapId]; }
 export function getIllustratedMapLayers(mapId: MapId): readonly IllustratedMapLayer[] { return MAP_DEFINITIONS[mapId].layers; }
@@ -113,6 +135,14 @@ export function projectRegionalMapPoint(map: MapDefinition, point: MapPoint): Ma
   return {
     x: map.regionalMapBounds.x + point.x * map.regionalMapBounds.width,
     y: map.regionalMapBounds.y + point.y * map.regionalMapBounds.height,
+  };
+}
+
+/** Converts an exact world coordinate into the fold-out's normalized map space. */
+export function normalizeWorldMapPoint(map: Pick<MapDefinition, "worldWidth" | "worldHeight">, point: MapPoint): MapPoint {
+  return {
+    x: Math.min(1, Math.max(0, point.x / map.worldWidth)),
+    y: Math.min(1, Math.max(0, point.y / map.worldHeight)),
   };
 }
 

@@ -32,7 +32,14 @@
         { "id": 7, "name": "blocked_bent_creek", "type": "blocked_route", "x": 120, "y": 1210 },
         { "id": 8, "name": "blocked_stonehenge", "type": "blocked_route", "x": 2240, "y": 1190 },
         { "id": 9, "name": "blocked_reidenbaugh", "type": "blocked_route", "x": 2040, "y": 300 },
-        { "id": 10, "name": "blocked_fruitville", "type": "blocked_route", "x": 1120, "y": 1400 }
+        { "id": 10, "name": "blocked_fruitville", "type": "blocked_route", "x": 1120, "y": 1400 },
+        { "id": 22, "name": "ryan_invite", "type": "npc", "x": 1935, "y": 350 },
+        { "id": 23, "name": "bike_mount_milton", "type": "bike_rack", "x": 1870, "y": 395 },
+        { "id": 24, "name": "reidenbaugh_exit", "type": "transition", "x": 2025, "y": 255, "width": 170, "height": 120 },
+        { "id": 25, "name": "ryan_depart_00", "type": "waypoint", "x": 1900, "y": 410 },
+        { "id": 26, "name": "ryan_depart_01", "type": "waypoint", "x": 1950, "y": 330 },
+        { "id": 27, "name": "ryan_depart_02", "type": "waypoint", "x": 2010, "y": 285 },
+        { "id": 28, "name": "ryan_depart_03", "type": "waypoint", "x": 2070, "y": 290 }
       ],
       "opacity": 1,
       "type": "objectgroup",
@@ -63,7 +70,7 @@
     }
   ],
   "nextlayerid": 4,
-  "nextobjectid": 22,
+  "nextobjectid": 29,
   "orientation": "orthogonal",
   "renderorder": "right-down",
   "tiledversion": "1.11.0",

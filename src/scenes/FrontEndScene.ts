@@ -12,7 +12,7 @@ import type { PlayerSettings, SaveData } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 
-type FrontPage = "title" | "chapters" | "quests" | "settings";
+type FrontPage = "title" | "intro" | "chapters" | "quests" | "settings";
 
 const PAPER = SCRAPBOOK.paper;
 const INK = SCRAPBOOK.ink;
@@ -49,6 +49,7 @@ export class FrontEndScene extends Phaser.Scene {
     this.drawDesk();
     switch (this.page) {
       case "title": this.renderTitle(); break;
+      case "intro": this.renderIntro(); break;
       case "chapters": this.renderChapters(); break;
       case "quests": this.renderQuests(); break;
       case "settings": this.renderSettings(); break;
@@ -142,7 +143,56 @@ export class FrontEndScene extends Phaser.Scene {
     }
     gameStore.newGame();
     this.newGameArmed = false;
-    this.openPage("chapters");
+    this.openPage("intro");
+  }
+
+  /** A one-time, skippable arrival moment before the player reaches the world. */
+  private renderIntro(): void {
+    const policy = createPresentationPolicy(this.state.settings);
+    this.paper(45, 42, 870, 456);
+    this.tape(480, 48, -2);
+    this.text(90, 77, "WELCOME TO MILTON ESTATES", {
+      fontSize: "32px", fontStyle: "bold", color: BLUE_INK,
+    });
+    this.text(92, 124, "Summer is waiting. Billy has one mystery to solve.", {
+      fontFamily: "Comic Sans MS, cursive", fontSize: "18px", color: RED_INK,
+    });
+
+    const yard = this.add.graphics();
+    yard.fillStyle(0xb9d992).fillRoundedRect(78, 178, 354, 214, 8);
+    yard.fillStyle(0x80b96f).fillRoundedRect(78, 316, 354, 76, 8);
+    yard.fillStyle(0xf1dfb7).fillRect(100, 202, 92, 116);
+    yard.fillStyle(0x9c563e).fillTriangle(88, 204, 146, 160, 204, 204);
+    yard.fillStyle(0x315948).fillCircle(370, 215, 33).fillCircle(398, 236, 41);
+    this.content.add(yard);
+
+    const billy = this.add.sprite(164, 318, "billy", 0).setScale(0.25).setDepth(2);
+    billy.anims.play("billy-walk-side");
+    this.content.add(billy);
+    if (!policy.reducedMotion) {
+      this.tweens.add({
+        targets: billy,
+        x: 308,
+        duration: policy.duration(1_500),
+        ease: "Sine.easeInOut",
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      billy.setPosition(260, 318).anims.play("billy-idle-side");
+    }
+
+    this.card(472, 174, 360, 224, 0xfff8df);
+    this.text(500, 198, "HOW TO EXPLORE", { fontSize: "18px", fontStyle: "bold", color: RED_INK });
+    this.text(500, 237, "MOVE", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
+    this.text(500, 261, "WASD or arrow keys", { fontSize: "18px", color: INK });
+    this.text(500, 300, "TALK & INSPECT", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
+    this.text(500, 324, "E or Space", { fontSize: "18px", color: INK });
+    this.text(500, 363, "BACKPACK & HELP", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
+    this.text(500, 387, "B or Esc  •  Help lives in the backpack", { fontSize: "15px", color: INK, wordWrap: { width: 305 } });
+    this.button(278, 432, "START EXPLORING  →", () => this.launchGameplay(), {
+      width: 405, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
+    });
   }
 
   private renderChapters(): void {

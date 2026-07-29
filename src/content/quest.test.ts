@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextMushroomStage, nextSportsStage, nextStage } from "./quest";
+import { nextMushroomStage, nextRyanRideStage, nextSportsStage, nextStage } from "./quest";
 
 describe("Missing Controller quest", () => {
   it("sends players to the creek after Andrew while keeping the yard clue optional", () => {
@@ -35,5 +35,15 @@ describe("Three-Player Sports Day quest", () => {
     stage = nextSportsStage(stage, { type: "played_baseball_with_billy" });
     stage = nextSportsStage(stage, { type: "played_basketball_with_andrew" });
     expect(stage).toBe("complete");
+  });
+});
+
+describe("Catch Ryan", () => {
+  it("follows the authored invitation-to-catch sequence", () => {
+    let stage = nextRyanRideStage("invite", { type: "accepted_ride" });
+    stage = nextRyanRideStage(stage, { type: "selected_destination", destination: "reidenbaugh" });
+    stage = nextRyanRideStage(stage, { type: "departed_neighborhood" });
+    stage = nextRyanRideStage(stage, { type: "reached_reidenbaugh" });
+    expect(nextRyanRideStage(stage, { type: "caught_ryan" })).toBe("complete");
   });
 });

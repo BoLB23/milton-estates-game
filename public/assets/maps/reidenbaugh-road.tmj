@@ -1,0 +1,24 @@
+{
+  "compressionlevel": -1, "height": 941, "infinite": false,
+  "layers": [
+    { "draworder": "topdown", "id": 1, "name": "stable-gameplay-objects", "type": "objectgroup", "visible": true, "opacity": 1, "x": 0, "y": 0,
+      "objects": [
+        { "id": 1, "name": "spawn_milton", "type": "spawn", "x": 110, "y": 770 },
+        { "id": 2, "name": "spawn_reidenbaugh", "type": "spawn", "x": 1510, "y": 160 },
+        { "id": 3, "name": "return_milton", "type": "transition", "x": 50, "y": 800, "width": 130, "height": 110 },
+        { "id": 4, "name": "enter_reidenbaugh", "type": "transition", "x": 1510, "y": 70, "width": 130, "height": 120 },
+        { "id": 5, "name": "road_route_00", "type": "waypoint", "x": 260, "y": 710 },
+        { "id": 6, "name": "road_route_01", "type": "waypoint", "x": 670, "y": 565 },
+        { "id": 7, "name": "road_route_02", "type": "waypoint", "x": 1060, "y": 390 },
+        { "id": 8, "name": "road_route_03", "type": "waypoint", "x": 1430, "y": 185 }
+      ] },
+    { "draworder": "topdown", "id": 2, "name": "collision-rects", "type": "objectgroup", "visible": true, "opacity": 1, "x": 0, "y": 0,
+      "objects": [
+        { "id": 20, "name": "north_edge", "x": 0, "y": 0, "width": 1672, "height": 20 },
+        { "id": 21, "name": "south_edge", "x": 0, "y": 921, "width": 1672, "height": 20 },
+        { "id": 22, "name": "west_edge", "x": 0, "y": 0, "width": 20, "height": 941 },
+        { "id": 23, "name": "east_edge", "x": 1652, "y": 0, "width": 20, "height": 941 }
+      ] }
+  ],
+  "nextlayerid": 3, "nextobjectid": 24, "orientation": "orthogonal", "renderorder": "right-down", "tiledversion": "1.11.0", "tileheight": 1, "tilesets": [], "tilewidth": 1, "type": "map", "version": "1.10", "width": 1672
+}

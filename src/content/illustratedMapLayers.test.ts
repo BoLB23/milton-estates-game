@@ -49,6 +49,13 @@ describe("illustrated map layers", () => {
       "blocked_stonehenge",
       "blocked_reidenbaugh",
       "blocked_fruitville",
+      "ryan_invite",
+      "bike_mount_milton",
+      "reidenbaugh_exit",
+      "ryan_depart_00",
+      "ryan_depart_01",
+      "ryan_depart_02",
+      "ryan_depart_03",
     ]);
     expect(MAP_DEFINITIONS.creek.authoredObjectIds).toEqual([
       "spawn_home",

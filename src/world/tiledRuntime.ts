@@ -33,6 +33,14 @@ export class TiledRuntimeWorld {
     return { x: object.x, y: object.y };
   }
 
+  /** Resolves a named stable object as an authored rectangular interaction zone. */
+  public rectangle(name: string): WorldRect {
+    const object = this.objects.get(name);
+    if (!object) throw new Error(`Missing authored Tiled object: ${name}`);
+    if (object.width <= 0 || object.height <= 0) throw new Error(`Invalid authored rectangle: ${name}`);
+    return { x: object.x, y: object.y, width: object.width, height: object.height };
+  }
+
   public rectangles(): readonly WorldRect[] {
     return this.objectsInLayer(this.colliderLayer).map(({ x, y, width, height, name }) => {
       if (width <= 0 || height <= 0) throw new Error(`Invalid authored collider: ${name}`);

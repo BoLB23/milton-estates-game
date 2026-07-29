@@ -1,11 +1,27 @@
-import type { DialogueRequest, GameState } from "./types";
+import type { DialogueRequest, GameState, MapId } from "./types";
 import type { SemanticActionEvent } from "../input/actions";
 
 export type { SemanticAction as InputAction, SemanticActionEvent as InputActionEvent } from "../input/actions";
 
-export type MenuPage = "resume" | "chapters" | "quests" | "map" | "save" | "settings";
+export type MenuPage = "resume" | "chapters" | "quests" | "map" | "save" | "settings" | "help";
 interface MenuRequest {
   page?: MenuPage;
+}
+
+/** A small application-level choice contract owned and rendered by UIScene. */
+export interface ChoiceOption {
+  id: string;
+  label: string;
+  enabled?: boolean;
+  disabledReason?: string;
+}
+
+export interface ChoiceRequest {
+  speaker: string;
+  prompt: string;
+  options: readonly ChoiceOption[];
+  onSelect: (optionId: string) => void;
+  onCancel?: () => void;
 }
 
 export type AudioCue =
@@ -25,13 +41,23 @@ export const EVENT = {
   stateChanged: "state-changed",
   dialogue: "dialogue",
   dialogueCancelled: "dialogue-cancelled",
+  choice: "choice",
+  choiceCancelled: "choice-cancelled",
   toast: "toast",
   hint: "hint",
   inputAction: "input-action",
   interactRequested: "interact-requested",
   menuRequested: "menu-requested",
+  playerLocationChanged: "player-location-changed",
   audioCue: "audio-cue",
 } as const;
+
+/** A live, normalized world coordinate used by the backpack map. */
+export interface PlayerMapLocation {
+  map: MapId;
+  x: number;
+  y: number;
+}
 
 /**
  * The complete contract for cross-scene application communication.
@@ -44,11 +70,14 @@ export interface GameEventMap {
   [EVENT.stateChanged]: [state: GameState];
   [EVENT.dialogue]: [request: DialogueRequest];
   [EVENT.dialogueCancelled]: [];
+  [EVENT.choice]: [request: ChoiceRequest];
+  [EVENT.choiceCancelled]: [];
   [EVENT.toast]: [message: string];
   [EVENT.hint]: [message: string];
   [EVENT.inputAction]: [event: SemanticActionEvent];
   [EVENT.interactRequested]: [];
   [EVENT.menuRequested]: [request?: MenuRequest];
+  [EVENT.playerLocationChanged]: [location: PlayerMapLocation];
   [EVENT.audioCue]: [cue: AudioCue];
 }
 

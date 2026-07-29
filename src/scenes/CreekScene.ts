@@ -20,7 +20,7 @@ export class CreekScene extends BaseExplorationScene {
     this.tiledWorld = new TiledRuntimeWorld(this.make.tilemap({ key: CREEK_MAP.tiledMapKey }));
     this.physics.world.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
     this.cameras.main.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
-    this.initializeWorld(this.tiledWorld.point("spawn_home"));
+    this.initializeWorld("creek", this.tiledWorld.point("spawn_home"));
     this.drawWorld();
     this.addMushroomHunt("creek");
     this.questController = new CreekQuestController({
@@ -30,6 +30,7 @@ export class CreekScene extends BaseExplorationScene {
       registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
       unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
       showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      showChoice: (request) => this.showChoice(request),
       addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
       objectPoint: (name) => this.tiledWorld.point(name),
       returnToNeighborhood: () => this.returnToNeighborhood(),

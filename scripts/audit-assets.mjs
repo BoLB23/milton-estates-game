@@ -16,6 +16,8 @@ const runtimeRoots = ["src", "index.html"];
 const retainedSourceAssets = new Set([
   "assets/maps/creek-woods.tmj",
   "assets/maps/neighborhood-wheatfield-slice.tmj",
+  "assets/maps/reidenbaugh-road.tmj",
+  "assets/maps/reidenbaugh.tmj",
 ]);
 
 async function collectFiles(directory) {
