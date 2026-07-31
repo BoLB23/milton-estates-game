@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
 import { CHAPTER_REGISTRY, hasAvailableQuest, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
-import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapPoint, selectActiveObjectiveMarker } from "../content/maps";
+import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapPoint, selectActiveObjectiveMarker, type MapDefinition } from "../content/maps";
 import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage, type PlayerMapLocation } from "../game/events";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import type { GameState, PlayerSettings } from "../game/types";
@@ -88,8 +88,12 @@ export class MenuScene extends Phaser.Scene {
       });
       this.tabs.push(tab);
       if (page === "quests") {
-        const dot = this.add.circle(306, 101, 9, 0xf3c95f, 1).setStrokeStyle(2, 0x315f4c, 1);
-        const label = this.add.text(306, 101, "!", {
+        // Keep the badge at the tab's upper-right corner instead of over the
+        // QUESTS label, including when the player's text size is enlarged.
+        const badgeX = tab.x + tab.width - 4;
+        const badgeY = tab.y - 2;
+        const dot = this.add.circle(badgeX, badgeY, 9, 0xf3c95f, 1).setStrokeStyle(2, 0x315f4c, 1);
+        const label = this.add.text(badgeX, badgeY, "!", {
           fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "13px", color: "#315f4c", fontStyle: "bold",
         }).setOrigin(0.5);
         this.questTabBadge = this.add.container(0, 0, [dot, label]);
@@ -288,18 +292,18 @@ export class MenuScene extends Phaser.Scene {
     this.card(68, 222, 260, 264, 0xe9d29e);
     chapter.quests.forEach((quest, index) => {
       const questStatus = selectQuestState(quest, this.state);
-      const y = 230 + index * 40;
+      const y = 228 + index * 36;
       const selectedRow = index === this.selectedQuestIndex;
-      const row = this.add.rectangle(80, y, 236, 34, selectedRow ? 0xfff2a1 : 0xf8dfb5, 1)
+      const row = this.add.rectangle(80, y, 236, 32, selectedRow ? 0xfff2a1 : 0xf8dfb5, 1)
         .setOrigin(0).setStrokeStyle(selectedRow ? 3 : 1, selectedRow ? 0x315f4c : 0xa7865f, 0.9)
         .setInteractive({ useHandCursor: true }).on("pointerdown", () => {
           this.selectedQuestIndex = index;
           this.renderPage();
-        });
+      });
       this.pageContent.add(row);
-      const title = this.note(94, y + 3, `${index + 1}. ${quest.title}`, { fontSize: "12px", fontStyle: "bold" });
+      const title = this.note(94, y + 2, `${index + 1}. ${quest.title}`, { fontSize: "12px", fontStyle: "bold" });
       this.fitText(title, 210, 14, 9);
-      this.note(94, y + 19, this.questStatusLabel(questStatus), { fontSize: "10px", color: this.questStatusColor(questStatus), fontStyle: "bold" });
+      this.note(94, y + 17, this.questStatusLabel(questStatus), { fontSize: "10px", color: this.questStatusColor(questStatus), fontStyle: "bold" });
     });
     this.card(348, 222, 514, 264);
     this.note(372, 240, `${selected.kind.toUpperCase()} MEMORY`, { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
@@ -393,21 +397,36 @@ export class MenuScene extends Phaser.Scene {
       discoveredIds: [],
     });
     const objectivePosition = objective ? projectRegionalMapPoint(definition, objective) : undefined;
-    for (const candidate of Object.values(MAP_DEFINITIONS)) {
-      if (this.state.discoveredMaps.includes(candidate.id) || this.state.unlockedMaps.includes(candidate.id)) continue;
+    const unexplored = Object.values(MAP_DEFINITIONS).filter((candidate) =>
+      !this.state.discoveredMaps.includes(candidate.id) && !this.state.unlockedMaps.includes(candidate.id),
+    );
+    const reidenbaughCluster = unexplored.filter((candidate) => candidate.id === "reidenbaugh_road" || candidate.id === "reidenbaugh");
+    if (reidenbaughCluster.length === 2) {
+      // The two authored regions overlap on the fold-out artwork. Use one
+      // shared mask so the lock state reads as a single unexplored destination
+      // instead of stacking two dark rectangles over the same paper.
+      const cover = this.add.rectangle(652.5, 159, 155, 134, 0x475057, 0.46)
+        .setOrigin(0.5).setStrokeStyle(2, 0x283033, 0.42);
+      this.pageContent.add(cover);
+    }
+    unexplored.forEach((candidate) => {
+      if (reidenbaughCluster.length === 2 && (candidate.id === "reidenbaugh_road" || candidate.id === "reidenbaugh")) return;
       const bounds = candidate.regionalMapBounds;
       const cover = this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0x475057, 0.46)
         .setOrigin(0).setStrokeStyle(2, 0x283033, 0.42);
       this.pageContent.add(cover);
-      scrapbookText(this, this.pageContent, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, "UNEXPLORED", {
+    });
+    unexplored.forEach((candidate) => {
+      const labelPosition = this.regionalMapLabelPosition(candidate);
+      scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNEXPLORED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", color: "#e1e5dc", fontStyle: "bold",
         backgroundColor: "#283033aa", padding: { x: 5, y: 3 },
       }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
-    }
+    });
     for (const candidate of Object.values(MAP_DEFINITIONS)) {
       if (this.state.discoveredMaps.includes(candidate.id) || !this.state.unlockedMaps.includes(candidate.id)) continue;
-      const bounds = candidate.regionalMapBounds;
-      scrapbookText(this, this.pageContent, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, "UNLOCKED", {
+      const labelPosition = this.regionalMapLabelPosition(candidate);
+      scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNLOCKED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "10px", color: "#fff4cd", fontStyle: "bold",
         backgroundColor: "#315f4ccc", padding: { x: 4, y: 2 },
       }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
@@ -427,6 +446,19 @@ export class MenuScene extends Phaser.Scene {
     }, createPresentationPolicy(this.state.settings).textScale);
   }
 
+  private regionalMapLabelPosition(candidate: MapDefinition): { x: number; y: number } {
+    const bounds = candidate.regionalMapBounds;
+    const offset = candidate.id === "reidenbaugh_road"
+      ? { x: -28, y: 27 }
+      : candidate.id === "reidenbaugh"
+        ? { x: 25, y: 12 }
+        : { x: 0, y: 0 };
+    return {
+      x: bounds.x + bounds.width / 2 + offset.x,
+      y: bounds.y + bounds.height / 2 + offset.y,
+    };
+  }
+
   private renderSave(): void {
     const saved = this.state.lastSavedAt ? new Date(this.state.lastSavedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "not yet this session";
     this.heading("Save pocket", "Autosave quietly keeps your canonical adventure safe.");
@@ -444,16 +476,18 @@ export class MenuScene extends Phaser.Scene {
     }).setPosition(550, 310);
     this.button(68, 330, this.restartArmed ? "CONFIRM RESTART" : "RESTART MISSION", () => this.restartMission(), 300)
       .setBackgroundColor(this.restartArmed ? "#c65246" : "#f3c95f");
-    this.note(390, 337,
+    const warning = this.note(390, 378,
       this.restartArmed
-        ? "Last warning: this resets the current mission. Click CONFIRM RESTART to begin at Billy's house."
-        : "Want a fresh run? Restart requires a second click. Completed records and normal saves are not changed by simply viewing this page.",
-      { fontSize: "15px", color: this.restartArmed ? "#a43732" : "#675544", wordWrap: { width: 430 }, lineSpacing: 4 },
+        ? "Last warning: confirm restart to begin at Billy's house."
+        : "Restart needs a second click; viewing this page changes nothing.",
+      { fontSize: "14px", color: this.restartArmed ? "#a43732" : "#675544", wordWrap: { width: 430 }, lineSpacing: 3 },
     );
-    this.note(72, 392, "REPLAY NOTE", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
-    this.note(72, 412, "Mission restart is destructive for the current run. The button stays locked until you confirm.", {
-      fontSize: "14px", color: "#675544", wordWrap: { width: 760 },
+    this.fitText(warning, 430, 42, 11);
+    this.note(72, 428, "REPLAY NOTE", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
+    const replayNote = this.note(72, 447, "Mission restart is destructive for the current run. The button stays locked until you confirm.", {
+      fontSize: "13px", color: "#675544", wordWrap: { width: 760 },
     });
+    this.fitText(replayNote, 760, 42, 11);
   }
 
   private restartMission(): void {

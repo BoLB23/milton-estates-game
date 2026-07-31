@@ -139,6 +139,9 @@ export class FrontEndScene extends Phaser.Scene {
     if (!this.newGameArmed) {
       this.newGameArmed = true;
       this.render();
+      // Rendering rebuilds the focus list. Keep the confirmation target
+      // selected so the second keyboard confirm cannot fall back to Continue.
+      this.focus.move(1);
       return;
     }
     gameStore.newGame();
@@ -182,14 +185,14 @@ export class FrontEndScene extends Phaser.Scene {
       billy.setPosition(260, 318).anims.play("billy-idle-side");
     }
 
-    this.card(472, 174, 360, 224, 0xfff8df);
+    this.card(472, 174, 360, 242, 0xfff8df);
     this.text(500, 198, "HOW TO EXPLORE", { fontSize: "18px", fontStyle: "bold", color: RED_INK });
     this.text(500, 237, "MOVE", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
     this.text(500, 261, "WASD or arrow keys", { fontSize: "18px", color: INK });
     this.text(500, 300, "TALK & INSPECT", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
     this.text(500, 324, "E or Space", { fontSize: "18px", color: INK });
-    this.text(500, 363, "BACKPACK & HELP", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
-    this.text(500, 387, "B or Esc  •  Help lives in the backpack", { fontSize: "15px", color: INK, wordWrap: { width: 305 } });
+    this.text(500, 351, "BACKPACK & HELP", { fontSize: "13px", fontStyle: "bold", color: BLUE_INK });
+    this.text(500, 375, "B or Esc  •  Help lives in the backpack", { fontSize: "15px", color: INK, wordWrap: { width: 305 } });
     this.button(278, 432, "START EXPLORING  →", () => this.launchGameplay(), {
       width: 405, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
     });
