@@ -212,7 +212,7 @@ git diff --check
 git status --short --branch
 ```
 
-Capture side-by-side screenshots for the approved mockup, gameplay neighborhood, creek, chapter browser, quest browser, Backpack Journal, regional map, and portrait overlay. Update `docs/production-polish-manifest.md` with temporary assets and remaining risks.
+Capture side-by-side screenshots for the approved mockup, gameplay neighborhood, creek, chapter browser, quest browser, Backpack Journal, regional map, and portrait overlay. Update `docs/archive/production-polish-manifest.md` with temporary assets and remaining risks.
 
 ## Explicit non-goals
 

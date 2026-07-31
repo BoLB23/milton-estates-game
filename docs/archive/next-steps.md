@@ -1,6 +1,6 @@
 # Milton Estates: Next Steps After the First Playthrough
 
-> This historical graybox plan has been completed and is retained for context. The current handoff is [Next-phase handoff: illustrated world and real content browsing](next-phase-handoff-2026-07-13.md).
+> This historical graybox plan has been completed and is retained for context. Its successor was [Next-phase handoff: illustrated world and real content browsing](next-phase-handoff-2026-07-13.md).
 
 ## Current checkpoint
 
@@ -73,7 +73,7 @@ Exit criteria: a first-time player can finish without outside instructions and c
 
 ## Production pass: move from graybox to authored content
 
-1. Build the neighborhood and creek maps in Tiled using `docs/maps/first-area-plan.md` as the contract.
+1. Build the neighborhood and creek maps in Tiled using `docs/archive/first-area-plan.md` as the contract.
 2. Add a map registry and loader that resolve stable map, spawn, transition, collision, interaction, and quest-region IDs.
 3. Move dialogue, quest content, characters, and items into small validated data files while keeping quest transitions deterministic.
 4. Replace placeholder characters, homes, vegetation, creek, roads, and props with an original cohesive tileset and sprites.

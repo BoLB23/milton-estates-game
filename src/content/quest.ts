@@ -4,8 +4,6 @@
  */
 import {
   advanceMissingControllerStage,
-  advanceMushroomStage,
-  advanceSportsStage,
   advanceRyanRideStage,
   objectiveForQuest,
 } from "../game/quests/specs";
@@ -15,21 +13,13 @@ import type {
   SportsQuestEvent,
   RyanRideQuestEvent,
 } from "../game/quests/specs";
-import type { MushroomQuestStage, QuestId, QuestStage, RyanRideStage, SportsQuestStage } from "../game/types";
+import type { QuestId, QuestStage, RyanRideStage } from "../game/types";
 
 export type QuestEvent = MissingControllerQuestEvent;
 export type { MushroomQuestEvent, SportsQuestEvent, RyanRideQuestEvent };
 
 export function nextStage(current: QuestStage, event: QuestEvent): QuestStage {
   return advanceMissingControllerStage(current, event);
-}
-
-export function nextMushroomStage(current: MushroomQuestStage, event: MushroomQuestEvent): MushroomQuestStage {
-  return advanceMushroomStage(current, event);
-}
-
-export function nextSportsStage(current: SportsQuestStage, event: SportsQuestEvent): SportsQuestStage {
-  return advanceSportsStage(current, event);
 }
 
 export function nextRyanRideStage(current: RyanRideStage, event: RyanRideQuestEvent): RyanRideStage {

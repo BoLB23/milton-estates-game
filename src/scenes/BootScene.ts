@@ -1,7 +1,9 @@
 import Phaser from "phaser";
 import { assetUrl } from "../content/assets";
+import { CONTENT_MODULES, validateRegisteredContent } from "../content/registry";
 import { MAP_DEFINITIONS, validateMapDefinitions } from "../content/maps";
 import { gameStore } from "../game/GameStore";
+import type { MapId } from "../game/types";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -9,8 +11,12 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image("chapter-1-cover", assetUrl("assets/concepts/chapter-1-neighborhood-concept.png"));
-    this.load.image("regional-foldout-map", assetUrl("assets/concepts/phase-a/regional-foldout-map-target.png"));
+    for (const chapter of CONTENT_MODULES) {
+      for (const asset of chapter.assets) {
+        if (asset.kind !== "image") throw new Error(`Unsupported chapter catalog asset: ${asset.kind}`);
+        this.load.image(asset.key, assetUrl(asset.path));
+      }
+    }
     for (const map of Object.values(MAP_DEFINITIONS)) {
       this.load.tilemapTiledJSON(map.tiledMapKey, assetUrl(map.tiledMapPath));
       for (const layer of map.layers) this.load.image(layer.textureKey, layer.imagePath);
@@ -22,6 +28,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    validateRegisteredContent(new Set(Object.keys(MAP_DEFINITIONS) as MapId[]));
     validateMapDefinitions();
     this.makeTextures();
     this.makeBillyAnimations();

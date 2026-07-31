@@ -138,6 +138,9 @@ export class FrontEndScene extends Phaser.Scene {
     if (!this.newGameArmed) {
       this.newGameArmed = true;
       this.render();
+      // Rendering rebuilds the focus list. Keep the confirmation target
+      // selected so the second keyboard confirm cannot fall back to Continue.
+      this.focus.move(1);
       return;
     }
     gameStore.newGame();

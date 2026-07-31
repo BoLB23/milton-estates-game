@@ -1,4 +1,4 @@
-import type { MapId, QuestStage } from "../game/types";
+import type { MapId, QuestId, QuestStage } from "../game/types";
 import { assetUrl } from "./assets";
 
 export type MapMarkerKind = "landmark" | "exit" | "objective";
@@ -25,6 +25,7 @@ export interface MapMarker {
   x: number;
   y: number;
   initiallyVisible?: boolean;
+  questId?: QuestId;
   stages?: readonly QuestStage[];
 }
 
@@ -46,6 +47,7 @@ export interface MapDefinition {
 
 export interface MapSelection {
   currentMap: MapId;
+  questId: QuestId;
   stage: QuestStage;
   discoveredIds: ReadonlySet<string> | readonly string[];
 }
@@ -72,17 +74,17 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "jeremy_home", kind: "landmark", label: "Jeremy's House", x: 0.817, y: 0.653 },
       { id: "andrew_home", kind: "landmark", label: "Andrew's House", x: 0.096, y: 0.653 },
       { id: "creek_woods", kind: "exit", label: "Creek Woods", x: 0.491, y: 0.227 },
-      { id: "obj_jeremy", kind: "objective", label: "Talk to Jeremy", x: 0.817, y: 0.653, stages: ["talk_to_jeremy", "return_to_jeremy"] },
-      { id: "obj_andrew", kind: "objective", label: "Talk to Andrew", x: 0.096, y: 0.653, stages: ["talk_to_andrew"] },
-      { id: "obj_mushroom_yards", kind: "objective", label: "Search Milton's backyards for mushrooms", x: 0.42, y: 0.35, stages: ["search_mushrooms"] },
-      { id: "obj_feed_jeremy", kind: "objective", label: "Feed one mushroom to Jeremy", x: 0.817, y: 0.653, stages: ["feed_mushroom_to_jeremy"] },
-      { id: "obj_place_billy", kind: "objective", label: "Place one mushroom at Billy's house", x: 0.552, y: 0.653, stages: ["place_mushroom_at_billy"] },
-      { id: "obj_give_andrew", kind: "objective", label: "Give the last eight mushrooms to Andrew", x: 0.096, y: 0.653, stages: ["give_mushrooms_to_andrew"] },
-      { id: "obj_skateboard", kind: "objective", label: "Meet Jeremy to skateboard", x: 0.817, y: 0.653, stages: ["meet_jeremy_to_skateboard"] },
-      { id: "obj_baseball", kind: "objective", label: "Meet Billy to play baseball", x: 0.552, y: 0.653, stages: ["meet_billy_to_play_baseball"] },
-      { id: "obj_basketball", kind: "objective", label: "Meet Andrew to play basketball", x: 0.096, y: 0.653, stages: ["meet_andrew_to_play_basketball"] },
-      { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.83, y: 0.2, stages: ["invite", "choose_destination"] },
-      { id: "obj_reidenbaugh_exit", kind: "objective", label: "Follow Ryan to Reidenbaugh", x: 0.89, y: 0.19, stages: ["depart_neighborhood"] },
+      { id: "obj_jeremy", kind: "objective", label: "Talk to Jeremy", x: 0.817, y: 0.653, questId: "missing_controller", stages: ["talk_to_jeremy", "return_to_jeremy"] },
+      { id: "obj_andrew", kind: "objective", label: "Talk to Andrew", x: 0.096, y: 0.653, questId: "missing_controller", stages: ["talk_to_andrew"] },
+      { id: "obj_mushroom_yards", kind: "objective", label: "Search Milton's backyards for mushrooms", x: 0.42, y: 0.35, questId: "andrew_mushroom_hunt", stages: ["search_mushrooms"] },
+      { id: "obj_feed_jeremy", kind: "objective", label: "Feed one mushroom to Jeremy", x: 0.817, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["feed_mushroom_to_jeremy"] },
+      { id: "obj_place_billy", kind: "objective", label: "Place one mushroom at Billy's house", x: 0.552, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["place_mushroom_at_billy"] },
+      { id: "obj_give_andrew", kind: "objective", label: "Give the last eight mushrooms to Andrew", x: 0.096, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["give_mushrooms_to_andrew"] },
+      { id: "obj_skateboard", kind: "objective", label: "Meet Jeremy to skateboard", x: 0.817, y: 0.653, questId: "three_player_sports", stages: ["meet_jeremy_to_skateboard"] },
+      { id: "obj_baseball", kind: "objective", label: "Meet Billy to play baseball", x: 0.552, y: 0.653, questId: "three_player_sports", stages: ["meet_billy_to_play_baseball"] },
+      { id: "obj_basketball", kind: "objective", label: "Meet Andrew to play basketball", x: 0.096, y: 0.653, questId: "three_player_sports", stages: ["meet_andrew_to_play_basketball"] },
+      { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.83, y: 0.2, questId: "catch_ryan", stages: ["invite", "choose_destination"] },
+      { id: "obj_reidenbaugh_exit", kind: "objective", label: "Follow Ryan to Reidenbaugh", x: 0.89, y: 0.19, questId: "catch_ryan", stages: ["depart_neighborhood"] },
     ],
     regionalMapBounds: { x: 360, y: 209, width: 210, height: 132 },
   },
@@ -98,9 +100,9 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "fallen_log", kind: "landmark", label: "Fallen Log Clearing", x: 0.273, y: 0.133 },
       { id: "creek_crossing", kind: "landmark", label: "Creek Crossing", x: 0.5, y: 0.716, initiallyVisible: true },
       { id: "wheatfield_drive", kind: "exit", label: "Back to Wheatfield Drive", x: 0.669, y: 0.951 },
-      { id: "obj_controller", kind: "objective", label: "Search the tall grass", x: 0.293, y: 0.443, stages: ["search_creek"] },
-      { id: "obj_return_home", kind: "objective", label: "Return to Wheatfield Drive", x: 0.669, y: 0.951, stages: ["return_to_jeremy"] },
-      { id: "obj_mushroom_creek", kind: "objective", label: "Search Creek Woods for mushrooms", x: 0.4, y: 0.38, stages: ["search_mushrooms"] },
+      { id: "obj_controller", kind: "objective", label: "Search the tall grass", x: 0.293, y: 0.443, questId: "missing_controller", stages: ["search_creek"] },
+      { id: "obj_return_home", kind: "objective", label: "Return to Wheatfield Drive", x: 0.669, y: 0.951, questId: "missing_controller", stages: ["return_to_jeremy"] },
+      { id: "obj_mushroom_creek", kind: "objective", label: "Search Creek Woods for mushrooms", x: 0.4, y: 0.38, questId: "andrew_mushroom_hunt", stages: ["search_mushrooms"] },
     ],
     regionalMapBounds: { x: 200, y: 190, width: 285, height: 190 },
   },
@@ -150,7 +152,9 @@ export function selectVisibleMapMarkers(selection: MapSelection): readonly MapMa
   const discovered = selection.discoveredIds instanceof Set ? selection.discoveredIds : new Set(selection.discoveredIds);
   return MAP_DEFINITIONS[selection.currentMap].markers.filter((marker) => {
     if (marker.kind === "exit") return true;
-    if (marker.kind === "objective") return marker.stages?.includes(selection.stage) ?? false;
+    if (marker.kind === "objective") {
+      return marker.questId === selection.questId && (marker.stages?.includes(selection.stage) ?? false);
+    }
     return marker.initiallyVisible === true || discovered.has(marker.id);
   });
 }
@@ -165,6 +169,7 @@ export function validateMapDefinitions(): void {
     if (map.worldWidth <= 0 || map.worldHeight <= 0) throw new Error(`Invalid map dimensions: ${map.id}`);
     for (const marker of map.markers) {
       if (marker.x < 0 || marker.x > 1 || marker.y < 0 || marker.y > 1) throw new Error(`Marker outside map bounds: ${marker.id}`);
+      if (marker.kind === "objective" && !marker.questId) throw new Error(`Objective marker missing quest ID: ${marker.id}`);
     }
     for (const layer of map.layers) {
       if (textureKeys.has(layer.textureKey)) throw new Error(`Duplicate map texture key: ${layer.textureKey}`);

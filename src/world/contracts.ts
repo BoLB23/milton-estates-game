@@ -25,3 +25,16 @@ export interface ExplorationInteractionHost {
   /** Resolves a named gameplay point from the loaded TMJ object layer. */
   objectPoint(name: string): WorldPoint;
 }
+
+export interface NeighborhoodQuestHost extends ExplorationInteractionHost {
+  enterWoods(): void;
+  refreshMushroomHunt(): void;
+  refreshQuestBindings(): void;
+  onRideSelected(): void;
+  enterReidenbaughRoad(): void;
+}
+
+export interface QuestRuntimeBinding {
+  mount(): void;
+  dispose(): void;
+}

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { getMushroomDialogue } from "../content/chapters/chapter-01/quests/andrew-mushroom-hunt/dialogue";
 import { EVENT, gameEvents } from "../game/events";
 import { MUSHROOM_COUNT, gameStore } from "../game/GameStore";
 import type { MapId } from "../game/types";
@@ -60,7 +61,7 @@ export class MushroomHuntController {
     }
     this.host.unregisterInteraction(id);
     const count = gameStore.getState().questProgress.mushrooms.collectedIds.length;
-    this.host.showDialogue([{ speaker: "Billy", text: "A mushroom! Andrew is going to love this little forest treasure." }], () => {
+    this.host.showDialogue(getMushroomDialogue("found_mushroom"), () => {
       gameEvents.emit(
         EVENT.toast,
         count === MUSHROOM_COUNT

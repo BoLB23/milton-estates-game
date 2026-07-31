@@ -1078,7 +1078,7 @@ The feature is complete only when all statements below are true:
 Use this wrapper when assigning any package:
 
 ```text
-Implement package RR-XX from docs/next-feature-ryans-ride-spec.md.
+Implement package RR-XX from docs/archive/next-feature-ryans-ride-spec.md.
 
 Read the package, its dependency sections, and the stable contracts in Sections 6-13 before editing. Own only the listed files. Preserve unrelated dirty-worktree changes and do not rename persisted IDs. Run the package's focused tests plus npm run typecheck. Report:
 
