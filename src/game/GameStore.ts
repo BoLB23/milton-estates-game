@@ -519,17 +519,27 @@ export class GameStore {
   private state: SaveData;
   private replayState: SaveData | null = null;
   private replayQuestId: QuestId | null = null;
+  private readonly firstVisit: boolean;
 
   public constructor(
     private readonly storage: Storage | undefined = browserStorage(),
     private readonly now: () => Date = () => new Date(),
   ) {
+    this.firstVisit = this.hasStoredSave() === false;
     this.state = this.load();
   }
 
   public getState(): GameState { return toGameState(this.replayState ?? this.state); }
   public getCanonicalState(): GameState { return toGameState(this.state); }
   public isReplaying(): boolean { return this.replayState !== null; }
+  /** Captured before Boot creates its initial autosave, so the welcome scene runs once. */
+  public isFirstVisit(): boolean { return this.firstVisit; }
+
+  private hasStoredSave(): boolean | undefined {
+    if (!this.storage) return undefined;
+    try { return this.storage.getItem(STORAGE_KEY) !== null; }
+    catch { return undefined; }
+  }
 
   /** Cheap primitive selectors for per-frame gameplay checks. */
   public isQuestActive(questId: QuestId): boolean {

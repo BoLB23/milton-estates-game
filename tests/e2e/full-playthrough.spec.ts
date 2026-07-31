@@ -78,6 +78,9 @@ async function teleportAndInteract(page: Page, viaPointer = false): Promise<void
 
 async function startNewGame(page: Page): Promise<void> {
   await page.waitForTimeout(250);
+  // A browser with no prior save receives the skippable scrapbook opening.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(260);
   // Let Phaser finish registering the first title-page hit areas before the
   // first synthetic input; this is also a real device's first display frame.
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
@@ -88,9 +91,7 @@ async function startNewGame(page: Page): Promise<void> {
   await page.keyboard.press("Space"); // Arm New Game.
   await page.waitForTimeout(140);
   await page.keyboard.press("Space"); // Confirm New Game.
-  await page.waitForTimeout(200); // Let the animated welcome card enter.
-  await page.keyboard.press("Space"); // Start Exploring from the welcome card.
-  await page.waitForTimeout(140);
+  await page.waitForTimeout(340);
 }
 
 async function continueGame(page: Page): Promise<void> {

@@ -19,6 +19,15 @@ const makeStore = (storage = new MemoryStorage()) => new GameStore(storage, () =
 afterEach(() => gameEvents.removeAllListeners());
 
 describe("GameStore save v6", () => {
+  it("identifies whether this browser had a save before the initial autosave", () => {
+    const freshStorage = new MemoryStorage();
+    const returningStorage = new MemoryStorage();
+    returningStorage.setItem("milton-estates-save", "not json");
+
+    expect(makeStore(freshStorage).isFirstVisit()).toBe(true);
+    expect(makeStore(returningStorage).isFirstVisit()).toBe(false);
+  });
+
   it("starts with trustworthy mission and menu defaults", () => {
     expect(makeStore().getState()).toMatchObject({
       version: 6,

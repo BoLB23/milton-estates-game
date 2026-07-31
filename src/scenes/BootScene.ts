@@ -27,9 +27,10 @@ export class BootScene extends Phaser.Scene {
     this.makeBillyAnimations();
     this.makeBikeAnimations();
     this.scene.launch("input-router");
+    const firstVisit = gameStore.isFirstVisit();
     // Persist migrations and establish an initial autosave before play begins.
     gameStore.saveNow();
-    this.scene.start("front-end");
+    this.scene.start(firstVisit ? "welcome" : "front-end");
   }
 
   private makeTextures(): void {

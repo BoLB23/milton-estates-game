@@ -10,6 +10,7 @@ import { FrontEndScene } from "./scenes/FrontEndScene";
 import { InputRouterScene } from "./scenes/InputRouterScene";
 import { ReidenbaughRoadScene } from "./scenes/ReidenbaughRoadScene";
 import { ReidenbaughScene } from "./scenes/ReidenbaughScene";
+import { WelcomeScene } from "./scenes/WelcomeScene";
 
 const game = new Phaser.Game({
   // The browser behavior suite uses Canvas to avoid
@@ -31,7 +32,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, InputRouterScene, FrontEndScene, NeighborhoodScene, CreekScene, ReidenbaughRoadScene, ReidenbaughScene, UIScene, MenuScene],
+  scene: [BootScene, InputRouterScene, WelcomeScene, FrontEndScene, NeighborhoodScene, CreekScene, ReidenbaughRoadScene, ReidenbaughScene, UIScene, MenuScene],
 });
 
 // Phaser owns the sole SoundManager, its AudioContext, and autoplay unlock.
