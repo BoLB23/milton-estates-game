@@ -39,6 +39,7 @@ export class UIScene extends Phaser.Scene {
   private choicePanel?: Phaser.GameObjects.Container;
   private choiceEntries: Array<{ option: ChoiceOption; card: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; reason?: Phaser.GameObjects.Text }> = [];
   private choiceFocus = 0;
+  private latestHint = "";
   private previousStage?: QuestStage;
   private previousQuestId?: QuestId;
   private previousCompletedQuestIds?: readonly QuestId[];
@@ -159,9 +160,9 @@ export class UIScene extends Phaser.Scene {
 
   private buildInventoryIndicator(): void {
     const shadow = this.add.rectangle(938, 53, 178, 48, 0x07131c, 0.42).setOrigin(1, 0);
-    const card = this.add.rectangle(934, 49, 178, 48, PAPER, 0.95)
-      .setOrigin(1, 0)
-      .setStrokeStyle(2, INK, 1);
+    const card = this.add.graphics();
+    card.fillStyle(PAPER, 1).fillRect(756, 49, 178, 48);
+    card.lineStyle(2, INK, 1).strokeRect(756, 49, 178, 48);
     this.inventoryIcon = this.add.image(778, 73, "controller").setScale(0.8).setTint(INK).setVisible(false);
     this.inventoryText = this.add.text(798, 61, "BACKPACK\nEMPTY", {
       fontFamily: UI_FONT,
@@ -170,7 +171,7 @@ export class UIScene extends Phaser.Scene {
       fontStyle: "bold",
       lineSpacing: 1,
     });
-    this.add.container(0, 0, [shadow, card, this.inventoryIcon, this.inventoryText]).setDepth(UI_DEPTH);
+    this.add.container(0, 0, [shadow, card, this.inventoryIcon, this.inventoryText]).setDepth(UI_DEPTH + 1);
   }
 
   private buildDebugPanel(): void {
@@ -381,6 +382,7 @@ export class UIScene extends Phaser.Scene {
     this.dialogue = request;
     this.dialogueIndex = 0;
     this.showDialogueLine();
+    this.updateHintVisibility();
     this.dialoguePanel.setVisible(true).setAlpha(this.policy.reducedMotion ? 1 : 0);
     if (!this.policy.reducedMotion) this.tweens.add({ targets: this.dialoguePanel, alpha: 1, duration: this.policy.duration(140) });
   }
@@ -407,6 +409,7 @@ export class UIScene extends Phaser.Scene {
     this.dialogue = undefined;
     inputCapture.release("dialogue");
     this.dialoguePanel.setVisible(false);
+    this.updateHintVisibility();
     completedDialogue.onComplete?.();
   }
 
@@ -417,6 +420,7 @@ export class UIScene extends Phaser.Scene {
     inputCapture.release("dialogue");
     this.tweens.killTweensOf(this.dialoguePanel);
     this.dialoguePanel.setVisible(false).setAlpha(1);
+    this.updateHintVisibility();
   }
 
   private handleChoice(request: ChoiceRequest): void {
@@ -429,6 +433,7 @@ export class UIScene extends Phaser.Scene {
     this.choice = request;
     this.choiceFocus = Math.max(0, request.options.findIndex((option) => option.enabled !== false));
     inputCapture.capture("choice");
+    this.updateHintVisibility();
 
     const shadow = this.add.rectangle(480, 315, 660, 250, 0x07131c, 0.58);
     const paper = this.add.rectangle(480, 310, 660, 250, PAPER, 0.99).setStrokeStyle(4, INK, 1);
@@ -471,12 +476,14 @@ export class UIScene extends Phaser.Scene {
     const request = this.choice;
     if (!entry || !request || entry.option.enabled === false) return;
     this.clearChoice();
+    this.updateHintVisibility();
     request.onSelect(entry.option.id);
   }
 
   private cancelChoice(): void {
     const request = this.choice;
     this.clearChoice();
+    this.updateHintVisibility();
     request?.onCancel?.();
   }
 
@@ -547,17 +554,25 @@ export class UIScene extends Phaser.Scene {
   }
 
   private handleHint(message: string): void {
+    this.latestHint = message;
     this.fitText(this.hintText, message, 16, 420, 56, 12);
     const height = Math.max(50, Math.min(76, this.hintText.height + 20));
     this.hintCard.setSize(460, height);
     this.hintShadow.setSize(460, height).setPosition(4, 5);
     this.hintPanel.setSize(460, height);
-    const visible = message.trim().length > 0;
+    this.updateHintVisibility();
+  }
+
+  private updateHintVisibility(): void {
+    const visible = this.latestHint.trim().length > 0 && !this.dialogue && !this.choice;
     this.hintPanel.setVisible(visible);
-    if (visible) {
-      this.hintPanel.setAlpha(this.policy.reducedMotion ? 1 : 0).setScale(this.policy.reducedMotion ? 1 : 0.98);
-      if (!this.policy.reducedMotion) this.tweens.add({ targets: this.hintPanel, alpha: 1, scaleX: 1, scaleY: 1, duration: this.policy.duration(120) });
+    this.tweens.killTweensOf(this.hintPanel);
+    if (!visible) {
+      this.hintPanel.setAlpha(1).setScale(1);
+      return;
     }
+    this.hintPanel.setAlpha(this.policy.reducedMotion ? 1 : 0).setScale(this.policy.reducedMotion ? 1 : 0.98);
+    if (!this.policy.reducedMotion) this.tweens.add({ targets: this.hintPanel, alpha: 1, scaleX: 1, scaleY: 1, duration: this.policy.duration(120) });
   }
 
   private cleanup(): void {
@@ -611,6 +626,7 @@ export class UIScene extends Phaser.Scene {
     this.choicePanel = undefined;
     this.choiceEntries = [];
     this.choiceFocus = 0;
+    this.latestHint = "";
     this.previousStage = undefined;
     this.previousQuestId = undefined;
     this.previousCompletedQuestIds = undefined;
