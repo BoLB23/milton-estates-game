@@ -30,12 +30,14 @@ The game requires a browser with WebGL or WebGL2 support. Canvas is retained onl
 
 Merges (and direct pushes) to `main` first run the unit tests and production build, then publish a container image to GitHub Container Registry. Images are tagged with both `latest` and the commit SHA.
 
-The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the cluster's NGINX ingress controller. ExternalDNS already watches Ingress resources and automatically creates the Cloudflare record from this hostname; no ExternalDNS annotation is needed. TLS uses the cluster's existing Cloudflare DNS-01 `ClusterIssuer`, `bolblab-cf-issuer`.
+The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the existing Cloudflare Tunnel. The deployment script updates the tunnel's remote ingress configuration with an idempotent route to the in-cluster Service; ExternalDNS publishes the hostname as a proxied CNAME to that tunnel. TLS uses the cluster's existing Cloudflare DNS-01 `ClusterIssuer`, `bolblab-cf-issuer`.
+
+The script needs a `CLOUDFLARE_TUNNEL_API_TOKEN` with Account → Cloudflare Tunnel → Edit and Zone → DNS → Edit permissions. The cluster's ExternalDNS token manages DNS records but does not have permission to update the tunnel route.
 
 After making the GHCR package readable by the cluster (public, or via an image-pull secret), deploy a published image with:
 
 ```sh
-./scripts/deploy.sh ghcr.io/OWNER/milton-estates-game:latest
+CLOUDFLARE_TUNNEL_API_TOKEN=... ./scripts/deploy.sh ghcr.io/OWNER/milton-estates-game:latest
 ```
 
 Set `NAMESPACE` to use a different namespace or `ROLLOUT_TIMEOUT` to change the default three-minute rollout wait. Check the rollout and the assigned ingress with:
