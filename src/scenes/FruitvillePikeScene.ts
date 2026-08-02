@@ -82,6 +82,10 @@ export class FruitvillePikeScene extends BaseExplorationScene {
   }
 
   protected override getDebugObjectivePosition(): { x: number; y: number } {
+    if (gameStore.isQuestActive("explore_bent_creek")) {
+      const exit = this.tiledWorld.rectangle("exit_bent_creek");
+      return { x: exit.x + exit.width / 2, y: exit.y + exit.height / 2 };
+    }
     return this.tiledWorld.point("fruitville_midpoint");
   }
 }

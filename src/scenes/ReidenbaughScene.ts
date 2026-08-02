@@ -118,7 +118,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
     this.ryan?.setVelocity(0, 0);
     gameStore.catchRyan();
     this.showDialogue([...RYAN_CAUGHT], () => {
-      gameEvents.emit(EVENT.toast, "Quest complete — Catch Ryan! The regional map is yours to explore.");
+      gameEvents.emit(EVENT.toast, "Catch Ryan complete — new objective: Explore Bent Creek.");
       this.mountPostQuest();
     });
   }
@@ -160,7 +160,10 @@ export class ReidenbaughScene extends BaseExplorationScene {
 
   protected override getDebugObjectivePosition(): { x: number; y: number } {
     if (gameStore.isRyanRideStage("chase_reidenbaugh") && this.ryan) {
-      return { x: this.ryan.x, y: this.ryan.y };
+      // Place the player beside Ryan rather than directly overlapping him.
+      // F4 is a navigation shortcut; teleporting into the chase actor's body
+      // would turn the inspection shortcut into an automatic quest completion.
+      return { x: this.ryan.x - 96, y: this.ryan.y };
     }
     return this.tiledWorld.point(
       gameStore.isRyanRideStage("chase_reidenbaugh") ? "ryan_finish" : "exit_stonehenge",

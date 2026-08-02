@@ -129,6 +129,7 @@ export class BentCreekScene extends BaseExplorationScene {
     this.gateOpen = true;
     this.removeDynamicObstacle("gate_barrier");
     this.renderGateBarrier(true);
+    gameStore.openBentCreekGate();
     gameEvents.emit(EVENT.toast, "The gate attendant lifts the barrier.");
     this.showDialogue([{ speaker: "Gate attendant", text: "All right. Head on through." }]);
   }

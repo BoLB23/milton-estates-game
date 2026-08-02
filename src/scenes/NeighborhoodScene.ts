@@ -184,6 +184,10 @@ export class NeighborhoodScene extends BaseExplorationScene {
         return this.rideFollower?.getCurrentTarget() ?? this.tiledWorld.point("exit_stonehenge");
       }
     }
+    if (state.activeQuestId === "explore_bent_creek") {
+      const exit = this.tiledWorld.rectangle("exit_fruitville");
+      return { x: exit.x + exit.width / 2, y: exit.y + exit.height / 2 };
+    }
     switch (state.questStage) {
       case "talk_to_jeremy":
       case "return_to_jeremy":

@@ -10,6 +10,11 @@ import { assetUrl } from "../content/assets";
 import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
 
 const REGIONAL_CAMERA_ZOOM = 1.35;
+const PLAYER_ORIGIN_X = 0.5;
+// Authored map points represent the character's contact point with the world.
+// The supplied 400x450 frames contain transparent padding above the shoes, so
+// the sprite origin must sit near the lower edge rather than at frame center.
+const PLAYER_ORIGIN_Y = 0.9;
 
 function snapExpansionPointToCellCenter(point: { x: number; y: number }): { x: number; y: number } {
   return {
@@ -37,6 +42,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private mountedCollisionGrid?: MountedCollisionGrid;
   private tiledRuntime?: TiledRuntimeWorld;
   private geometryDebugOverlay?: Phaser.GameObjects.Container;
+  private playerGeometryDebug?: Phaser.GameObjects.Graphics;
   private readonly dynamicObstacles = new Map<string, Phaser.GameObjects.Zone>();
   private lastEmittedPlayerX = Number.NaN;
   private lastEmittedPlayerY = Number.NaN;
@@ -61,6 +67,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.tiledRuntime = undefined;
     this.geometryDebugOverlay?.destroy(true);
     this.geometryDebugOverlay = undefined;
+    this.playerGeometryDebug = undefined;
     for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
     this.dynamicObstacles.clear();
     this.mapId = mapId;
@@ -88,6 +95,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.player
       .setDepth(50)
       .setScale(0.18)
+      .setOrigin(PLAYER_ORIGIN_X, PLAYER_ORIGIN_Y)
       .setCollideWorldBounds(true)
       .setSize(110, 95)
       .setOffset(145, 275);
@@ -120,6 +128,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.tiledRuntime = undefined;
       this.geometryDebugOverlay?.destroy(true);
       this.geometryDebugOverlay = undefined;
+      this.playerGeometryDebug = undefined;
       for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
       this.dynamicObstacles.clear();
     });
@@ -172,6 +181,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.player.setVelocity(next.velocityX, next.velocityY);
     this.updatePlayerPresentation({ x: next.velocityX, y: next.velocityY }, next.speed > 0);
     this.syncBicycleVisual();
+    this.drawPlayerGeometryDebug();
     this.emitPlayerLocation();
 
     const nearby = this.closestInteractable(62);
@@ -223,6 +233,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.dynamicObstacles.set(object.name, this.addObstacle(rectangle.x, rectangle.y, rectangle.width, rectangle.height));
     }
     return this.mountedCollisionGrid;
+  }
+
+  /** Registers a Tiled world that has legacy rectangle collision instead of a 32px grid. */
+  protected setTiledRuntime(runtime: TiledRuntimeWorld): void {
+    this.tiledRuntime = runtime;
   }
 
   protected removeDynamicObstacle(name: string): void {
@@ -456,25 +471,35 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
 
     const runtime = this.tiledRuntime;
     const mounted = this.mountedCollisionGrid;
-    if (!runtime || !mounted) {
+    if (!runtime) {
       gameEvents.emit(EVENT.toast, "Geometry overlay unavailable on this map.");
       return;
     }
 
     const graphics = this.add.graphics();
-    const grid = mounted.grid;
-    graphics.fillStyle(0xff315f, 0.16);
-    graphics.lineStyle(1, 0xff315f, 0.42);
-    for (let y = 0; y < grid.height; y += 1) {
-      for (let x = 0; x < grid.width; x += 1) {
-        if (!grid.isBlocked({ x, y })) continue;
-        const bounds = grid.cellBounds({ x, y });
-        graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-        graphics.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    if (mounted) {
+      const grid = mounted.grid;
+      graphics.fillStyle(0xff315f, 0.16);
+      graphics.lineStyle(1, 0xff315f, 0.42);
+      for (let y = 0; y < grid.height; y += 1) {
+        for (let x = 0; x < grid.width; x += 1) {
+          if (!grid.isBlocked({ x, y })) continue;
+          const bounds = grid.cellBounds({ x, y });
+          graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+          graphics.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        }
+      }
+      graphics.lineStyle(1, 0x65f5e7, 0.22);
+      for (let x = 0; x <= grid.width; x += 1) {
+        graphics.lineBetween(x * grid.tileSize, 0, x * grid.tileSize, grid.worldHeight);
+      }
+      for (let y = 0; y <= grid.height; y += 1) {
+        graphics.lineBetween(0, y * grid.tileSize, grid.worldWidth, y * grid.tileSize);
       }
     }
     graphics.lineStyle(3, 0xffffff, 0.95);
-    graphics.strokeRect(mounted.bounds.x, mounted.bounds.y, mounted.bounds.width, mounted.bounds.height);
+    const worldBounds = mounted?.bounds ?? runtime.worldBounds;
+    graphics.strokeRect(worldBounds.x, worldBounds.y, worldBounds.width, worldBounds.height);
 
     const children: Phaser.GameObjects.GameObject[] = [graphics];
     const colorFor = (type: string): number => {
@@ -515,8 +540,35 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       children.push(label);
     }
 
+    this.playerGeometryDebug = this.add.graphics();
+    children.push(this.playerGeometryDebug);
     this.geometryDebugOverlay = this.add.container(0, 0, children).setDepth(9_000);
-    gameEvents.emit(EVENT.toast, "Geometry overlay shown — F2 toggles it.");
+    this.drawPlayerGeometryDebug();
+    gameEvents.emit(EVENT.toast, mounted
+      ? "Geometry overlay shown — F2 toggles it."
+      : "Geometry overlay shown — legacy rectangle collision; F2 toggles it.");
+  }
+
+  /** Draws the player origin, visible bounds, feet anchor, and Arcade body. */
+  private drawPlayerGeometryDebug(): void {
+    const graphics = this.playerGeometryDebug;
+    if (!graphics || !this.player?.active) return;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const bounds = this.player.getBounds();
+    graphics.clear();
+
+    graphics.lineStyle(2, 0x00ff72, 0.95);
+    graphics.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    graphics.lineBetween(this.player.x - 12, this.player.y, this.player.x + 12, this.player.y);
+    graphics.lineBetween(this.player.x, this.player.y - 12, this.player.x, this.player.y + 12);
+    graphics.fillStyle(0xffe34d, 1);
+    graphics.fillCircle(this.player.x, this.player.y, 4);
+
+    graphics.lineStyle(2, 0xff3b5f, 1);
+    graphics.strokeRect(body.x, body.y, body.width, body.height);
+    graphics.lineStyle(1, 0xff3b5f, 0.8);
+    graphics.lineBetween(body.center.x - 8, body.center.y, body.center.x + 8, body.center.y);
+    graphics.lineBetween(body.center.x, body.center.y - 8, body.center.x, body.center.y + 8);
   }
 
   private handleDebugKeyDown = (event: KeyboardEvent): void => {

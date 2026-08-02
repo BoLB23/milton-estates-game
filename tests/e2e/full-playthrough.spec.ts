@@ -13,6 +13,7 @@ type BrowserSave = {
     mushrooms: { stage: string; collectedIds: string[] };
     sports: { stage: string };
     ryanRide: { stage: string; selectedDestination: "reidenbaugh" | null; routeSeed: number | null };
+    exploreBentCreek: { stage: string };
   };
   settings: { muted: boolean };
 };
@@ -29,6 +30,8 @@ async function readSave(page: Page): Promise<BrowserSave | null> {
         ? save.questProgress.sports.stage
         : save.activeQuestId === "catch_ryan"
           ? save.questProgress.ryanRide.stage
+          : save.activeQuestId === "explore_bent_creek"
+            ? save.questProgress.exploreBentCreek.stage
           : save.questProgress.missingControllerStage;
     return { ...save, questStage };
   });

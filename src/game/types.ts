@@ -22,6 +22,7 @@ export type QuestId =
   | "andrew_mushroom_hunt"
   | "three_player_sports"
   | "catch_ryan"
+  | "explore_bent_creek"
   | "storm_drain_detectives"
   | "creek_token_hunt"
   | "last_day_of_summer";
@@ -31,7 +32,8 @@ export type ImplementedQuestId =
   | "missing_controller"
   | "andrew_mushroom_hunt"
   | "three_player_sports"
-  | "catch_ryan";
+  | "catch_ryan"
+  | "explore_bent_creek";
 
 export type MissingControllerStage =
   | "talk_to_jeremy"
@@ -63,15 +65,18 @@ export type RyanRideStage =
   | "chase_reidenbaugh"
   | "complete";
 
+export type ExploreBentCreekStage = "open_gate" | "complete";
+
 /** The stage belonging to the currently selected quest. */
-export type QuestStage = MissingControllerStage | MushroomQuestStage | SportsQuestStage | RyanRideStage;
+export type QuestStage = MissingControllerStage | MushroomQuestStage | SportsQuestStage | RyanRideStage | ExploreBentCreekStage;
 
 /** Associates a persisted quest ID with the only stages it may own. */
 export type StageForQuest<Q extends ImplementedQuestId> =
   Q extends "missing_controller" ? MissingControllerStage
     : Q extends "andrew_mushroom_hunt" ? MushroomQuestStage
       : Q extends "three_player_sports" ? SportsQuestStage
-        : RyanRideStage;
+        : Q extends "catch_ryan" ? RyanRideStage
+          : ExploreBentCreekStage;
 
 /** Stable, non-presentational IDs used to build the quest checklist/history. */
 export type QuestMilestone =
@@ -93,7 +98,9 @@ export type QuestMilestone =
   | "catch_ryan.destination_selected"
   | "catch_ryan.neighborhood_departed"
   | "catch_ryan.reidenbaugh_reached"
-  | "catch_ryan.ryan_caught";
+  | "catch_ryan.ryan_caught"
+  | "explore_bent_creek.started"
+  | "explore_bent_creek.gate_opened";
 
 export interface MushroomSpawn {
   id: string;
@@ -119,11 +126,16 @@ export interface RyanRideQuestState {
   routeSeed: number | null;
 }
 
+export interface ExploreBentCreekQuestState {
+  stage: ExploreBentCreekStage;
+}
+
 export interface QuestProgress {
   missingControllerStage: MissingControllerStage;
   mushrooms: MushroomQuestState;
   sports: SportsQuestState;
   ryanRide: RyanRideQuestState;
+  exploreBentCreek: ExploreBentCreekQuestState;
 }
 
 export interface PlayerSettings {

@@ -30,6 +30,12 @@ import {
   SPORTS_OBJECTIVES,
   SPORTS_STAGES,
 } from "../../content/chapters/chapter-01/quests/three-player-sports/rules";
+import {
+  EXPLORE_BENT_CREEK_COMPLETED_MILESTONE_COUNT,
+  EXPLORE_BENT_CREEK_MILESTONES,
+  EXPLORE_BENT_CREEK_OBJECTIVES,
+  EXPLORE_BENT_CREEK_STAGES,
+} from "../../content/chapters/chapter-01/quests/explore-bent-creek/rules";
 export {
   advanceMissingControllerStage,
   MISSING_CONTROLLER_STAGES,
@@ -40,6 +46,11 @@ export {
   SPORTS_STAGES,
   type SportsQuestEvent,
 } from "../../content/chapters/chapter-01/quests/three-player-sports/rules";
+export {
+  advanceExploreBentCreekStage,
+  EXPLORE_BENT_CREEK_STAGES,
+  type ExploreBentCreekQuestEvent,
+} from "../../content/chapters/chapter-01/quests/explore-bent-creek/rules";
 export type RyanRideQuestEvent =
   | { type: "accepted_ride" }
   | { type: "selected_destination"; destination: "reidenbaugh" }
@@ -56,6 +67,7 @@ export const IMPLEMENTED_QUEST_IDS = [
   "andrew_mushroom_hunt",
   "three_player_sports",
   "catch_ryan",
+  "explore_bent_creek",
 ] as const satisfies readonly ImplementedQuestId[];
 
 export const RYAN_RIDE_STAGES = [
@@ -71,6 +83,7 @@ export const QUEST_MILESTONES = [
   ...MUSHROOM_MILESTONES,
   ...SPORTS_MILESTONES,
   ...RYAN_RIDE_MILESTONES,
+  ...EXPLORE_BENT_CREEK_MILESTONES,
 ] as const satisfies readonly QuestMilestone[];
 
 type QuestSpec<Q extends ImplementedQuestId> = {
@@ -123,6 +136,14 @@ export const QUEST_SPECS: { readonly [Q in ImplementedQuestId]: QuestSpec<Q> } =
     milestones: RYAN_RIDE_MILESTONES,
     completedMilestoneCount: { invite: 0, choose_destination: 1, depart_neighborhood: 2, ride_stonehenge: 3, chase_reidenbaugh: 4, complete: 5 },
   },
+  explore_bent_creek: {
+    id: "explore_bent_creek",
+    stages: EXPLORE_BENT_CREEK_STAGES,
+    initialStage: "open_gate",
+    objectives: EXPLORE_BENT_CREEK_OBJECTIVES,
+    milestones: EXPLORE_BENT_CREEK_MILESTONES,
+    completedMilestoneCount: EXPLORE_BENT_CREEK_COMPLETED_MILESTONE_COUNT,
+  },
 };
 
 export function isImplementedQuestId(value: unknown): value is ImplementedQuestId {
@@ -144,6 +165,9 @@ export function objectiveForQuest(questId: QuestId, stage: QuestStage): string {
     return QUEST_SPECS.three_player_sports.objectives[stage];
   }
   if (questId === "catch_ryan" && isStageForQuest("catch_ryan", stage)) return QUEST_SPECS.catch_ryan.objectives[stage];
+  if (questId === "explore_bent_creek" && isStageForQuest("explore_bent_creek", stage)) {
+    return QUEST_SPECS.explore_bent_creek.objectives[stage];
+  }
   return QUEST_SPECS.missing_controller.objectives.talk_to_jeremy;
 }
 
@@ -162,6 +186,10 @@ export function milestonesForQuestStage(questId: QuestId, stage: QuestStage): Qu
   }
   if (questId === "catch_ryan" && isStageForQuest("catch_ryan", stage)) {
     const spec = QUEST_SPECS.catch_ryan;
+    return spec.milestones.slice(0, spec.completedMilestoneCount[stage]);
+  }
+  if (questId === "explore_bent_creek" && isStageForQuest("explore_bent_creek", stage)) {
+    const spec = QUEST_SPECS.explore_bent_creek;
     return spec.milestones.slice(0, spec.completedMilestoneCount[stage]);
   }
   return [];

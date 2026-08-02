@@ -8,6 +8,7 @@ import {
 import { MUSHROOM_HUNT_MODULE } from "./quests/andrew-mushroom-hunt/module";
 import { MISSING_CONTROLLER_MODULE } from "./quests/missing-controller/module";
 import { THREE_PLAYER_SPORTS_MODULE } from "./quests/three-player-sports/module";
+import { EXPLORE_BENT_CREEK_MODULE } from "./quests/explore-bent-creek/module";
 
 export const CHAPTER_ONE_MODULE = {
   definition: {
@@ -23,6 +24,7 @@ export const CHAPTER_ONE_MODULE = {
     MUSHROOM_HUNT_MODULE,
     THREE_PLAYER_SPORTS_MODULE,
     CATCH_RYAN_MODULE,
+    EXPLORE_BENT_CREEK_MODULE,
     STORM_DRAIN_DETECTIVES_MODULE,
     CREEK_TOKEN_HUNT_MODULE,
     LAST_DAY_OF_SUMMER_MODULE,

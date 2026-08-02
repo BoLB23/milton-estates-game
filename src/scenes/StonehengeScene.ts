@@ -128,6 +128,10 @@ export class StonehengeScene extends BaseExplorationScene {
     if (gameStore.isRyanRideStage("ride_stonehenge")) {
       return this.follower?.getCurrentTarget() ?? this.tiledWorld.point("stonehenge_route_12");
     }
+    if (gameStore.isQuestActive("explore_bent_creek")) {
+      const exit = this.tiledWorld.rectangle("exit_milton");
+      return { x: exit.x + exit.width / 2, y: exit.y + exit.height / 2 };
+    }
     return this.tiledWorld.point("exit_reidenbaugh");
   }
 }

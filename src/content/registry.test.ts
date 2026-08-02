@@ -22,6 +22,7 @@ describe("composed content registry", () => {
       "missing_controller",
       "andrew_mushroom_hunt",
       "three_player_sports",
+      "explore_bent_creek",
     ]);
     expect(quests.find(({ definition }) => definition.id === "catch_ryan")?.migrationStatus)
       .toBe("legacy");

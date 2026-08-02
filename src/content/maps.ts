@@ -204,6 +204,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
     ],
     markers: [
       { id: "bent_creek_gate", kind: "landmark", label: "Schwartz / Votilla gatehouse", x: 0.189, y: 0.833, initiallyVisible: true },
+      { id: "obj_bent_creek_gate", kind: "objective", label: "Open the Bent Creek gate", x: 0.189, y: 0.833, questId: "explore_bent_creek", stages: ["open_gate"] },
       { id: "bent_creek_clubhouse", kind: "landmark", label: "Bent Creek clubhouse", x: 0.878, y: 0.197 },
       { id: "bent_creek_return", kind: "exit", label: "Back to Fruitville Pike", x: 0.011, y: 0.924 },
     ],

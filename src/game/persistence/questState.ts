@@ -27,6 +27,7 @@ export function stageFromProgress(progress: QuestProgress, questId: QuestId): Qu
     case "andrew_mushroom_hunt": return progress.mushrooms.stage;
     case "three_player_sports": return progress.sports.stage;
     case "catch_ryan": return progress.ryanRide.stage;
+    case "explore_bent_creek": return progress.exploreBentCreek.stage;
     default: return undefined;
   }
 }
@@ -47,7 +48,10 @@ export function progressAtStage(
     return { ...progress, mushrooms: { ...progress.mushrooms, stage: stage as QuestProgress["mushrooms"]["stage"] } };
   }
   if (questId === "three_player_sports") return { ...progress, sports: { ...progress.sports, stage: stage as QuestProgress["sports"]["stage"] } };
-  return { ...progress, ryanRide: { ...progress.ryanRide, stage: stage as QuestProgress["ryanRide"]["stage"] } };
+  if (questId === "catch_ryan") {
+    return { ...progress, ryanRide: { ...progress.ryanRide, stage: stage as QuestProgress["ryanRide"]["stage"] } };
+  }
+  return { ...progress, exploreBentCreek: { ...progress.exploreBentCreek, stage: stage as QuestProgress["exploreBentCreek"]["stage"] } };
 }
 
 export interface QuestProgressInvariantViolation {
@@ -72,6 +76,9 @@ export function validateQuestProgress(progress: QuestProgress): QuestProgressInv
   }
   if (!isStageForQuest("catch_ryan", progress.ryanRide.stage)) {
     violations.push({ path: "questProgress.ryanRide.stage", message: "Unknown Catch Ryan stage" });
+  }
+  if (!isStageForQuest("explore_bent_creek", progress.exploreBentCreek.stage)) {
+    violations.push({ path: "questProgress.exploreBentCreek.stage", message: "Unknown Explore Bent Creek stage" });
   }
   const ride = progress.ryanRide;
   const selected = ride.selectedDestination === "reidenbaugh";
@@ -112,7 +119,7 @@ export function validateSaveInvariants(save: SaveData): QuestProgressInvariantVi
     violations.push({ path: "activeQuestId", message: "Active quest must have runtime rules" });
     return violations;
   }
-  for (const questId of ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan"] as const) {
+  for (const questId of ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek"] as const) {
     const stage = stageFromProgress(save.questProgress, questId);
     if (save.completedQuestIds.includes(questId) && stage !== "complete") {
       violations.push({ path: "completedQuestIds", message: `Quest ${questId} is recorded complete but its progress is not complete` });

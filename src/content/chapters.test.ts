@@ -47,6 +47,15 @@ describe("chapter and quest registry", () => {
       ...progress(["missing_controller", "andrew_mushroom_hunt", "three_player_sports"]),
       activeQuestId: "catch_ryan",
     })).toBe("active");
+    expect(QUEST_BY_ID.explore_bent_creek).toMatchObject({
+      title: "Explore Bent Creek",
+      prerequisiteQuestIds: ["catch_ryan"],
+      implemented: true,
+    });
+    expect(selectQuestState(QUEST_BY_ID.explore_bent_creek, {
+      ...progress(["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan"]),
+      activeQuestId: "explore_bent_creek",
+    })).toBe("active");
     expect(hasAvailableQuest(progress(["missing_controller"]))).toBe(true);
   });
 
@@ -71,8 +80,8 @@ describe("chapter and quest registry", () => {
     expect(isFinaleUnlocked(chapter, completed)).toBe(true);
     expect(selectChapterProgress(chapter, completed)).toMatchObject({
       completed: 2,
-      total: 7,
-      percentage: 29,
+      total: 8,
+      percentage: 25,
       finaleUnlocked: true,
     });
   });

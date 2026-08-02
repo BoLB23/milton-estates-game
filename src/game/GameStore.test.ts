@@ -422,7 +422,8 @@ describe("GameStore save v7", () => {
     store.catchRyan();
 
     expect(store.getState()).toMatchObject({
-      questStage: "complete",
+      activeQuestId: "explore_bent_creek",
+      questStage: "open_gate",
       completedQuestIds: ["catch_ryan"],
       unlockedMaps: ["neighborhood", "creek", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"],
       questHistory: [
@@ -431,6 +432,21 @@ describe("GameStore save v7", () => {
         "catch_ryan.neighborhood_departed",
         "catch_ryan.reidenbaugh_reached",
         "catch_ryan.ryan_caught",
+      ],
+    });
+    store.openBentCreekGate();
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "explore_bent_creek",
+      questStage: "complete",
+      completedQuestIds: ["catch_ryan", "explore_bent_creek"],
+      questHistory: [
+        "catch_ryan.started",
+        "catch_ryan.destination_selected",
+        "catch_ryan.neighborhood_departed",
+        "catch_ryan.reidenbaugh_reached",
+        "catch_ryan.ryan_caught",
+        "explore_bent_creek.started",
+        "explore_bent_creek.gate_opened",
       ],
     });
   });

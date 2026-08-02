@@ -19,6 +19,7 @@ const completedRegionalSave = {
     mushrooms: { stage: "complete", spawns: mushroomSpawns, collectedIds: mushroomSpawns.map(({ id }) => id) },
     sports: { stage: "complete" },
     ryanRide: { stage: "complete", selectedDestination: "reidenbaugh", routeSeed: 42 },
+    exploreBentCreek: { stage: "open_gate" },
   },
   questHistory: [
     "missing_controller.started",
@@ -53,6 +54,7 @@ const completedRegionalSave = {
 async function launchMap(page: Page, map: string): Promise<void> {
   const save = { ...completedRegionalSave, currentMap: map };
   await page.goto("/");
+  await page.waitForTimeout(900);
   await page.evaluate((value) => localStorage.setItem("milton-estates-save", JSON.stringify(value)), save);
   await page.reload();
   await expect(page.locator("canvas")).toBeVisible();
@@ -131,8 +133,26 @@ test("loads Bent Creek on demand and keeps the staffed gate transient", async ({
   await page.keyboard.press("KeyE");
   await page.waitForTimeout(150);
   expect(pageErrors).toEqual([]);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("milton-estates-save") ?? "{}").activeQuestId))
+    .toBe("explore_bent_creek");
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("milton-estates-save") ?? "{}").questProgress.exploreBentCreek.stage))
+    .toBe("complete");
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("milton-estates-save") ?? "{}").currentMap))
     .toBe("bent_creek");
+});
+
+test("keeps the BIKE touch control locked until Catch Ryan unlocks it", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForTimeout(900);
+  await expect.poll(() => page.evaluate(() =>
+    document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.hidden,
+  )).toBe(true);
+
+  await launchMap(page, "neighborhood");
+  await expect.poll(() => page.evaluate(() => ({
+    hidden: document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.hidden,
+    disabled: document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.disabled,
+  }))).toEqual({ hidden: false, disabled: false });
 });
 
 test("the gate rejects an invalid answer without touching SaveData", async ({ page }) => {

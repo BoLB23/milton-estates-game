@@ -9,6 +9,8 @@ import {
   type MovementVector,
   type SemanticAction,
 } from "../input/actions";
+import { gameStore } from "../game/GameStore";
+import type { GameState } from "../game/types";
 
 const MOVE_ACTIONS: readonly SemanticAction[] = ["moveUp", "moveDown", "moveLeft", "moveRight"];
 
@@ -54,6 +56,7 @@ export class InputRouterScene extends Phaser.Scene {
   private previousDirections = new Map<SemanticAction, boolean>();
   private touchReleases = new Map<HTMLElement, () => void>();
   private nextTouchControlId = 0;
+  private bicycleButton?: HTMLButtonElement;
 
   constructor() { super("input-router"); }
 
@@ -61,6 +64,9 @@ export class InputRouterScene extends Phaser.Scene {
     window.addEventListener("keydown", this.handleKeyDown);
     window.addEventListener("keyup", this.handleKeyUp);
     window.addEventListener("blur", this.handleBlur);
+    this.bicycleButton = document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]') ?? undefined;
+    this.syncBicycleButton(gameStore.getState());
+    gameEvents.on(EVENT.stateChanged, this.handleStateChanged, this);
     document.querySelectorAll<HTMLElement>("[data-game-action]").forEach((element) => {
       const action = element.dataset.gameAction as SemanticAction | undefined;
       if (!action) return;
@@ -182,6 +188,7 @@ export class InputRouterScene extends Phaser.Scene {
     source: "keyboard" | "gamepad" | "touch",
     token: string,
   ): void {
+    if (pressed && action === "toggleBicycle" && !gameStore.isBicycleUnlocked()) return;
     const changed = inputState.set(action, token, pressed, source !== "gamepad");
     if (!changed) return;
     const event = { action, pressed, source } as const;
@@ -191,6 +198,17 @@ export class InputRouterScene extends Phaser.Scene {
 
   private handleBlur = (): void => this.resetInputState();
 
+  private handleStateChanged = (state: GameState): void => this.syncBicycleButton(state);
+
+  private syncBicycleButton(state: GameState): void {
+    const button = this.bicycleButton;
+    if (!button) return;
+    const unlocked = state.completedQuestIds.includes("catch_ryan");
+    button.hidden = !unlocked;
+    button.disabled = !unlocked;
+    button.setAttribute("aria-disabled", String(!unlocked));
+  }
+
   private resetInputState(): void {
     inputState.clear();
     this.previousButtons.clear();
@@ -198,12 +216,14 @@ export class InputRouterScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
     window.removeEventListener("blur", this.handleBlur);
     this.touchReleases.forEach((release) => release());
     this.touchReleases.clear();
     this.nextTouchControlId = 0;
+    this.bicycleButton = undefined;
     this.resetInputState();
   }
 }

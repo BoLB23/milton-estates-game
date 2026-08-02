@@ -21,6 +21,7 @@ export class CreekScene extends BaseExplorationScene {
     this.physics.world.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
     this.cameras.main.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
     this.initializeWorld("creek", this.tiledWorld.point("spawn_home"));
+    this.setTiledRuntime(this.tiledWorld);
     this.drawWorld();
     this.addMushroomHunt("creek");
     this.questController = new CreekQuestController({

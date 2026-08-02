@@ -94,7 +94,7 @@ export class NeighborhoodQuestController {
       width: stonehengeExit.width,
       height: stonehengeExit.height,
       label: "Ride to Stonehenge",
-      isAvailable: () => gameStore.isRyanRideStage("complete"),
+      isAvailable: () => gameStore.isMapUnlocked("stonehenge"),
       interact: () => this.host.enterStonehenge(),
     });
     const fruitvilleExit = this.host.objectRectangle("exit_fruitville");
