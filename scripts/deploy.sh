@@ -75,6 +75,7 @@ if [[ ! "${rollout_timeout}" =~ ${timeout_pattern} ]]; then
 fi
 
 command -v kubectl >/dev/null || { echo "kubectl is required." >&2; exit 1; }
+command -v ruby >/dev/null || { echo "Ruby is required to validate local YAML manifests." >&2; exit 1; }
 
 rendered_deployment=""
 current_tunnel_config=""
@@ -147,9 +148,37 @@ kubectl set image \
   > "${rendered_deployment}"
 
 manifest_value() {
-  kubectl create --dry-run=client --validate=false \
-    --filename "$1" \
-    --output "jsonpath=$2"
+  ruby -rpsych -e '
+    path, expression = ARGV
+    value = Psych.safe_load(File.binread(path), permitted_classes: [], aliases: true)
+    expression = expression.sub(/\A\{\./, "").sub(/\}\z/, "")
+    tokens = []
+    buffer = +""
+    index = 0
+    while index < expression.length
+      character = expression[index]
+      if character == "\\"
+        index += 1
+        buffer << expression[index]
+      elsif character == "."
+        tokens << buffer unless buffer.empty?
+        buffer = +""
+      elsif character == "["
+        tokens << buffer unless buffer.empty?
+        buffer = +""
+        closing = expression.index("]", index)
+        abort "Invalid local manifest path: #{expression}" unless closing
+        tokens << expression[(index + 1)...closing].to_i
+        index = closing
+      else
+        buffer << character
+      end
+      index += 1
+    end
+    tokens << buffer unless buffer.empty?
+    tokens.each { |token| value = value[token] }
+    puts value unless value.nil?
+  ' "$1" "$2"
 }
 
 assert_manifest_value() {
@@ -192,14 +221,22 @@ assert_manifest_value "${project_root}/k8s/ingress.yaml" \
 assert_manifest_value "${project_root}/k8s/ingress.yaml" \
   '{.spec.rules[0].http.paths[0].backend.service.name}' "${deployment}" "Ingress backend"
 
-# This is deliberately offline: validation must finish before credentials or
-# cluster state can be touched. The same rendered Deployment is applied below.
-kubectl create --dry-run=client --validate=false \
-  --filename "${project_root}/k8s/namespace.yaml" \
-  --filename "${project_root}/k8s/service.yaml" \
-  --filename "${project_root}/k8s/ingress.yaml" \
-  --filename "${rendered_deployment}" \
-  >/dev/null
+# This is deliberately offline: syntax validation must finish before
+# credentials or cluster state can be touched. Newer kubectl versions may
+# still perform API discovery for client-side create/apply, so use the
+# already-required Ruby/Psych parser for this local-only check instead.
+ruby -rpsych -e '
+  ARGV.each do |path|
+    document = Psych.safe_load(File.binread(path), permitted_classes: [], aliases: true)
+    abort "Local manifest is not a YAML mapping: #{path}" unless document.is_a?(Hash)
+  rescue Psych::SyntaxError => error
+    abort "Local manifest is invalid YAML (#{path}): #{error.message}"
+  end
+' \
+  "${project_root}/k8s/namespace.yaml" \
+  "${project_root}/k8s/service.yaml" \
+  "${project_root}/k8s/ingress.yaml" \
+  "${rendered_deployment}"
 
 if [[ "${dry_run}" == true ]]; then
   echo "Deployment manifests validated locally for ${image}. No changes made."
