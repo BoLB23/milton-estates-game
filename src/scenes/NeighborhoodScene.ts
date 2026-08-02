@@ -38,7 +38,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
     // Cameras survive a Phaser Scene stop/start. Reset the offset explicitly
     // on regional returns so the initial home composition cannot leak into a
     // later edge spawn and make the player appear displaced from the exit.
-    this.cameras.main.setFollowOffset(0, (data?.spawn ?? "home") === "home" ? 170 : 0);
+    this.cameras.main.setFollowOffset(0, (data?.spawn ?? "home") === "home" ? 125 : 0);
     this.drawWorld();
     this.addMushroomHunt("neighborhood");
     this.questController = new NeighborhoodQuestController({

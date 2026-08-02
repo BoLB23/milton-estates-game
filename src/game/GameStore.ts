@@ -464,10 +464,13 @@ function normalizeSave(save: SaveData): SaveData | undefined {
   const completedFromProgress = IMPLEMENTED_QUEST_IDS.filter((questId) =>
     stageFromProgress(questProgress, questId) === "complete");
   const discoveredMaps = unique<MapId>(["neighborhood", save.currentMap, ...save.discoveredMaps]);
+  const regionalAccessGranted = questProgress.ryanRide.selectedDestination === "reidenbaugh"
+    || questProgress.ryanRide.stage === "complete"
+    || save.completedQuestIds.includes("catch_ryan");
   const unlockedMaps = unique<MapId>([
     ...BASE_UNLOCKED_MAPS,
     ...save.unlockedMaps,
-    ...(questProgress.ryanRide.selectedDestination === "reidenbaugh" ? RYAN_UNLOCKED_MAPS : []),
+    ...(regionalAccessGranted ? RYAN_UNLOCKED_MAPS : []),
   ]);
   if (!unlockedMaps.includes(save.currentMap) || discoveredMaps.some((map) => !unlockedMaps.includes(map))) return undefined;
   const normalized: SaveData = {
@@ -812,7 +815,10 @@ export class GameStore {
     const completedQuestIds: QuestId[] = !this.replayState && next === "complete"
       ? unique<QuestId>([...current.completedQuestIds, "catch_ryan"])
       : current.completedQuestIds;
-    this.update({ ...current, currentMap: currentMap ?? current.currentMap, discoveredMaps: currentMap ? unique<SaveData["currentMap"]>([...current.discoveredMaps, currentMap]) : current.discoveredMaps, completedQuestIds, questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { ...current.questProgress.ryanRide, stage: next } }, questHistory: unique([...current.questHistory, ...historyForQuestStage("catch_ryan", next)]) });
+    const unlockedMaps = next === "complete"
+      ? unique<MapId>([...current.unlockedMaps, ...RYAN_UNLOCKED_MAPS])
+      : current.unlockedMaps;
+    this.update({ ...current, currentMap: currentMap ?? current.currentMap, discoveredMaps: currentMap ? unique<SaveData["currentMap"]>([...current.discoveredMaps, currentMap]) : current.discoveredMaps, unlockedMaps, completedQuestIds, questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { ...current.questProgress.ryanRide, stage: next } }, questHistory: unique([...current.questHistory, ...historyForQuestStage("catch_ryan", next)]) });
   }
 
   /** Starts a temporary replay of any implemented quest. Nothing in this state is persisted. */

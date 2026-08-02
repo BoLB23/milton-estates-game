@@ -3,11 +3,20 @@ import { EVENT, gameEvents, inputCapture, type ChoiceRequest, type InputActionEv
 import { MushroomHuntController } from "../world/MushroomHuntController";
 import { PlayerLocomotionController, REGIONAL_BICYCLE_TUNING, type PlayerTravelMode } from "../world/PlayerLocomotionController";
 import type { RegionInteraction } from "../world/contracts";
-import { type MountedCollisionGrid, TiledRuntimeWorld, type TiledRuntimeObject, type WorldPoint } from "../world/tiledRuntime";
+import { COLLISION_GRID_TILE_SIZE, type MountedCollisionGrid, TiledRuntimeWorld, type TiledRuntimeObject, type WorldPoint } from "../world/tiledRuntime";
 import { inputState } from "./InputRouterScene";
 import type { DialogueLine, Interactable, MapId } from "../game/types";
 import { assetUrl } from "../content/assets";
 import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
+
+const REGIONAL_CAMERA_ZOOM = 1.35;
+
+function snapExpansionPointToCellCenter(point: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.floor(point.x / COLLISION_GRID_TILE_SIZE) * COLLISION_GRID_TILE_SIZE + COLLISION_GRID_TILE_SIZE / 2,
+    y: Math.floor(point.y / COLLISION_GRID_TILE_SIZE) * COLLISION_GRID_TILE_SIZE + COLLISION_GRID_TILE_SIZE / 2,
+  };
+}
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
@@ -71,7 +80,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     gameEvents.emit(EVENT.hint, "");
 
     this.obstacles = this.physics.add.staticGroup();
-    this.player = this.physics.add.sprite(spawn.x, spawn.y, "billy").setName("player");
+    // Expansion maps use a 32px orthogonal grid. Keep player starts on cell
+    // centers so a revisit never begins half a tile into a road or collision
+    // corner. Creek keeps its legacy pixel-authored spawn coordinates.
+    const alignedSpawn = mapId === "creek" ? spawn : snapExpansionPointToCellCenter(spawn);
+    this.player = this.physics.add.sprite(alignedSpawn.x, alignedSpawn.y, "billy").setName("player");
     this.player
       .setDepth(50)
       .setScale(0.18)
@@ -87,7 +100,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     if (import.meta.env.DEV) window.addEventListener("keydown", this.handleDebugKeyDown);
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
     this.cameras.main.setRoundPixels(true);
-    this.cameras.main.setZoom(1.25);
+    this.cameras.main.setZoom(REGIONAL_CAMERA_ZOOM);
     gameEvents.on(EVENT.interactRequested, this.handleRequestedInteraction, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {

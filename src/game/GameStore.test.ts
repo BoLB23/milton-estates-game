@@ -424,6 +424,7 @@ describe("GameStore save v7", () => {
     expect(store.getState()).toMatchObject({
       questStage: "complete",
       completedQuestIds: ["catch_ryan"],
+      unlockedMaps: ["neighborhood", "creek", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"],
       questHistory: [
         "catch_ryan.started",
         "catch_ryan.destination_selected",
