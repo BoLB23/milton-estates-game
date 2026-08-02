@@ -2,8 +2,12 @@
 # Show the workload and externally reachable URL after a deployment.
 set -euo pipefail
 
-namespace="${NAMESPACE:-games}"
+readonly namespace="games"
+readonly deployment="milton-estates-game"
 command -v kubectl >/dev/null || { echo "kubectl is required." >&2; exit 1; }
 
-kubectl -n "${namespace}" get deployment,pods,service,ingress -l app.kubernetes.io/name=milton-estates-game
+kubectl --namespace "${namespace}" get deployment,pods,service,ingress \
+  --selector "app.kubernetes.io/name=${deployment}"
+kubectl --namespace "${namespace}" get "deployment/${deployment}" \
+  --output "custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
 echo "URL: https://games.bolblab.org"

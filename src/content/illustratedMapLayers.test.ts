@@ -8,14 +8,14 @@ import {
 import { MAP_DEFINITIONS } from "./maps";
 
 describe("illustrated map layers", () => {
-  it("keeps full illustrated plates in the existing map coordinate spaces", () => {
+  it("keeps full illustrated plates in their authored map coordinate spaces", () => {
     expect(getIllustratedMapLayers("neighborhood")).toMatchObject([
       {
         id: "neighborhood_illustrated_master",
         x: 0,
         y: 0,
-        width: 2300,
-        height: 1500,
+        width: 1440,
+        height: 1056,
       },
     ]);
     expect(getIllustratedMapLayers("creek")).toMatchObject([
@@ -39,23 +39,40 @@ describe("illustrated map layers", () => {
     expect(MAP_DEFINITIONS.neighborhood.authoredObjectIds).toEqual([
       "spawn_home",
       "spawn_woods",
+      "spawn_stonehenge",
+      "spawn_fruitville",
+      "woods_gate",
+      "exit_stonehenge",
+      "exit_fruitville",
       "andrew",
       "billy",
       "jeremy",
       "jeremy_driveway",
       "side_yard_gap",
-      "woods_gate",
       "blocked_bent_creek",
       "blocked_stonehenge",
       "blocked_reidenbaugh",
       "blocked_fruitville",
       "ryan_invite",
       "bike_mount_milton",
-      "reidenbaugh_exit",
       "ryan_depart_00",
       "ryan_depart_01",
       "ryan_depart_02",
       "ryan_depart_03",
+      "ryan_depart_04",
+      "ryan_depart_05",
+      "ryan_depart_06",
+      "ryan_depart_07",
+      "ryan_depart_08",
+      "ryan_depart_09",
+      "ryan_depart_10",
+      "ryan_depart_11",
+      "andrew_house",
+      "billy_house",
+      "jeremy_house",
+      "qa_home_route",
+      "qa_stonehenge_route",
+      "qa_fruitville_route",
     ]);
     expect(MAP_DEFINITIONS.creek.authoredObjectIds).toEqual([
       "spawn_home",

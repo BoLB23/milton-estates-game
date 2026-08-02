@@ -1,4 +1,19 @@
-export type MapId = "neighborhood" | "creek" | "reidenbaugh_road" | "reidenbaugh";
+export type MapId =
+  | "neighborhood"
+  | "creek"
+  | "stonehenge"
+  | "reidenbaugh"
+  | "fruitville_pike"
+  | "bent_creek";
+
+export const MAP_IDS = [
+  "neighborhood",
+  "creek",
+  "stonehenge",
+  "reidenbaugh",
+  "fruitville_pike",
+  "bent_creek",
+] as const satisfies readonly MapId[];
 
 /** Stable content IDs. These values are persisted and must not be renamed. */
 export type ChapterId = "chapter_1";
@@ -44,7 +59,7 @@ export type RyanRideStage =
   | "invite"
   | "choose_destination"
   | "depart_neighborhood"
-  | "ride_reidenbaugh_road"
+  | "ride_stonehenge"
   | "chase_reidenbaugh"
   | "complete";
 
@@ -119,7 +134,7 @@ export interface PlayerSettings {
 }
 
 export interface SaveData {
-  version: 6;
+  version: 7;
   activeChapterId: ChapterId;
   activeQuestId: QuestId;
   completedChapterIds: ChapterId[];

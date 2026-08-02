@@ -8,10 +8,11 @@
     "typecheck": "tsc -b && tsc -p tsconfig.e2e.json",
     "check:exports": "node scripts/check-exports.mjs",
     "check:assets": "node scripts/audit-assets.mjs",
+    "check:maps": "node scripts/validate-map-expansion.mjs",
     "build": "npm run typecheck && npm run check:exports && npm run check:assets && vite build",
     "test": "vitest run src",
     "test:e2e": "playwright test",
-    "check": "npm run test && npm run build",
+    "check": "npm run test && npm run check:maps && npm run build",
     "check:full": "npm run check && npm run test:e2e"
   },
   "dependencies": {

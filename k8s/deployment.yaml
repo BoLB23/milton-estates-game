@@ -17,9 +17,10 @@ spec:
     spec:
       containers:
         - name: game
-          # scripts/deploy.sh replaces this value with the requested GHCR image.
-          image: ghcr.io/replace-me/milton-estates-game:latest
-          imagePullPolicy: Always
+          # Never apply this placeholder directly. scripts/deploy.sh renders the
+          # requested immutable GHCR image before applying the Deployment once.
+          image: ghcr.io/replace-me/milton-estates-game:sha-0000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080

@@ -23,7 +23,7 @@ test("boots under a Vite subpath and loads its initial artwork from that subpath
   expect(failedAssetUrls).toEqual([]);
   expect(loadedAssetUrls).toEqual(expect.arrayContaining([
     expect.stringContaining("/milton/assets/characters/billy-hd-movement.png"),
-    expect.stringContaining("/milton/assets/maps/neighborhood-master-v1.png"),
+    expect.stringContaining("/milton/assets/maps/expansion/neighborhood-master-v2.png"),
     expect.stringContaining("/milton/assets/maps/creek-woods-master-v1.png"),
   ]));
 });

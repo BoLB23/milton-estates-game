@@ -44,6 +44,7 @@ describe("PlayerLocomotionController", () => {
     expect(before.velocityX).toBeGreaterThan(0);
     expect(reversed.velocityX).toBeGreaterThan(0);
     expect(Math.abs(reversed.velocityY)).toBeGreaterThan(0);
+    expect(reversed.speed).toBeCloseTo(before.speed - DEFAULT_BICYCLE_TUNING.braking / 60);
   });
 
   it("stops safely while input is locked and starts cleanly after release", () => {

@@ -32,8 +32,8 @@ export const SPORTS_OBJECTIVES: Readonly<Record<SportsQuestStage, string>> = {
 export const SPORTS_COMPLETED_MILESTONE_COUNT:
 Readonly<Record<SportsQuestStage, number>> = {
   meet_jeremy_to_skateboard: 0,
-  meet_billy_to_play_baseball: 1,
-  meet_andrew_to_play_basketball: 2,
+  meet_billy_to_play_baseball: 2,
+  meet_andrew_to_play_basketball: 3,
   complete: 4,
 };
 

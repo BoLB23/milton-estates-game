@@ -207,7 +207,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private handleInputAction(event: InputActionEvent): void {
-    if (!event.pressed) return;
+    if (!event.pressed || inputCapture.isConsumed(event)) return;
     if (!this.isOpen) {
       if (event.action === "menu" || event.action === "back") {
         this.toggleMenu();
@@ -401,17 +401,7 @@ export class MenuScene extends Phaser.Scene {
     const unexplored = Object.values(MAP_DEFINITIONS).filter((candidate) =>
       !this.state.discoveredMaps.includes(candidate.id) && !this.state.unlockedMaps.includes(candidate.id),
     );
-    const reidenbaughCluster = unexplored.filter((candidate) => candidate.id === "reidenbaugh_road" || candidate.id === "reidenbaugh");
-    if (reidenbaughCluster.length === 2) {
-      // The two authored regions overlap on the fold-out artwork. Use one
-      // shared mask so the lock state reads as a single unexplored destination
-      // instead of stacking two dark rectangles over the same paper.
-      const cover = this.add.rectangle(652.5, 159, 155, 134, 0x475057, 0.46)
-        .setOrigin(0.5).setStrokeStyle(2, 0x283033, 0.42);
-      this.pageContent.add(cover);
-    }
     unexplored.forEach((candidate) => {
-      if (reidenbaughCluster.length === 2 && (candidate.id === "reidenbaugh_road" || candidate.id === "reidenbaugh")) return;
       const bounds = candidate.regionalMapBounds;
       const cover = this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0x475057, 0.46)
         .setOrigin(0).setStrokeStyle(2, 0x283033, 0.42);
@@ -432,6 +422,21 @@ export class MenuScene extends Phaser.Scene {
         backgroundColor: "#315f4ccc", padding: { x: 4, y: 2 },
       }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
     }
+    const topologyPaths: Array<["neighborhood" | "creek" | "stonehenge" | "reidenbaugh" | "fruitville_pike" | "bent_creek", "neighborhood" | "creek" | "stonehenge" | "reidenbaugh" | "fruitville_pike" | "bent_creek"]> = [
+      ["neighborhood", "creek"],
+      ["neighborhood", "stonehenge"],
+      ["stonehenge", "reidenbaugh"],
+      ["neighborhood", "fruitville_pike"],
+      ["fruitville_pike", "bent_creek"],
+    ];
+    const topology = this.add.graphics().setDepth(-1);
+    topology.lineStyle(3, 0x8f6b4b, 0.65);
+    for (const [fromId, toId] of topologyPaths) {
+      const from = MAP_DEFINITIONS[fromId].regionalMapBounds;
+      const to = MAP_DEFINITIONS[toId].regionalMapBounds;
+      topology.lineBetween(from.x + from.width / 2, from.y + from.height / 2, to.x + to.width / 2, to.y + to.height / 2);
+    }
+    this.pageContent.add(topology);
     this.pageContent.add(this.add.circle(playerPosition.x, playerPosition.y, 12, 0xc94b3f, 1).setStrokeStyle(3, 0xfff4cd, 1));
     scrapbookText(this, this.pageContent, playerPosition.x, playerPosition.y, "YOU", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#ffffff", fontStyle: "bold",
@@ -449,14 +454,9 @@ export class MenuScene extends Phaser.Scene {
 
   private regionalMapLabelPosition(candidate: MapDefinition): { x: number; y: number } {
     const bounds = candidate.regionalMapBounds;
-    const offset = candidate.id === "reidenbaugh_road"
-      ? { x: -28, y: 27 }
-      : candidate.id === "reidenbaugh"
-        ? { x: 25, y: 12 }
-        : { x: 0, y: 0 };
     return {
-      x: bounds.x + bounds.width / 2 + offset.x,
-      y: bounds.y + bounds.height / 2 + offset.y,
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
     };
   }
 
@@ -477,6 +477,10 @@ export class MenuScene extends Phaser.Scene {
     }).setPosition(550, 310);
     this.button(68, 330, this.restartArmed ? "CONFIRM RESTART" : "RESTART MISSION", () => this.restartMission(), 300)
       .setBackgroundColor(this.restartArmed ? "#c65246" : "#f3c95f");
+    if (gameStore.isReplaying()) {
+      this.button(540, 330, "RETURN TO ADVENTURE", () => this.endReplay(), 300)
+        .setBackgroundColor("#b8d6a4");
+    }
     const warning = this.note(390, 378,
       this.restartArmed
         ? "Last warning: confirm restart to begin at Billy's house."
@@ -500,6 +504,19 @@ export class MenuScene extends Phaser.Scene {
     gameEvents.emit(EVENT.toast, "Mission restarted.");
   }
 
+  private endReplay(): void {
+    if (!gameStore.isReplaying()) return;
+    const replayMap = gameStore.getState().currentMap;
+    this.closeMenu();
+    if (!gameStore.endQuestReplay()) return;
+    const canonicalMap = gameStore.getState().currentMap;
+    this.scene.stop(replayMap);
+    this.scene.launch(canonicalMap);
+    this.scene.bringToTop("ui");
+    this.scene.bringToTop();
+    gameEvents.emit(EVENT.toast, "Returned to your saved adventure.");
+  }
+
   private launchNeighborhood(oldMap: GameState["currentMap"]): void {
     // ScenePlugin.start would shut down the calling MenuScene and permanently
     // remove its Escape/B listeners. Stop/start only the world scene instead.
@@ -512,9 +529,10 @@ export class MenuScene extends Phaser.Scene {
   private renderSettings(): void {
     const settings = this.state.settings;
     this.heading("Settings & controls", "Everything here saves automatically.");
-    this.card(68, 226, 796, 68);
+    this.card(68, 226, 796, 78);
     this.note(88, 242, "KEYBOARD", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
     this.note(88, 263, "Move  WASD / arrows     Talk  E / Space     Backpack  Esc     Bike  F", { fontSize: "15px", fontStyle: "bold" });
+    this.note(88, 282, "Bike: gamepad X / Square or touch BIKE", { fontSize: "12px", color: "#675544", fontStyle: "bold" });
     this.button(68, 315, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }));
     this.button(360, 315, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
       this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });

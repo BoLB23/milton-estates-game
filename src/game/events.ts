@@ -24,6 +24,18 @@ export interface ChoiceRequest {
   onCancel?: () => void;
 }
 
+/** A UI-owned, single-line text request for map-owned validation. */
+export interface TextEntryRequest {
+  /** Copy is rendered verbatim; callers own punctuation and capitalization. */
+  prompt: string;
+  /** The UI defaults this to its shared short-answer limit when omitted. */
+  maxLength?: number;
+  /** Optional value used when replacing/retrying an existing request. */
+  initialValue?: string;
+  onSubmit: (value: string) => void;
+  onCancel?: () => void;
+}
+
 export type AudioCue =
   | "menuNavigate"
   | "confirm"
@@ -43,6 +55,8 @@ export const EVENT = {
   dialogueCancelled: "dialogue-cancelled",
   choice: "choice",
   choiceCancelled: "choice-cancelled",
+  textEntry: "text-entry",
+  textEntryCancelled: "text-entry-cancelled",
   toast: "toast",
   hint: "hint",
   inputAction: "input-action",
@@ -72,6 +86,8 @@ export interface GameEventMap {
   [EVENT.dialogueCancelled]: [];
   [EVENT.choice]: [request: ChoiceRequest];
   [EVENT.choiceCancelled]: [];
+  [EVENT.textEntry]: [request: TextEntryRequest];
+  [EVENT.textEntryCancelled]: [];
   [EVENT.toast]: [message: string];
   [EVENT.hint]: [message: string];
   [EVENT.inputAction]: [event: SemanticActionEvent];
@@ -85,6 +101,11 @@ type ListenerEntry = {
   readonly callback: (...args: unknown[]) => void;
   readonly context?: unknown;
 };
+
+export interface InputCaptureOptions {
+  /** Prevent one back/menu press from also toggling the Backpack. */
+  blockMenuToggle?: boolean;
+}
 
 /** A small, typed EventEmitter-compatible bus for game-level events. */
 export class TypedEventBus<Events extends { [EventName in keyof Events]: unknown[] }> {
@@ -132,15 +153,35 @@ export class TypedEventBus<Events extends { [EventName in keyof Events]: unknown
 
 /**
  * Tracks visible modal owners without relying on event-listener order.
- * Input events are immutable broadcasts; worlds query this guard before
- * handling interaction, while UI and menus own capture for their lifetime.
+ * Input events remain immutable broadcasts. The input router snapshots a
+ * menu-blocking owner into transient event consumption before broadcasting,
+ * so releasing a modal during that broadcast cannot leak the same press to
+ * the Backpack. Dialogue capture intentionally remains menu-pausable.
  */
 export class InputCapture {
-  private readonly owners = new Set<string>();
+  private readonly owners = new Map<string, InputCaptureOptions>();
+  private readonly consumedEvents = new WeakSet<SemanticActionEvent>();
 
-  capture(owner: string): void { this.owners.add(owner); }
+  capture(owner: string, options: InputCaptureOptions = {}): void {
+    const existing = this.owners.get(owner);
+    this.owners.set(owner, {
+      blockMenuToggle: options.blockMenuToggle ?? existing?.blockMenuToggle ?? false,
+    });
+  }
+
   release(owner: string): void { this.owners.delete(owner); }
   isCaptured(): boolean { return this.owners.size > 0; }
+
+  /** Marks a modal-owned menu press before any listener can release capture. */
+  consumeMenuToggle(event: SemanticActionEvent): boolean {
+    const isMenuToggle = event.pressed && (event.action === "back" || event.action === "menu");
+    const isBlocked = [...this.owners.values()].some(({ blockMenuToggle }) => blockMenuToggle);
+    if (!isMenuToggle || !isBlocked) return false;
+    this.consumedEvents.add(event);
+    return true;
+  }
+
+  isConsumed(event: SemanticActionEvent): boolean { return this.consumedEvents.has(event); }
   clear(): void { this.owners.clear(); }
 }
 

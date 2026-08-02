@@ -36,6 +36,7 @@ describe("complete playthrough scenarios", () => {
     advance(store, EVENTS[3]!);
 
     expect(store.getState()).toMatchObject({
+      version: 7,
       questStage: "complete",
       inventory: [CONTROLLER_ITEM],
       discoveredMaps: ["neighborhood", "creek"],

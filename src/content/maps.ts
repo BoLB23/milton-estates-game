@@ -38,7 +38,7 @@ export interface MapDefinition {
   /** Loaded by BootScene and used as the runtime source for gameplay geometry. */
   tiledMapKey: string;
   tiledMapPath: string;
-  /** Names expected in the Tiled stable-gameplay-objects layer. */
+  /** Stable names expected in the authored gameplay object layers. */
   authoredObjectIds: readonly string[];
   markers: readonly MapMarker[];
   /** Placement of this map inside the regional fold-out artwork in MenuScene. */
@@ -52,10 +52,9 @@ export interface MapSelection {
   discoveredIds: ReadonlySet<string> | readonly string[];
 }
 
-const neighborhood = { width: 2300, height: 1500 };
+const EXPANSION_WORLD = { width: 1440, height: 1056 };
+const neighborhood = EXPANSION_WORLD;
 const creek = { width: 2048, height: 1536 };
-const reidenbaughRoad = { width: 1672, height: 941 };
-const reidenbaugh = { width: 1672, height: 941 };
 
 /** The canonical world, artwork, collision, and menu metadata for each map. */
 export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
@@ -63,30 +62,40 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
     id: "neighborhood", label: "Milton Estates — Wheatfield Drive",
     worldWidth: neighborhood.width, worldHeight: neighborhood.height,
     layers: [{
-      id: "neighborhood_illustrated_master", role: "master", textureKey: "neighborhood-illustrated-master",
-      imagePath: assetUrl("assets/maps/neighborhood-master-v1.png"), x: 0, y: 0,
+      id: "neighborhood_illustrated_master", role: "master", textureKey: "ch01.map.neighborhood.master",
+      imagePath: assetUrl("assets/maps/expansion/neighborhood-master-v2.png"), x: 0, y: 0,
       width: neighborhood.width, height: neighborhood.height, depth: 10,
     }],
-    tiledMapKey: "neighborhood-tmj", tiledMapPath: "assets/maps/neighborhood-wheatfield-slice.tmj",
-    authoredObjectIds: ["spawn_home", "spawn_woods", "andrew", "billy", "jeremy", "jeremy_driveway", "side_yard_gap", "woods_gate", "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville", "ryan_invite", "bike_mount_milton", "reidenbaugh_exit", "ryan_depart_00", "ryan_depart_01", "ryan_depart_02", "ryan_depart_03"],
-    markers: [
-      { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.552, y: 0.653, initiallyVisible: true },
-      { id: "jeremy_home", kind: "landmark", label: "Jeremy's House", x: 0.817, y: 0.653 },
-      { id: "andrew_home", kind: "landmark", label: "Andrew's House", x: 0.096, y: 0.653 },
-      { id: "creek_woods", kind: "exit", label: "Creek Woods", x: 0.491, y: 0.227 },
-      { id: "obj_jeremy", kind: "objective", label: "Talk to Jeremy", x: 0.817, y: 0.653, questId: "missing_controller", stages: ["talk_to_jeremy", "return_to_jeremy"] },
-      { id: "obj_andrew", kind: "objective", label: "Talk to Andrew", x: 0.096, y: 0.653, questId: "missing_controller", stages: ["talk_to_andrew"] },
-      { id: "obj_mushroom_yards", kind: "objective", label: "Search Milton's backyards for mushrooms", x: 0.42, y: 0.35, questId: "andrew_mushroom_hunt", stages: ["search_mushrooms"] },
-      { id: "obj_feed_jeremy", kind: "objective", label: "Feed one mushroom to Jeremy", x: 0.817, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["feed_mushroom_to_jeremy"] },
-      { id: "obj_place_billy", kind: "objective", label: "Place one mushroom at Billy's house", x: 0.552, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["place_mushroom_at_billy"] },
-      { id: "obj_give_andrew", kind: "objective", label: "Give the last eight mushrooms to Andrew", x: 0.096, y: 0.653, questId: "andrew_mushroom_hunt", stages: ["give_mushrooms_to_andrew"] },
-      { id: "obj_skateboard", kind: "objective", label: "Meet Jeremy to skateboard", x: 0.817, y: 0.653, questId: "three_player_sports", stages: ["meet_jeremy_to_skateboard"] },
-      { id: "obj_baseball", kind: "objective", label: "Meet Billy to play baseball", x: 0.552, y: 0.653, questId: "three_player_sports", stages: ["meet_billy_to_play_baseball"] },
-      { id: "obj_basketball", kind: "objective", label: "Meet Andrew to play basketball", x: 0.096, y: 0.653, questId: "three_player_sports", stages: ["meet_andrew_to_play_basketball"] },
-      { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.83, y: 0.2, questId: "catch_ryan", stages: ["invite", "choose_destination"] },
-      { id: "obj_reidenbaugh_exit", kind: "objective", label: "Follow Ryan to Reidenbaugh", x: 0.89, y: 0.19, questId: "catch_ryan", stages: ["depart_neighborhood"] },
+    tiledMapKey: "neighborhood-expansion-tmj", tiledMapPath: "assets/maps/expansion/neighborhood.tmj",
+    authoredObjectIds: [
+      "spawn_home", "spawn_woods", "spawn_stonehenge", "spawn_fruitville", "woods_gate", "exit_stonehenge", "exit_fruitville",
+      "andrew", "billy", "jeremy", "jeremy_driveway", "side_yard_gap",
+      "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville",
+      "ryan_invite", "bike_mount_milton",
+      "ryan_depart_00", "ryan_depart_01", "ryan_depart_02", "ryan_depart_03", "ryan_depart_04", "ryan_depart_05",
+      "ryan_depart_06", "ryan_depart_07", "ryan_depart_08", "ryan_depart_09", "ryan_depart_10", "ryan_depart_11",
+      "andrew_house", "billy_house", "jeremy_house", "qa_home_route", "qa_stonehenge_route", "qa_fruitville_route",
     ],
-    regionalMapBounds: { x: 360, y: 209, width: 210, height: 132 },
+    markers: [
+      { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.567, y: 0.864, initiallyVisible: true },
+      { id: "jeremy_home", kind: "landmark", label: "Jeremy's House", x: 0.856, y: 0.833 },
+      { id: "andrew_home", kind: "landmark", label: "Andrew's House", x: 0.189, y: 0.742 },
+      { id: "creek_woods", kind: "exit", label: "Creek Woods", x: 0.078, y: 0.015 },
+      { id: "stonehenge_exit", kind: "exit", label: "Stonehenge", x: 0.989, y: 0.182 },
+      { id: "fruitville_exit", kind: "exit", label: "Fruitville Pike", x: 0.467, y: 0.985 },
+      { id: "obj_jeremy", kind: "objective", label: "Talk to Jeremy", x: 0.856, y: 0.833, questId: "missing_controller", stages: ["talk_to_jeremy", "return_to_jeremy"] },
+      { id: "obj_andrew", kind: "objective", label: "Talk to Andrew", x: 0.189, y: 0.742, questId: "missing_controller", stages: ["talk_to_andrew"] },
+      { id: "obj_mushroom_yards", kind: "objective", label: "Search Milton's backyards for mushrooms", x: 0.5, y: 0.55, questId: "andrew_mushroom_hunt", stages: ["search_mushrooms"] },
+      { id: "obj_feed_jeremy", kind: "objective", label: "Feed one mushroom to Jeremy", x: 0.856, y: 0.833, questId: "andrew_mushroom_hunt", stages: ["feed_mushroom_to_jeremy"] },
+      { id: "obj_place_billy", kind: "objective", label: "Place one mushroom at Billy's house", x: 0.567, y: 0.864, questId: "andrew_mushroom_hunt", stages: ["place_mushroom_at_billy"] },
+      { id: "obj_give_andrew", kind: "objective", label: "Give the last eight mushrooms to Andrew", x: 0.189, y: 0.742, questId: "andrew_mushroom_hunt", stages: ["give_mushrooms_to_andrew"] },
+      { id: "obj_skateboard", kind: "objective", label: "Meet Jeremy to skateboard", x: 0.856, y: 0.833, questId: "three_player_sports", stages: ["meet_jeremy_to_skateboard"] },
+      { id: "obj_baseball", kind: "objective", label: "Play baseball at Billy's house", x: 0.567, y: 0.864, questId: "three_player_sports", stages: ["meet_billy_to_play_baseball"] },
+      { id: "obj_basketball", kind: "objective", label: "Meet Andrew to play basketball", x: 0.189, y: 0.742, questId: "three_player_sports", stages: ["meet_andrew_to_play_basketball"] },
+      { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.589, y: 0.924, questId: "catch_ryan", stages: ["invite", "choose_destination"] },
+      { id: "obj_stonehenge_departure", kind: "objective", label: "Follow Ryan toward Stonehenge", x: 0.85, y: 0.35, questId: "catch_ryan", stages: ["depart_neighborhood"] },
+    ],
+    regionalMapBounds: { x: 320, y: 205, width: 235, height: 140 },
   },
   creek: {
     id: "creek", label: "Creek Woods", worldWidth: creek.width, worldHeight: creek.height,
@@ -106,28 +115,108 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
     ],
     regionalMapBounds: { x: 200, y: 190, width: 285, height: 190 },
   },
-  reidenbaugh_road: {
-    id: "reidenbaugh_road", label: "Reidenbaugh Road", worldWidth: reidenbaughRoad.width, worldHeight: reidenbaughRoad.height,
-    layers: [{ id: "reidenbaugh_road_illustrated_master", role: "master", textureKey: "reidenbaugh-road-illustrated-master", imagePath: assetUrl("assets/maps/reidenbaugh-road-master-v1.png"), x: 0, y: 0, width: reidenbaughRoad.width, height: reidenbaughRoad.height, depth: 10 }],
-    tiledMapKey: "reidenbaugh-road-tmj", tiledMapPath: "assets/maps/reidenbaugh-road.tmj",
-    authoredObjectIds: ["spawn_milton", "spawn_reidenbaugh", "return_milton", "enter_reidenbaugh", "road_route_00", "road_route_01", "road_route_02", "road_route_03"],
-    markers: [{ id: "road_exit", kind: "exit", label: "Reidenbaugh", x: 0.89, y: 0.15 }],
-    regionalMapBounds: { x: 575, y: 140, width: 85, height: 86 },
+  stonehenge: {
+    id: "stonehenge", label: "Stonehenge", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
+    layers: [{
+      id: "stonehenge_illustrated_master", role: "master", textureKey: "ch01.map.stonehenge.master",
+      imagePath: assetUrl("assets/maps/expansion/stonehenge-master-v1.png"), x: 0, y: 0,
+      width: EXPANSION_WORLD.width, height: EXPANSION_WORLD.height, depth: 10,
+    }],
+    tiledMapKey: "stonehenge-tmj", tiledMapPath: "assets/maps/expansion/stonehenge.tmj",
+    authoredObjectIds: [
+      "spawn_milton", "spawn_reidenbaugh", "exit_milton", "exit_reidenbaugh",
+      "stonehenge_gate", "roundabout", "stonehenge_lookout",
+      "stonehenge_route_00", "stonehenge_route_01", "stonehenge_route_02", "stonehenge_route_03", "stonehenge_route_04",
+      "stonehenge_route_05", "stonehenge_route_06", "stonehenge_route_07", "stonehenge_route_08", "stonehenge_route_09",
+      "stonehenge_route_10", "stonehenge_route_11", "stonehenge_route_12",
+      "estate_west", "estate_east", "estate_south", "qa_milton_route", "qa_reidenbaugh_route", "qa_lookout",
+    ],
+    markers: [
+      { id: "stonehenge_landmark", kind: "landmark", label: "Stonehenge Circle", x: 0.522, y: 0.53, initiallyVisible: true },
+      { id: "stonehenge_to_milton", kind: "exit", label: "Milton Estates", x: 0.011, y: 0.894 },
+      { id: "stonehenge_to_school", kind: "exit", label: "Reidenbaugh Elementary", x: 0.956, y: 0.03 },
+      { id: "obj_stonehenge_route", kind: "objective", label: "Ride across Stonehenge", x: 0.7, y: 0.3, questId: "catch_ryan", stages: ["ride_stonehenge"] },
+    ],
+    regionalMapBounds: { x: 550, y: 145, width: 125, height: 120 },
   },
   reidenbaugh: {
-    id: "reidenbaugh", label: "Reidenbaugh", worldWidth: reidenbaugh.width, worldHeight: reidenbaugh.height,
-    layers: [{ id: "reidenbaugh_illustrated_master", role: "master", textureKey: "reidenbaugh-illustrated-master", imagePath: assetUrl("assets/maps/reidenbaugh-master-v1.png"), x: 0, y: 0, width: reidenbaugh.width, height: reidenbaugh.height, depth: 10 }],
-    tiledMapKey: "reidenbaugh-tmj", tiledMapPath: "assets/maps/reidenbaugh.tmj",
-    authoredObjectIds: ["spawn_road", "return_road", "bike_rack_reidenbaugh", "ryan_finish", "ryan_post", "chase_a_00", "chase_a_01", "chase_a_02", "chase_b_00", "chase_b_01", "chase_b_02", "chase_c_00", "chase_c_01", "chase_c_02"],
-    markers: [{ id: "reidenbaugh_park", kind: "landmark", label: "Reidenbaugh Park", x: 0.82, y: 0.43 }, { id: "reidenbaugh_return", kind: "exit", label: "Reidenbaugh Road", x: 0.08, y: 0.86 }],
-    regionalMapBounds: { x: 605, y: 92, width: 125, height: 115 },
+    id: "reidenbaugh", label: "Reidenbaugh Elementary", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
+    layers: [{
+      id: "reidenbaugh_elementary_illustrated_master", role: "master", textureKey: "ch01.map.reidenbaugh.master",
+      imagePath: assetUrl("assets/maps/expansion/reidenbaugh-elementary-master-v1.png"), x: 0, y: 0,
+      width: EXPANSION_WORLD.width, height: EXPANSION_WORLD.height, depth: 10,
+    }],
+    tiledMapKey: "reidenbaugh-tmj", tiledMapPath: "assets/maps/expansion/reidenbaugh.tmj",
+    authoredObjectIds: [
+      "spawn_stonehenge", "exit_stonehenge", "school_front", "bus_loop", "visitor_parking",
+      "bike_rack_reidenbaugh", "playground", "basketball_court", "athletic_field", "service_side",
+      "ryan_finish", "ryan_post",
+      "chase_a_00", "chase_a_01", "chase_a_02", "chase_a_03", "chase_a_04", "chase_a_05", "chase_a_06",
+      "chase_b_00", "chase_b_01", "chase_b_02", "chase_b_03", "chase_b_04", "chase_b_05", "chase_b_06",
+      "chase_c_00", "chase_c_01", "chase_c_02", "chase_c_03", "chase_c_04", "chase_c_05", "chase_c_06",
+      "school_wing_west", "school_wing_east", "service_block",
+      "qa_school_entrance", "qa_school_front", "qa_playground", "qa_field",
+    ],
+    markers: [
+      { id: "school_front", kind: "landmark", label: "Reidenbaugh Elementary", x: 0.5, y: 0.47, initiallyVisible: true },
+      { id: "school_playground", kind: "landmark", label: "Playground and courts", x: 0.167, y: 0.227 },
+      { id: "reidenbaugh_return", kind: "exit", label: "Back to Stonehenge", x: 0.011, y: 0.939 },
+      { id: "obj_ryan_school", kind: "objective", label: "Catch Ryan at the school", x: 0.544, y: 0.591, questId: "catch_ryan", stages: ["chase_reidenbaugh"] },
+    ],
+    regionalMapBounds: { x: 600, y: 55, width: 165, height: 90 },
+  },
+  fruitville_pike: {
+    id: "fruitville_pike", label: "Fruitville Pike", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
+    layers: [{
+      id: "fruitville_pike_illustrated_master", role: "master", textureKey: "ch01.map.fruitville_pike.master",
+      imagePath: assetUrl("assets/maps/expansion/fruitville-pike-master-v1.png"), x: 0, y: 0,
+      width: EXPANSION_WORLD.width, height: EXPANSION_WORLD.height, depth: 10,
+    }],
+    tiledMapKey: "fruitville-pike-tmj", tiledMapPath: "assets/maps/expansion/fruitville_pike.tmj",
+    authoredObjectIds: [
+      "spawn_milton", "spawn_bent_creek", "exit_milton", "exit_bent_creek",
+      "crosswalk_north", "crosswalk_south", "bike_shoulder", "fruitville_midpoint",
+      "fruitville_route_00", "fruitville_route_01", "fruitville_route_02", "fruitville_route_03", "fruitville_route_04",
+      "fruitville_route_05", "fruitville_route_06", "fruitville_route_07", "fruitville_route_08",
+      "roadside_north", "roadside_south", "qa_pike_milton", "qa_pike_midpoint", "qa_pike_bent_creek",
+    ],
+    markers: [
+      { id: "fruitville_midpoint", kind: "landmark", label: "Fruitville Pike", x: 0.567, y: 0.439, initiallyVisible: true },
+      { id: "fruitville_to_milton", kind: "exit", label: "Milton Estates", x: 0.422, y: 0.985 },
+      { id: "fruitville_to_bent", kind: "exit", label: "Bent Creek", x: 0.667, y: 0.03 },
+    ],
+    regionalMapBounds: { x: 500, y: 315, width: 170, height: 65 },
+  },
+  bent_creek: {
+    id: "bent_creek", label: "Bent Creek", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
+    layers: [{
+      id: "bent_creek_illustrated_master", role: "master", textureKey: "ch01.map.bent_creek.master",
+      imagePath: assetUrl("assets/maps/expansion/bent-creek-master-v1.png"), x: 0, y: 0,
+      width: EXPANSION_WORLD.width, height: EXPANSION_WORLD.height, depth: 10,
+    }],
+    tiledMapKey: "bent-creek-tmj", tiledMapPath: "assets/maps/expansion/bent_creek.tmj",
+    authoredObjectIds: [
+      "spawn_gate_exterior", "spawn_fruitville", "exit_fruitville", "gatehouse", "gate_attendant", "gate_entry",
+      "clubhouse", "golf_cart_path_00", "golf_cart_path_01", "golf_cart_path_02", "golf_cart_path_03",
+      "golf_cart_path_04", "golf_cart_path_05", "golf_cart_path_06", "golf_cart_path_07",
+      "golf_cart_path_08", "golf_cart_path_09", "golf_cart_path_10", "golf_cart_path_11",
+      "gate_barrier", "gatehouse_building", "maintenance_yard", "qa_gate_exterior", "qa_clubhouse", "qa_cart_path",
+    ],
+    markers: [
+      { id: "bent_creek_gate", kind: "landmark", label: "Schwartz / Votilla gatehouse", x: 0.189, y: 0.833, initiallyVisible: true },
+      { id: "bent_creek_clubhouse", kind: "landmark", label: "Bent Creek clubhouse", x: 0.878, y: 0.197 },
+      { id: "bent_creek_return", kind: "exit", label: "Back to Fruitville Pike", x: 0.011, y: 0.924 },
+    ],
+    regionalMapBounds: { x: 665, y: 330, width: 115, height: 48 },
   },
 };
 
 export const NEIGHBORHOOD_MAP = MAP_DEFINITIONS.neighborhood;
 export const CREEK_MAP = MAP_DEFINITIONS.creek;
-export const REIDENBAUGH_ROAD_MAP = MAP_DEFINITIONS.reidenbaugh_road;
+export const STONEHENGE_MAP = MAP_DEFINITIONS.stonehenge;
 export const REIDENBAUGH_MAP = MAP_DEFINITIONS.reidenbaugh;
+export const FRUITVILLE_PIKE_MAP = MAP_DEFINITIONS.fruitville_pike;
+export const BENT_CREEK_MAP = MAP_DEFINITIONS.bent_creek;
 
 export function getMapDefinition(mapId: MapId): MapDefinition { return MAP_DEFINITIONS[mapId]; }
 export function getIllustratedMapLayers(mapId: MapId): readonly IllustratedMapLayer[] { return MAP_DEFINITIONS[mapId].layers; }
@@ -158,6 +247,7 @@ export function selectVisibleMapMarkers(selection: MapSelection): readonly MapMa
     return marker.initiallyVisible === true || discovered.has(marker.id);
   });
 }
+
 export function selectActiveObjectiveMarker(selection: MapSelection): MapMarker | undefined {
   return selectVisibleMapMarkers(selection).find((marker) => marker.kind === "objective");
 }
@@ -167,6 +257,7 @@ export function validateMapDefinitions(): void {
   const textureKeys = new Set<string>();
   for (const map of Object.values(MAP_DEFINITIONS)) {
     if (map.worldWidth <= 0 || map.worldHeight <= 0) throw new Error(`Invalid map dimensions: ${map.id}`);
+    if (!map.tiledMapPath.endsWith(".tmj")) throw new Error(`Map source is not TMJ: ${map.id}`);
     for (const marker of map.markers) {
       if (marker.x < 0 || marker.x > 1 || marker.y < 0 || marker.y > 1) throw new Error(`Marker outside map bounds: ${marker.id}`);
       if (marker.kind === "objective" && !marker.questId) throw new Error(`Objective marker missing quest ID: ${marker.id}`);
@@ -174,7 +265,7 @@ export function validateMapDefinitions(): void {
     for (const layer of map.layers) {
       if (textureKeys.has(layer.textureKey)) throw new Error(`Duplicate map texture key: ${layer.textureKey}`);
       textureKeys.add(layer.textureKey);
-      if (layer.width <= 0 || layer.height <= 0) throw new Error(`Invalid map layer dimensions: ${layer.id}`);
+      if (layer.width !== map.worldWidth || layer.height !== map.worldHeight) throw new Error(`Layer dimensions do not match map bounds: ${layer.id}`);
     }
   }
 }

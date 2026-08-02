@@ -30,4 +30,26 @@ describe("game events", () => {
     capture.release("menu");
     expect(capture.isCaptured()).toBe(false);
   });
+
+  it("consumes a modal back/menu press without blocking pause over dialogue", () => {
+    const capture = new InputCapture();
+    const dialogueBack = { action: "back", pressed: true, source: "gamepad" } as const;
+    capture.capture("dialogue");
+
+    expect(capture.consumeMenuToggle(dialogueBack)).toBe(false);
+    expect(capture.isConsumed(dialogueBack)).toBe(false);
+
+    capture.capture("choice", { blockMenuToggle: true });
+    const choiceBack = { action: "back", pressed: true, source: "gamepad" } as const;
+    const choiceMenu = { action: "menu", pressed: true, source: "touch" } as const;
+    expect(capture.consumeMenuToggle(choiceBack)).toBe(true);
+    expect(capture.consumeMenuToggle(choiceMenu)).toBe(true);
+
+    // Consumption belongs to these immutable broadcasts even after the choice
+    // listener releases its lifetime capture before the menu listener runs.
+    capture.release("choice");
+    expect(capture.isConsumed(choiceBack)).toBe(true);
+    expect(capture.isConsumed(choiceMenu)).toBe(true);
+    expect(capture.consumeMenuToggle({ action: "back", pressed: true, source: "gamepad" })).toBe(false);
+  });
 });

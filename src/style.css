@@ -47,17 +47,31 @@ canvas {
 
   .touch-controls button:active { background: #c76b52e8; transform: translateY(2px); }
 
-  .touch-dpad {
-    display: grid;
-    grid-template: repeat(3, 50px) / repeat(3, 50px);
-    gap: 3px;
+  .touch-joystick {
+    position: relative;
+    width: 128px;
+    height: 128px;
+    border: 2px solid #fff5d699;
+    border-radius: 50%;
+    background: #172735aa;
+    box-shadow: inset 0 0 0 14px #07131c33, 0 3px 0 #07131c99;
+    pointer-events: auto;
+    touch-action: none;
   }
 
-  .touch-dpad button { width: 50px; height: 50px; }
-  .touch-up { grid-area: 1 / 2; }
-  .touch-left { grid-area: 2 / 1; }
-  .touch-right { grid-area: 2 / 3; }
-  .touch-down { grid-area: 3 / 2; }
+  .touch-joystick-stick {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 56px;
+    height: 56px;
+    border: 2px solid #fff5d6;
+    border-radius: 50%;
+    background: #c76b52e8;
+    box-shadow: 0 2px 0 #07131c99;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+  }
 
   .touch-actions { display: flex; align-items: flex-end; gap: 12px; }
   .touch-actions button { min-width: 94px; height: 50px; padding: 0 12px; }

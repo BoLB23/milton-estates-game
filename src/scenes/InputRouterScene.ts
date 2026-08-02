@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { EVENT, gameEvents } from "../game/events";
+import { EVENT, gameEvents, inputCapture } from "../game/events";
 import {
   ActionOwnership,
   GAMEPAD_BUTTON_ACTIONS,
@@ -16,6 +16,7 @@ class InputState {
   private readonly actions = new ActionOwnership();
   private readonly movementActions = new ActionOwnership();
   private gamepad: MovementVector = { x: 0, y: 0 };
+  private touchJoystick: MovementVector = { x: 0, y: 0 };
 
   set(action: SemanticAction, token: string, pressed: boolean, contributesToMovement: boolean): boolean {
     const changed = this.actions.set(action, token, pressed);
@@ -26,19 +27,23 @@ class InputState {
   }
 
   setGamepadMovement(movement: MovementVector): void { this.gamepad = movement; }
+  setTouchJoystickMovement(movement: MovementVector): void { this.touchJoystick = movement; }
 
   movement(): MovementVector {
     const keyboardOrTouch = normalizeMovement(
       Number(this.movementActions.isPressed("moveRight")) - Number(this.movementActions.isPressed("moveLeft")),
       Number(this.movementActions.isPressed("moveDown")) - Number(this.movementActions.isPressed("moveUp")),
     );
-    return keyboardOrTouch.x || keyboardOrTouch.y ? keyboardOrTouch : this.gamepad;
+    if (keyboardOrTouch.x || keyboardOrTouch.y) return keyboardOrTouch;
+    if (this.touchJoystick.x || this.touchJoystick.y) return this.touchJoystick;
+    return this.gamepad;
   }
 
   clear(): void {
     this.actions.clear();
     this.movementActions.clear();
     this.gamepad = { x: 0, y: 0 };
+    this.touchJoystick = { x: 0, y: 0 };
   }
 }
 
@@ -78,6 +83,53 @@ export class InputRouterScene extends Phaser.Scene {
         element.removeEventListener("pointerup", release);
         element.removeEventListener("pointercancel", release);
         element.removeEventListener("lostpointercapture", release);
+      });
+    });
+    document.querySelectorAll<HTMLElement>("[data-game-joystick]").forEach((element) => {
+      const stick = element.querySelector<HTMLElement>(".touch-joystick-stick");
+      let activePointerId: number | null = null;
+      const reset = () => {
+        activePointerId = null;
+        inputState.setTouchJoystickMovement({ x: 0, y: 0 });
+        stick?.style.removeProperty("transform");
+      };
+      const move = (event: PointerEvent) => {
+        if (event.pointerId !== activePointerId) return;
+        event.preventDefault();
+        const bounds = element.getBoundingClientRect();
+        const radius = bounds.width / 2;
+        const maxOffset = Math.max(1, radius - 28);
+        const offsetX = event.clientX - (bounds.left + radius);
+        const offsetY = event.clientY - (bounds.top + radius);
+        const distance = Math.hypot(offsetX, offsetY);
+        const scale = distance > maxOffset ? maxOffset / distance : 1;
+        const x = offsetX * scale;
+        const y = offsetY * scale;
+        inputState.setTouchJoystickMovement(normalizeMovement(x / maxOffset, y / maxOffset));
+        if (stick) stick.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+      };
+      const press = (event: PointerEvent) => {
+        if (activePointerId !== null) return;
+        event.preventDefault();
+        activePointerId = event.pointerId;
+        element.setPointerCapture?.(event.pointerId);
+        move(event);
+      };
+      const release = (event: PointerEvent) => {
+        if (event.pointerId === activePointerId) reset();
+      };
+      element.addEventListener("pointerdown", press);
+      element.addEventListener("pointermove", move);
+      element.addEventListener("pointerup", release);
+      element.addEventListener("pointercancel", release);
+      element.addEventListener("lostpointercapture", release);
+      this.touchReleases.set(element, () => {
+        element.removeEventListener("pointerdown", press);
+        element.removeEventListener("pointermove", move);
+        element.removeEventListener("pointerup", release);
+        element.removeEventListener("pointercancel", release);
+        element.removeEventListener("lostpointercapture", release);
+        reset();
       });
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
@@ -131,7 +183,10 @@ export class InputRouterScene extends Phaser.Scene {
     token: string,
   ): void {
     const changed = inputState.set(action, token, pressed, source !== "gamepad");
-    if (changed) gameEvents.emit(EVENT.inputAction, { action, pressed, source });
+    if (!changed) return;
+    const event = { action, pressed, source } as const;
+    inputCapture.consumeMenuToggle(event);
+    gameEvents.emit(EVENT.inputAction, event);
   }
 
   private handleBlur = (): void => this.resetInputState();

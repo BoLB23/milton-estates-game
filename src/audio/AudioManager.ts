@@ -63,6 +63,24 @@ const CUE_PATTERNS: Readonly<Record<AudioCue, ReadonlyArray<readonly [number, nu
   saveConfirmation: [[590, 0, 0.07], [790, 0.09, 0.11]],
 };
 
+interface AmbienceProfile {
+  filter: BiquadFilterType;
+  frequency: number;
+  quality: number;
+  noiseGain: number;
+}
+
+function ambienceProfileForMap(map: GameState["currentMap"]): AmbienceProfile {
+  switch (map) {
+    case "creek": return { filter: "bandpass", frequency: 950, quality: 0.7, noiseGain: 0.42 };
+    case "stonehenge": return { filter: "lowpass", frequency: 1_180, quality: 0.55, noiseGain: 0.12 };
+    case "reidenbaugh": return { filter: "lowpass", frequency: 1_700, quality: 0.25, noiseGain: 0.1 };
+    case "fruitville_pike": return { filter: "highpass", frequency: 720, quality: 0.45, noiseGain: 0.2 };
+    case "bent_creek": return { filter: "bandpass", frequency: 650, quality: 0.85, noiseGain: 0.24 };
+    default: return { filter: "lowpass", frequency: 1_450, quality: 0.35, noiseGain: 0.16 };
+  }
+}
+
 /**
  * Procedural cues use Phaser's single SoundManager-owned AudioContext when
  * Web Audio is available. HTML5 and NoAudio managers intentionally become a
@@ -151,11 +169,12 @@ export class ProceduralAudioManager {
       noise.buffer = buffer;
       noise.loop = true;
       const filter = context.createBiquadFilter();
-      filter.type = map === "creek" ? "bandpass" : "lowpass";
-      filter.frequency.value = map === "creek" ? 950 : 1450;
-      filter.Q.value = map === "creek" ? 0.7 : 0.35;
+      const profile = ambienceProfileForMap(map);
+      filter.type = profile.filter;
+      filter.frequency.value = profile.frequency;
+      filter.Q.value = profile.quality;
       const noiseGain = context.createGain();
-      noiseGain.gain.value = map === "creek" ? 0.42 : 0.16;
+      noiseGain.gain.value = profile.noiseGain;
       noise.connect(filter).connect(noiseGain).connect(bus);
       noise.start();
       this.ambienceSources.push(noise);

@@ -42,7 +42,9 @@ export class RyanRouteFollower {
       this.actor.setVelocity(0, 0);
       return;
     }
-    const speed = waypoint.mode === "sprint" ? 300 : waypoint.mode === "tease" ? 220 : 260;
+    // Ryan should lead without vanishing. These values bracket Billy's 220px/s
+    // regional top speed and let the authored catch-up waits feel occasional.
+    const speed = waypoint.mode === "sprint" ? 250 : waypoint.mode === "tease" ? 225 : 205;
     const angle = Phaser.Math.Angle.Between(this.actor.x, this.actor.y, target.x, target.y);
     this.actor.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
     this.actor.setFlipX(Math.cos(angle) < 0);
@@ -56,6 +58,21 @@ export class RyanRouteFollower {
       this.finished = true;
       this.onFinished();
     }
+  }
+
+  /** Current authored target, used by the development playthrough shortcut. */
+  public getCurrentTarget(): { x: number; y: number } {
+    return this.host.objectPoint(this.route.waypoints[this.index]!.objectId);
+  }
+
+  /** Complete the authored route for the development-only F4 playtest hook. */
+  public completeForDebug(): void {
+    if (this.finished) return;
+    this.finished = true;
+    const finalWaypoint = this.route.waypoints[this.route.waypoints.length - 1]!;
+    const target = this.host.objectPoint(finalWaypoint.objectId);
+    this.actor.setPosition(target.x, target.y).setVelocity(0, 0);
+    this.onFinished();
   }
 
   public stop(): void {

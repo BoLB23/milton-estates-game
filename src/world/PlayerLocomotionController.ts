@@ -38,6 +38,21 @@ export const DEFAULT_BICYCLE_TUNING: BicycleLocomotionTuning = {
   maximumDeltaMs: 50,
 };
 
+/**
+ * Regional bikes remain faster than walking. The original 32px/s draft met a
+ * paper timing target but felt broken in play (walking was 190px/s and Ryan
+ * rode at 220–300px/s), so the compact maps use a responsive touring pace.
+ */
+export const REGIONAL_BICYCLE_TUNING: BicycleLocomotionTuning = {
+  maxSpeed: 220,
+  acceleration: 330,
+  braking: 480,
+  coastingDrag: 180,
+  lowSpeedTurnRate: 300,
+  highSpeedTurnRate: 145,
+  maximumDeltaMs: 50,
+};
+
 const TAU = Math.PI * 2;
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
@@ -99,6 +114,7 @@ export class PlayerLocomotionController {
     const moving = direction.x !== 0 || direction.y !== 0;
     if (moving) {
       const targetHeading = Math.atan2(direction.y, direction.x);
+      const turnDifference = Math.abs(wrapAngle(targetHeading - this.heading));
       if (this.speed === 0) {
         // At rest, facing the requested direction is responsive; at speed,
         // turn-rate limiting prevents an instant 180-degree reversal.
@@ -109,7 +125,14 @@ export class PlayerLocomotionController {
           + (this.bicycle.highSpeedTurnRate - this.bicycle.lowSpeedTurnRate) * speedRatio;
         this.heading = turnTowards(this.heading, targetHeading, degreesPerSecond * DEGREES_TO_RADIANS * delta);
       }
-      this.speed = Math.min(this.bicycle.maxSpeed, this.speed + this.bicycle.acceleration * delta);
+      // Opposite input is an intentional brake before the bicycle completes
+      // its turn. This makes the configured braking rate meaningful and keeps
+      // a 180-degree reversal from accelerating through the maneuver.
+      if (this.speed > 0 && turnDifference > Math.PI / 2) {
+        this.speed = Math.max(0, this.speed - this.bicycle.braking * delta);
+      } else {
+        this.speed = Math.min(this.bicycle.maxSpeed, this.speed + this.bicycle.acceleration * delta);
+      }
     } else {
       this.speed = Math.max(0, this.speed - this.bicycle.coastingDrag * delta);
     }

@@ -28,17 +28,27 @@ The game requires a browser with WebGL or WebGL2 support. Canvas is retained onl
 
 ## Homelab deployment
 
-Merges (and direct pushes) to `main` first run the unit tests and production build, then publish a container image to GitHub Container Registry. Images are tagged with both `latest` and the commit SHA.
+Merges (and direct pushes) to `main` run the unit, map, build, deployment-manifest, and browser regression checks before publishing a container image to GitHub Container Registry. Images are tagged with both `latest` and `sha-<full 40-character commit SHA>`.
 
-The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the cluster's NGINX ingress controller. ExternalDNS already watches Ingress resources and automatically creates the Cloudflare record from this hostname; no ExternalDNS annotation is needed. TLS uses the cluster's existing Cloudflare DNS-01 `ClusterIssuer`, `bolblab-cf-issuer`.
+The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the existing in-cluster Cloudflare Tunnel. The deployment script structurally preserves the shared `cloudflare/cloudflared` ConfigMap, adds or refreshes this game's complete route before its terminal 404 rule, validates the result with `cloudflared`, and rolls the two connector pods so the local configuration takes effect. ExternalDNS publishes the hostname as a proxied CNAME to that tunnel. Cloudflare terminates public TLS and tunnels plain HTTP to the game's ClusterIP Service; cert-manager separately provisions the certificate declared by the NGINX Ingress.
 
-After making the GHCR package readable by the cluster (public, or via an image-pull secret), deploy a published image with:
+The deploy command requires Bash, `kubectl`, `curl`, `jq`, Ruby with its standard Psych YAML library, `cloudflared`, a current Kubernetes context that can apply the four resources in `k8s/`, update the shared Cloudflare ConfigMap, and restart the `cloudflare/cloudflared` Deployment, plus a GHCR package the cluster can read. It does not require a Cloudflare API token because this connector is locally configured in Kubernetes.
+
+After making the GHCR package readable by the cluster (public, or via an image-pull secret), deploy the image for the exact commit. Mutable tags such as `latest` are intentionally rejected:
 
 ```sh
-./scripts/deploy.sh ghcr.io/OWNER/milton-estates-game:latest
+./scripts/deploy.sh ghcr.io/bolb23/milton-estates-game:sha-0123456789abcdef0123456789abcdef01234567
 ```
 
-Set `NAMESPACE` to use a different namespace or `ROLLOUT_TIMEOUT` to change the default three-minute rollout wait. Check the rollout and the assigned ingress with:
+An image digest (`ghcr.io/bolb23/milton-estates-game@sha256:<64 hex characters>`) is also accepted. References to other registries, owners, or repositories are rejected; the known GitHub owner casing is normalized to the canonical lowercase OCI path. Full-SHA tags use `imagePullPolicy: Always` so a republished CI tag cannot reuse a stale node cache, while digest-pinned images retain `IfNotPresent`. The namespace and public hostname are deliberately fixed to the values in `k8s/`; `NAMESPACE` and `GAME_HOSTNAME` overrides are not supported. Set `ROLLOUT_TIMEOUT` to change the default three-minute rollout wait.
+
+Validate the exact local rendering without Cloudflare credentials or cluster access:
+
+```sh
+./scripts/deploy.sh --dry-run ghcr.io/bolb23/milton-estates-game:sha-0123456789abcdef0123456789abcdef01234567
+```
+
+The script preflights manifests, the existing local tunnel structure, the exact tunnel update and connector restart, cluster authorization/admission, and connectivity before writes. It applies the requested image and a unique rollout annotation together, so a deploy produces one game Deployment revision and rerunning the same immutable image still restarts the pod. The shared ConfigMap update carries the resource version read during preflight, so a concurrent route edit causes a safe conflict instead of being overwritten. If connector activation or the public health check fails after that update, the script conditionally restores the prior ConfigMap and reloads the connectors; if safe automatic recovery is blocked by another concurrent edit, it preserves and prints the mode-600 recovery-file paths. Success requires the public `/healthz` endpoint to return exactly HTTP 200 with body `ok`; redirects are rejected and every attempt has a connection and transfer timeout. Check the workload, image, Service, and labeled Ingress with:
 
 ```sh
 ./scripts/deploy-status.sh
@@ -70,7 +80,7 @@ The Backpack contains the quest history, local map, save/restart controls, and s
 
 Progress is saved automatically in that browser. Use Backpack → Save to save immediately or restart the mission with confirmation.
 
-During development builds, F3 toggles a state panel and F4 moves Billy to the current objective for rapid end-to-end playtesting. These shortcuts are not included in production builds.
+During development builds, F2 overlays authored collision and map anchors, F3 toggles a state panel, and F4 moves Billy to the current objective for rapid end-to-end playtesting. These shortcuts are not included in production builds.
 
 ## Project shape
 

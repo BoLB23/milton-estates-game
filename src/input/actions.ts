@@ -105,6 +105,7 @@ export function gamepadMovement(gamepad: Pick<Gamepad, "axes" | "buttons">): Mov
 export const GAMEPAD_BUTTON_ACTIONS: Readonly<Record<number, SemanticAction>> = {
   0: "interact",
   1: "back",
+  2: "toggleBicycle",
   4: "tabPrevious",
   5: "tabNext",
   9: "menu",

@@ -19,14 +19,26 @@ export class NeighborhoodScene extends BaseExplorationScene {
     super("neighborhood");
   }
 
-  public create(data?: { spawn?: "home" | "woods" }): void {
+  public preload(): void {
+    this.preloadMapAssets(NEIGHBORHOOD_MAP);
+  }
+
+  public create(data?: { spawn?: "home" | "woods" | "stonehenge" | "fruitville" }): void {
     gameStore.setCurrentMap("neighborhood");
     this.tiledWorld = new TiledRuntimeWorld(this.make.tilemap({ key: NEIGHBORHOOD_MAP.tiledMapKey }));
-    this.physics.world.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
-    this.cameras.main.setBounds(0, 0, this.tiledWorld.tilemap.widthInPixels, this.tiledWorld.tilemap.heightInPixels);
-    const spawn = this.tiledWorld.point(data?.spawn === "woods" ? "spawn_woods" : "spawn_home");
+    const spawnId = {
+      home: "spawn_home",
+      woods: "spawn_woods",
+      stonehenge: "spawn_stonehenge",
+      fruitville: "spawn_fruitville",
+    }[data?.spawn ?? "home"];
+    const spawn = this.tiledWorld.point(spawnId);
     this.initializeWorld("neighborhood", spawn);
-    if (data?.spawn !== "woods") this.cameras.main.setFollowOffset(0, 170);
+    this.mountCollisionGrid(this.tiledWorld);
+    // Cameras survive a Phaser Scene stop/start. Reset the offset explicitly
+    // on regional returns so the initial home composition cannot leak into a
+    // later edge spawn and make the player appear displaced from the exit.
+    this.cameras.main.setFollowOffset(0, (data?.spawn ?? "home") === "home" ? 170 : 0);
     this.drawWorld();
     this.addMushroomHunt("neighborhood");
     this.questController = new NeighborhoodQuestController({
@@ -39,18 +51,26 @@ export class NeighborhoodScene extends BaseExplorationScene {
       showChoice: (request) => this.showChoice(request),
       addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
       objectPoint: (name) => this.tiledWorld.point(name),
+      objectRectangle: (name) => this.tiledWorld.rectangle(name),
       enterWoods: () => this.enterWoods(),
       refreshMushroomHunt: () => this.addMushroomHunt("neighborhood"),
       refreshQuestBindings: () => this.questController?.mount(),
       onRideSelected: () => this.startRide(),
-      enterReidenbaughRoad: () => this.enterReidenbaughRoad(),
+      enterStonehenge: () => this.enterStonehenge(),
+      enterFruitville: () => this.enterFruitville(),
     });
     this.questController.mount();
+    // The destination choice persists `depart_neighborhood` before its
+    // departure line is dismissed. Listen for that state transition so the
+    // route actor is mounted even when the next input arrives before the
+    // dialogue completion callback runs.
+    gameEvents.on(EVENT.stateChanged, this.handleRyanRideStateChanged, this);
     if (gameStore.isBicycleUnlocked()) this.enableBicycleToggle();
     if (gameStore.isRyanRideStage("depart_neighborhood")) this.startRide();
     this.events.on("ryan-map-reveal", this.showMapReveal, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.events.off("ryan-map-reveal", this.showMapReveal, this);
+      gameEvents.off(EVENT.stateChanged, this.handleRyanRideStateChanged, this);
       this.rideFollower?.stop();
       this.rideFollower = undefined;
       this.rideRyan?.destroy();
@@ -70,10 +90,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
   private drawWorld(): void {
     for (const layer of getIllustratedMapLayers("neighborhood")) {
       this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0).setDisplaySize(layer.width, layer.height).setDepth(layer.depth);
-    }
-    for (const collider of this.tiledWorld.rectangles()) {
-      this.addObstacle(collider.x, collider.y, collider.width, collider.height);
+        .setOrigin(0, 0).setDepth(layer.depth);
     }
   }
 
@@ -109,16 +126,33 @@ export class NeighborhoodScene extends BaseExplorationScene {
     if (!gameStore.isRyanRideStage("depart_neighborhood")) return;
     this.rideFollower?.stop();
     gameStore.departNeighborhoodRide();
-    this.scene.start("reidenbaugh_road");
+    this.scene.start("stonehenge", { spawn: "milton" });
   }
 
-  private enterReidenbaughRoad(): void {
-    gameStore.setCurrentMap("reidenbaugh_road");
-    this.scene.start("reidenbaugh_road", { spawn: "milton" });
+  private enterStonehenge(): void {
+    gameStore.setCurrentMap("stonehenge");
+    this.scene.start("stonehenge", { spawn: "milton" });
+  }
+
+  private enterFruitville(): void {
+    // Checkpoint the cold-loaded destination before stopping this scene. The
+    // Backpack can then pause the correct map even if it opens during preload.
+    gameStore.setCurrentMap("fruitville_pike");
+    this.scene.start("fruitville_pike", { spawn: "milton" });
   }
 
   private showMapReveal(): void {
-    gameEvents.emit(EVENT.toast, "Scrapbook map reveal: Reidenbaugh is now open!");
+    gameEvents.emit(EVENT.toast, "Scrapbook map reveal: Stonehenge, the school, Fruitville Pike, and Bent Creek are open!");
+  }
+
+  private handleRyanRideStateChanged(): void {
+    if (gameStore.isRyanRideStage("depart_neighborhood")) this.startRide();
+  }
+
+  protected override afterDebugTeleportToObjective(): void {
+    if (!import.meta.env.DEV || !gameStore.isRyanRideStage("depart_neighborhood")) return;
+    if (!this.rideFollower) this.startRide();
+    this.rideFollower?.completeForDebug();
   }
 
   protected override getDebugObjectivePosition(): { x: number; y: number } {
@@ -146,7 +180,9 @@ export class NeighborhoodScene extends BaseExplorationScene {
     }
     if (state.activeQuestId === "catch_ryan") {
       if (state.questStage === "invite" || state.questStage === "choose_destination") return this.tiledWorld.point("ryan_invite");
-      if (state.questStage === "depart_neighborhood") return this.tiledWorld.point("reidenbaugh_exit");
+      if (state.questStage === "depart_neighborhood") {
+        return this.rideFollower?.getCurrentTarget() ?? this.tiledWorld.point("exit_stonehenge");
+      }
     }
     switch (state.questStage) {
       case "talk_to_jeremy":

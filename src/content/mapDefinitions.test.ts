@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import { MAP_DEFINITIONS, projectRegionalMapPoint, validateMapDefinitions } from "./maps";
 
 interface TiledObject { name: string; x: number; y: number; }
-interface TiledMap { width: number; height: number; layers: Array<{ type: string; objects?: TiledObject[] }>; }
+interface TiledMap {
+  width: number;
+  height: number;
+  tilewidth: number;
+  tileheight: number;
+  layers: Array<{ type: string; objects?: TiledObject[] }>;
+}
 
 function readTiledMap(path: string): TiledMap {
   return JSON.parse(readFileSync(resolve(process.cwd(), "public", path), "utf8")) as TiledMap;
@@ -14,8 +20,8 @@ describe("canonical map definitions", () => {
   it("matches each authored Tiled object coordinate and map size", () => {
     for (const definition of Object.values(MAP_DEFINITIONS)) {
       const tiled = readTiledMap(definition.tiledMapPath);
-      expect(tiled.width).toBe(definition.worldWidth);
-      expect(tiled.height).toBe(definition.worldHeight);
+      expect(tiled.width * tiled.tilewidth).toBe(definition.worldWidth);
+      expect(tiled.height * tiled.tileheight).toBe(definition.worldHeight);
       const objects = new Map(
         tiled.layers.flatMap((layer) => layer.type === "objectgroup" ? layer.objects ?? [] : [])
           .map((object) => [object.name, object]),

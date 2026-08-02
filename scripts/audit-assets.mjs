@@ -15,9 +15,11 @@ const assetRoot = join(publicRoot, "assets");
 const runtimeRoots = ["src", "index.html"];
 const retainedSourceAssets = new Set([
   "assets/maps/creek-woods.tmj",
-  "assets/maps/neighborhood-wheatfield-slice.tmj",
-  "assets/maps/reidenbaugh-road.tmj",
-  "assets/maps/reidenbaugh.tmj",
+  "assets/maps/expansion/neighborhood.tmj",
+  "assets/maps/expansion/stonehenge.tmj",
+  "assets/maps/expansion/reidenbaugh.tmj",
+  "assets/maps/expansion/fruitville_pike.tmj",
+  "assets/maps/expansion/bent_creek.tmj",
 ]);
 
 async function collectFiles(directory) {

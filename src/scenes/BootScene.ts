@@ -17,7 +17,10 @@ export class BootScene extends Phaser.Scene {
         this.load.image(asset.key, assetUrl(asset.path));
       }
     }
-    for (const map of Object.values(MAP_DEFINITIONS)) {
+    // Creek remains warm so its long-standing quest handoff is unchanged;
+    // Milton is the first playable region. Other expansion plates load only
+    // when their scene is entered.
+    for (const map of [MAP_DEFINITIONS.creek, MAP_DEFINITIONS.neighborhood]) {
       this.load.tilemapTiledJSON(map.tiledMapKey, assetUrl(map.tiledMapPath));
       for (const layer of map.layers) this.load.image(layer.textureKey, layer.imagePath);
     }
@@ -41,6 +44,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTextures(): void {
+    const collisionGrid = this.make.graphics({ x: 0, y: 0 });
+    collisionGrid.fillStyle(0xffffff, 1).fillRect(0, 0, 32, 32);
+    collisionGrid.generateTexture("map.collision-grid", 32, 32).destroy();
+
     this.makePerson("andrew", 0xf29f3d, 0xe5b887);
     this.makePerson("jeremy", 0xd85b63, 0xd7a36d);
     this.makePerson("ryan", 0x4f8cc9, 0xe0ad8b);

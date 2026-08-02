@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 import type { ChoiceRequest } from "../game/events";
 import type { DialogueLine, Interactable } from "../game/types";
-import type { WorldPoint } from "./tiledRuntime";
+import type { WorldPoint, WorldRect } from "./tiledRuntime";
 
 /** An interaction that is available anywhere inside an authored rectangular area. */
 export interface RegionInteraction extends Interactable {
@@ -27,11 +27,14 @@ export interface ExplorationInteractionHost {
 }
 
 export interface NeighborhoodQuestHost extends ExplorationInteractionHost {
+  /** Resolves an authored transition rectangle without losing its dimensions. */
+  objectRectangle(name: string): WorldRect;
   enterWoods(): void;
   refreshMushroomHunt(): void;
   refreshQuestBindings(): void;
   onRideSelected(): void;
-  enterReidenbaughRoad(): void;
+  enterStonehenge(): void;
+  enterFruitville(): void;
 }
 
 export interface QuestRuntimeBinding {

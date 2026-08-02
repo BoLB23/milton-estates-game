@@ -4,7 +4,15 @@ import {
   isStageForQuest,
   milestonesForQuestStage,
 } from "../quests/specs";
+import { MAP_IDS } from "../types";
 import type { ImplementedQuestId, QuestId, QuestProgress, QuestStage, SaveData } from "../types";
+
+const RYAN_UNLOCKED_MAPS = [
+  "stonehenge",
+  "reidenbaugh",
+  "fruitville_pike",
+  "bent_creek",
+] as const;
 
 /** The pre-release yard-search step was retired; only the decoder accepts it. */
 export function migrateLegacyMissingControllerStage(stage: string): QuestProgress["missingControllerStage"] | undefined {
@@ -71,7 +79,7 @@ export function validateQuestProgress(progress: QuestProgress): QuestProgressInv
   if ((ride.stage === "invite" || ride.stage === "choose_destination") && (ride.selectedDestination !== null || ride.routeSeed !== null)) {
     violations.push({ path: "questProgress.ryanRide", message: "Ride selection is not valid before departure" });
   }
-  if (["depart_neighborhood", "ride_reidenbaugh_road", "chase_reidenbaugh", "complete"].includes(ride.stage) && (!selected || !hasSeed)) {
+  if (["depart_neighborhood", "ride_stonehenge", "chase_reidenbaugh", "complete"].includes(ride.stage) && (!selected || !hasSeed)) {
     violations.push({ path: "questProgress.ryanRide", message: "Ride departure requires Reidenbaugh and a route seed" });
   }
   const spawnIds = new Set(progress.mushrooms.spawns.map((spawn) => spawn.id));
@@ -114,12 +122,15 @@ export function validateSaveInvariants(save: SaveData): QuestProgressInvariantVi
       violations.push({ path: "questHistory", message: `Quest ${questId} history is ahead of its authoritative progress` });
     }
   }
-  if (!save.unlockedMaps.includes(save.currentMap)) {
+  if (!MAP_IDS.includes(save.currentMap) || !save.unlockedMaps.includes(save.currentMap)) {
     violations.push({ path: "currentMap", message: "Current map must be unlocked" });
   }
+  if (save.discoveredMaps.some((map) => !save.unlockedMaps.includes(map))) {
+    violations.push({ path: "discoveredMaps", message: "Discovered maps must be unlocked" });
+  }
   if (save.questProgress.ryanRide.selectedDestination === "reidenbaugh"
-    && (!save.unlockedMaps.includes("reidenbaugh_road") || !save.unlockedMaps.includes("reidenbaugh"))) {
-    violations.push({ path: "unlockedMaps", message: "Selecting Reidenbaugh unlocks both ride maps" });
+    && RYAN_UNLOCKED_MAPS.some((map) => !save.unlockedMaps.includes(map))) {
+    violations.push({ path: "unlockedMaps", message: "Selecting Reidenbaugh unlocks the regional maps atomically" });
   }
   return violations;
 }

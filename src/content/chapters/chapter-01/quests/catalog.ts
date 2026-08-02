@@ -25,7 +25,7 @@ export const CATCH_RYAN_MODULE = legacyQuestModule({
   optional: true,
   prerequisiteQuestIds: ["three_player_sports"],
   implemented: true,
-}, ["neighborhood", "reidenbaugh_road", "reidenbaugh"]);
+}, ["neighborhood", "stonehenge", "reidenbaugh"]);
 
 export const STORM_DRAIN_DETECTIVES_MODULE = legacyQuestModule({
   id: "storm_drain_detectives",

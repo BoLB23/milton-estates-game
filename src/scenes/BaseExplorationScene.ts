@@ -1,12 +1,13 @@
 import Phaser from "phaser";
-import { EVENT, gameEvents, inputCapture, type ChoiceRequest, type InputActionEvent } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type ChoiceRequest, type InputActionEvent, type TextEntryRequest } from "../game/events";
 import { MushroomHuntController } from "../world/MushroomHuntController";
-import { PlayerLocomotionController, type PlayerTravelMode } from "../world/PlayerLocomotionController";
+import { PlayerLocomotionController, REGIONAL_BICYCLE_TUNING, type PlayerTravelMode } from "../world/PlayerLocomotionController";
 import type { RegionInteraction } from "../world/contracts";
-import type { WorldPoint } from "../world/tiledRuntime";
+import { type MountedCollisionGrid, TiledRuntimeWorld, type TiledRuntimeObject, type WorldPoint } from "../world/tiledRuntime";
 import { inputState } from "./InputRouterScene";
 import type { DialogueLine, Interactable, MapId } from "../game/types";
-import { getMapDefinition, normalizeWorldMapPoint } from "../content/maps";
+import { assetUrl } from "../content/assets";
+import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
@@ -24,6 +25,12 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private bicycleAvailable = false;
   private bicycleVisual?: Phaser.GameObjects.Graphics;
   private mapId!: MapId;
+  private mountedCollisionGrid?: MountedCollisionGrid;
+  private tiledRuntime?: TiledRuntimeWorld;
+  private geometryDebugOverlay?: Phaser.GameObjects.Container;
+  private readonly dynamicObstacles = new Map<string, Phaser.GameObjects.Zone>();
+  private lastEmittedPlayerX = Number.NaN;
+  private lastEmittedPlayerY = Number.NaN;
 
   protected initializeWorld(mapId: MapId, spawn: { x: number; y: number }): void {
     // Phaser reuses Scene instances after stop/start. All references below
@@ -37,10 +44,19 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.lastHint = "";
     this.playerFacing = "down";
     this.travelMode = "walking";
-    this.locomotion = new PlayerLocomotionController();
+    this.locomotion = new PlayerLocomotionController(mapId === "creek" ? undefined : REGIONAL_BICYCLE_TUNING);
     this.bicycleAvailable = false;
     this.bicycleVisual = undefined;
+    this.mountedCollisionGrid?.destroy();
+    this.mountedCollisionGrid = undefined;
+    this.tiledRuntime = undefined;
+    this.geometryDebugOverlay?.destroy(true);
+    this.geometryDebugOverlay = undefined;
+    for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
+    this.dynamicObstacles.clear();
     this.mapId = mapId;
+    this.lastEmittedPlayerX = Number.NaN;
+    this.lastEmittedPlayerY = Number.NaN;
     this.mushroomHunt = new MushroomHuntController({
       world: this,
       registerInteraction: (interactable) => this.registerInteraction(interactable),
@@ -80,17 +96,66 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
       gameEvents.emit(EVENT.dialogueCancelled);
       gameEvents.emit(EVENT.choiceCancelled);
+      gameEvents.emit(EVENT.textEntryCancelled);
       this.nearbyInteractable = undefined;
       this.lastHint = "";
       gameEvents.emit(EVENT.hint, "");
       this.mushroomHunt?.dispose();
       this.mushroomHunt = undefined;
+      this.mountedCollisionGrid?.destroy();
+      this.mountedCollisionGrid = undefined;
+      this.tiledRuntime = undefined;
+      this.geometryDebugOverlay?.destroy(true);
+      this.geometryDebugOverlay = undefined;
+      for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
+      this.dynamicObstacles.clear();
     });
+  }
+
+  /** Loads only the map entering the scene; Boot keeps legacy Creek warm. */
+  protected preloadMapAssets(definition: MapDefinition): void {
+    const needsTilemap = !this.cache.tilemap.exists(definition.tiledMapKey);
+    const needsTexture = definition.layers.some((layer) => !this.textures.exists(layer.textureKey));
+    if (!needsTilemap && !needsTexture) return;
+
+    const backdrop = this.add.rectangle(480, 270, 960, 540, 0x173d32, 1).setScrollFactor(0);
+    const panel = this.add.rectangle(480, 270, 520, 138, 0xfff5d6, 0.98)
+      .setStrokeStyle(3, 0x172735, 1)
+      .setScrollFactor(0);
+    const label = this.add.text(480, 238, `LOADING  •  ${definition.label.toUpperCase()}`, {
+      fontFamily: "Courier New, monospace",
+      fontSize: "16px",
+      color: "#914833",
+      fontStyle: "bold",
+    }).setOrigin(0.5).setScrollFactor(0);
+    const track = this.add.rectangle(480, 282, 390, 18, 0xd9cba9, 1).setScrollFactor(0);
+    const fill = this.add.rectangle(286, 282, 0, 18, 0x315f4c, 1).setOrigin(0, 0.5).setScrollFactor(0);
+    const overlay = this.add.container(0, 0, [backdrop, panel, label, track, fill]).setDepth(10_000);
+    let cleaned = false;
+    const cleanup = (): void => {
+      if (cleaned) return;
+      cleaned = true;
+      this.load.off("progress", update, this);
+      overlay.destroy(true);
+    };
+    const update = (value: number): void => {
+      fill.width = 390 * value;
+    };
+    this.load.on("progress", update, this);
+    this.load.once("complete", cleanup, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup, this);
+
+    if (needsTilemap) {
+      this.load.tilemapTiledJSON(definition.tiledMapKey, assetUrl(definition.tiledMapPath));
+    }
+    for (const layer of definition.layers) {
+      if (!this.textures.exists(layer.textureKey)) this.load.image(layer.textureKey, layer.imagePath);
+    }
   }
 
   update(_time = 0, delta = 16.67): void {
     const movement = inputState.movement();
-    const next = this.locomotion.update(movement, delta, this.inputLocked);
+    const next = this.locomotion.update(movement, delta, this.inputLocked || inputCapture.isCaptured());
     this.player.setVelocity(next.velocityX, next.velocityY);
     this.updatePlayerPresentation({ x: next.velocityX, y: next.velocityY }, next.speed > 0);
     this.syncBicycleVisual();
@@ -107,15 +172,72 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   private emitPlayerLocation(): void {
+    if (Math.abs(this.player.x - this.lastEmittedPlayerX) < 1
+      && Math.abs(this.player.y - this.lastEmittedPlayerY) < 1) return;
+    this.lastEmittedPlayerX = this.player.x;
+    this.lastEmittedPlayerY = this.player.y;
     const point = normalizeWorldMapPoint(getMapDefinition(this.mapId), this.player);
     gameEvents.emit(EVENT.playerLocationChanged, { map: this.mapId, ...point });
   }
 
-  protected addObstacle(x: number, y: number, width: number, height: number): void {
+  protected addObstacle(x: number, y: number, width: number, height: number): Phaser.GameObjects.Zone {
     const zone = this.add.zone(x + width / 2, y + height / 2, width, height);
     // StaticGroup creates the static Arcade body when the zone is added.
     // Enabling it first creates and then re-registers the same body.
     this.obstacles.add(zone);
+    return zone;
+  }
+
+  /** Mounts the authored 32px collision grid and exact finite map bounds. */
+  protected mountCollisionGrid(runtime: TiledRuntimeWorld): MountedCollisionGrid {
+    this.tiledRuntime = runtime;
+    const tileset = this.textures.exists("map.collision-grid")
+      ? runtime.tilemap.addTilesetImage("collision-grid", "map.collision-grid", 32, 32, 0, 0)
+      : null;
+    this.mountedCollisionGrid = runtime.mountCollisionGrid({
+      physicsWorld: this.physics.world,
+      camera: this.cameras.main,
+      colliderTarget: this.player,
+      tilesets: tileset ? [tileset] : [],
+      addCollider: (target, layer) => this.physics.add.collider(
+        target as Phaser.Types.Physics.Arcade.ArcadeColliderType,
+        layer,
+      ),
+    });
+    for (const object of runtime.solidFootprints()) {
+      if (!this.isDynamicSolid(object)) continue;
+      const rectangle = this.runtimeObjectRectangle(object);
+      this.dynamicObstacles.set(object.name, this.addObstacle(rectangle.x, rectangle.y, rectangle.width, rectangle.height));
+    }
+    return this.mountedCollisionGrid;
+  }
+
+  protected removeDynamicObstacle(name: string): void {
+    const obstacle = this.dynamicObstacles.get(name);
+    if (!obstacle) return;
+    obstacle.destroy();
+    this.dynamicObstacles.delete(name);
+  }
+
+  protected runtimeObjectRectangle(object: TiledRuntimeObject): { x: number; y: number; width: number; height: number } {
+    if (typeof object.width !== "number" || typeof object.height !== "number" || object.width <= 0 || object.height <= 0) {
+      throw new Error(`Invalid authored rectangle: ${object.name}`);
+    }
+    return { x: object.x, y: object.y, width: object.width, height: object.height };
+  }
+
+  private isDynamicSolid(object: TiledRuntimeObject): boolean {
+    const properties = object.properties;
+    if (!properties) return false;
+    if (Array.isArray(properties)) {
+      return properties.some((property) =>
+        (property.name === "dynamic" || property.name === "stateful")
+        && (property.value === true || property.value === "true"),
+      );
+    }
+    const record = properties as Readonly<Record<string, unknown>>;
+    return (record.dynamic === true || record.dynamic === "true"
+      || record.stateful === true || record.stateful === "true");
   }
 
   public registerInteraction(interactable: Interactable): void {
@@ -169,6 +291,27 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       onCancel: () => {
         this.inputLocked = false;
         this.interactionBlockedUntil = this.time.now + 180;
+        request.onCancel?.();
+      },
+    });
+  }
+
+  /** Opens a map-owned short-answer prompt while retaining the world lock. */
+  public showTextEntry(request: TextEntryRequest): void {
+    this.inputLocked = true;
+    this.player.setVelocity(0, 0);
+    const finish = (): void => {
+      this.inputLocked = false;
+      this.interactionBlockedUntil = this.time.now + 180;
+    };
+    gameEvents.emit(EVENT.textEntry, {
+      ...request,
+      onSubmit: (value) => {
+        finish();
+        request.onSubmit(value);
+      },
+      onCancel: () => {
+        finish();
         request.onCancel?.();
       },
     });
@@ -278,10 +421,95 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.nearbyInteractable = this.closestInteractable(62);
     gameEvents.emit(EVENT.hint, this.nearbyInteractable ? `E / Space — ${this.nearbyInteractable.label}` : "");
     gameEvents.emit(EVENT.toast, "Playtest: moved to the current objective.");
+    this.afterDebugTeleportToObjective();
+  }
+
+  /** Optional development-only hook for scene-owned route shortcuts. */
+  protected afterDebugTeleportToObjective(): void {}
+
+  /**
+   * F2 exposes the authored gameplay geometry over the illustrated map. It is
+   * deliberately development-only: QA can compare the data layer with roofs,
+   * roads, gates, and entrances without shipping debug draw calls to players.
+   */
+  private toggleGeometryDebugOverlay(): void {
+    if (!import.meta.env.DEV) return;
+    if (this.geometryDebugOverlay) {
+      const visible = !this.geometryDebugOverlay.visible;
+      this.geometryDebugOverlay.setVisible(visible);
+      gameEvents.emit(EVENT.toast, `Geometry overlay ${visible ? "shown" : "hidden"}.`);
+      return;
+    }
+
+    const runtime = this.tiledRuntime;
+    const mounted = this.mountedCollisionGrid;
+    if (!runtime || !mounted) {
+      gameEvents.emit(EVENT.toast, "Geometry overlay unavailable on this map.");
+      return;
+    }
+
+    const graphics = this.add.graphics();
+    const grid = mounted.grid;
+    graphics.fillStyle(0xff315f, 0.16);
+    graphics.lineStyle(1, 0xff315f, 0.42);
+    for (let y = 0; y < grid.height; y += 1) {
+      for (let x = 0; x < grid.width; x += 1) {
+        if (!grid.isBlocked({ x, y })) continue;
+        const bounds = grid.cellBounds({ x, y });
+        graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        graphics.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+      }
+    }
+    graphics.lineStyle(3, 0xffffff, 0.95);
+    graphics.strokeRect(mounted.bounds.x, mounted.bounds.y, mounted.bounds.width, mounted.bounds.height);
+
+    const children: Phaser.GameObjects.GameObject[] = [graphics];
+    const colorFor = (type: string): number => {
+      if (type.includes("spawn")) return 0x38f28a;
+      if (type.includes("transition")) return 0x34c6ff;
+      if (type.includes("waypoint") || type.includes("route")) return 0xffd43b;
+      if (type.includes("interaction") || type.includes("npc") || type.includes("landmark")) return 0xd988ff;
+      if (type.includes("solid")) return 0xff744f;
+      if (type.includes("qa")) return 0xffffff;
+      return 0x65f5e7;
+    };
+    const cssColor = (color: number): string => `#${color.toString(16).padStart(6, "0")}`;
+
+    for (const object of runtime.debugObjects()) {
+      const type = `${object.type || object.class || "object"}`.toLowerCase();
+      const color = colorFor(type);
+      const width = object.width ?? 0;
+      const height = object.height ?? 0;
+      graphics.lineStyle(3, color, 0.96);
+      if (width > 0 && height > 0) {
+        graphics.fillStyle(color, 0.12);
+        graphics.fillRect(object.x, object.y, width, height);
+        graphics.strokeRect(object.x, object.y, width, height);
+      } else {
+        graphics.fillStyle(color, 1);
+        graphics.fillCircle(object.x, object.y, 6);
+        graphics.strokeCircle(object.x, object.y, 11);
+      }
+      if (type.includes("solid") || type.includes("qa")) continue;
+      const label = this.add.text(object.x + 7, object.y - 7, object.name, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: cssColor(color),
+        backgroundColor: "#07111dcc",
+        padding: { x: 3, y: 1 },
+      }).setOrigin(0, 1);
+      children.push(label);
+    }
+
+    this.geometryDebugOverlay = this.add.container(0, 0, children).setDepth(9_000);
+    gameEvents.emit(EVENT.toast, "Geometry overlay shown — F2 toggles it.");
   }
 
   private handleDebugKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === "F4" && !event.repeat) this.debugTeleportToObjective();
+    if (event.repeat) return;
+    if (event.code === "F2") this.toggleGeometryDebugOverlay();
+    if (event.code === "F4") this.debugTeleportToObjective();
   };
 
   private handleRequestedInteraction(): void {
@@ -295,7 +523,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       if (!this.bicycleAvailable || this.inputLocked) return;
       const next = this.travelMode === "bicycle" ? "walking" : "bicycle";
       this.setPlayerTravelMode(next);
-      gameEvents.emit(EVENT.toast, next === "bicycle" ? "Bicycle enabled — press F to walk." : "Walking — press F to ride your bike.");
+      gameEvents.emit(EVENT.toast, next === "bicycle"
+        ? "Bicycle enabled — F, gamepad X / Square, or BIKE to walk."
+        : "Walking — F, gamepad X / Square, or BIKE to ride.");
       return;
     }
     if (event.action !== "interact") return;

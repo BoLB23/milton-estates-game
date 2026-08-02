@@ -52,18 +52,18 @@ Readonly<Record<MushroomQuestStage, number>> = {
 
 /** Five backyard and five creek candidates are shuffled for every new save. */
 const NEIGHBORHOOD_CANDIDATES: readonly Omit<MushroomSpawn, "id">[] = [
-  { map: "neighborhood", x: 655, y: 330 },
-  { map: "neighborhood", x: 875, y: 350 },
-  { map: "neighborhood", x: 1045, y: 285 },
-  { map: "neighborhood", x: 1585, y: 360 },
-  { map: "neighborhood", x: 2145, y: 360 },
-  { map: "neighborhood", x: 470, y: 520 },
-  { map: "neighborhood", x: 970, y: 525 },
-  { map: "neighborhood", x: 1615, y: 535 },
-  { map: "neighborhood", x: 2180, y: 535 },
-  { map: "neighborhood", x: 820, y: 610 },
-  { map: "neighborhood", x: 1465, y: 540 },
-  { map: "neighborhood", x: 1950, y: 590 },
+  { map: "neighborhood", x: 240, y: 752 },
+  { map: "neighborhood", x: 336, y: 752 },
+  { map: "neighborhood", x: 400, y: 464 },
+  { map: "neighborhood", x: 528, y: 496 },
+  { map: "neighborhood", x: 624, y: 560 },
+  { map: "neighborhood", x: 720, y: 656 },
+  { map: "neighborhood", x: 848, y: 656 },
+  { map: "neighborhood", x: 944, y: 592 },
+  { map: "neighborhood", x: 1008, y: 528 },
+  { map: "neighborhood", x: 1136, y: 528 },
+  { map: "neighborhood", x: 1264, y: 560 },
+  { map: "neighborhood", x: 1232, y: 816 },
 ];
 
 const CREEK_CANDIDATES: readonly Omit<MushroomSpawn, "id">[] = [
@@ -80,6 +80,74 @@ const CREEK_CANDIDATES: readonly Omit<MushroomSpawn, "id">[] = [
   { map: "creek", x: 830, y: 980 },
   { map: "creek", x: 1320, y: 1240 },
 ];
+
+type MushroomMap = "neighborhood" | "creek";
+
+const CANDIDATES_BY_MAP: Readonly<Record<MushroomMap, readonly Omit<MushroomSpawn, "id">[]>> = {
+  neighborhood: NEIGHBORHOOD_CANDIDATES,
+  creek: CREEK_CANDIDATES,
+};
+
+function positionKey(spawn: Pick<MushroomSpawn, "x" | "y">): string {
+  return `${spawn.x},${spawn.y}`;
+}
+
+/**
+ * Persisted coordinates are only safe when they still name an authored
+ * candidate. A simple world-bounds check is insufficient because resized map
+ * art can put an old in-bounds coordinate inside a house or collision region.
+ */
+export function isAuthoredMushroomSpawnPosition(
+  spawn: Pick<MushroomSpawn, "map" | "x" | "y">,
+): boolean {
+  if (spawn.map !== "neighborhood" && spawn.map !== "creek") return false;
+  return CANDIDATES_BY_MAP[spawn.map].some((candidate) =>
+    candidate.x === spawn.x && candidate.y === spawn.y,
+  );
+}
+
+/**
+ * Repairs a structurally sound persisted layout after authored map positions
+ * change. Stable spawn IDs (and therefore collected progress) remain attached
+ * to the same map; valid positions do not move. Invalid or duplicate positions
+ * are deterministically assigned to unused authored candidates.
+ */
+export function repairMushroomSpawnLayout(
+  spawns: readonly MushroomSpawn[],
+): MushroomSpawn[] | undefined {
+  if (spawns.length !== MUSHROOM_COUNT || new Set(spawns.map(({ id }) => id)).size !== MUSHROOM_COUNT) {
+    return undefined;
+  }
+  if (spawns.filter(({ map }) => map === "neighborhood").length !== MUSHROOM_COUNT / 2
+    || spawns.filter(({ map }) => map === "creek").length !== MUSHROOM_COUNT / 2) {
+    return undefined;
+  }
+
+  const repaired = spawns.map((spawn) => ({ ...spawn }));
+  for (const map of ["neighborhood", "creek"] as const) {
+    const usedPositions = new Set<string>();
+    const needsReplacement: number[] = [];
+    repaired.forEach((spawn, index) => {
+      if (spawn.map !== map) return;
+      const key = positionKey(spawn);
+      if (!isAuthoredMushroomSpawnPosition(spawn) || usedPositions.has(key)) {
+        needsReplacement.push(index);
+        return;
+      }
+      usedPositions.add(key);
+    });
+
+    const available = CANDIDATES_BY_MAP[map].filter((candidate) =>
+      !usedPositions.has(positionKey(candidate)),
+    );
+    if (available.length < needsReplacement.length) return undefined;
+    needsReplacement.forEach((spawnIndex, replacementIndex) => {
+      const replacement = available[replacementIndex]!;
+      repaired[spawnIndex] = { ...repaired[spawnIndex]!, ...replacement, map };
+    });
+  }
+  return repaired;
+}
 
 function randomUnit(seed: number): () => number {
   let value = seed >>> 0;

@@ -59,7 +59,7 @@ export const IMPLEMENTED_QUEST_IDS = [
 ] as const satisfies readonly ImplementedQuestId[];
 
 export const RYAN_RIDE_STAGES = [
-  "invite", "choose_destination", "depart_neighborhood", "ride_reidenbaugh_road", "chase_reidenbaugh", "complete",
+  "invite", "choose_destination", "depart_neighborhood", "ride_stonehenge", "chase_reidenbaugh", "complete",
 ] as const satisfies readonly RyanRideStage[];
 
 const RYAN_RIDE_MILESTONES = [
@@ -115,13 +115,13 @@ export const QUEST_SPECS: { readonly [Q in ImplementedQuestId]: QuestSpec<Q> } =
     objectives: {
       invite: "Talk to Ryan near his house.",
       choose_destination: "Choose where to ride with Ryan.",
-      depart_neighborhood: "Follow Ryan to the Reidenbaugh exit.",
-      ride_reidenbaugh_road: "Keep up with Ryan on the road to Reidenbaugh.",
+      depart_neighborhood: "Follow Ryan to the Stonehenge exit.",
+      ride_stonehenge: "Keep up with Ryan through Stonehenge.",
       chase_reidenbaugh: "Find and catch Ryan in Reidenbaugh.",
       complete: "Ryan's ride complete! Reidenbaugh is open to explore.",
     },
     milestones: RYAN_RIDE_MILESTONES,
-    completedMilestoneCount: { invite: 0, choose_destination: 1, depart_neighborhood: 2, ride_reidenbaugh_road: 3, chase_reidenbaugh: 4, complete: 5 },
+    completedMilestoneCount: { invite: 0, choose_destination: 1, depart_neighborhood: 2, ride_stonehenge: 3, chase_reidenbaugh: 4, complete: 5 },
   },
 };
 
@@ -171,8 +171,8 @@ export function advanceRyanRideStage(current: RyanRideStage, event: RyanRideQues
   switch (current) {
     case "invite": return event.type === "accepted_ride" ? "choose_destination" : current;
     case "choose_destination": return event.type === "selected_destination" ? "depart_neighborhood" : current;
-    case "depart_neighborhood": return event.type === "departed_neighborhood" ? "ride_reidenbaugh_road" : current;
-    case "ride_reidenbaugh_road": return event.type === "reached_reidenbaugh" ? "chase_reidenbaugh" : current;
+    case "depart_neighborhood": return event.type === "departed_neighborhood" ? "ride_stonehenge" : current;
+    case "ride_stonehenge": return event.type === "reached_reidenbaugh" ? "chase_reidenbaugh" : current;
     case "chase_reidenbaugh": return event.type === "caught_ryan" ? "complete" : current;
     default: return current;
   }

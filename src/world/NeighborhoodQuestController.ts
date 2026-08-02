@@ -36,7 +36,8 @@ const INTERACTION_IDS = [
   "blocked_reidenbaugh",
   "blocked_fruitville",
   "ryan",
-  "reidenbaugh_exit",
+  "exit_stonehenge",
+  "exit_fruitville",
 ] as const;
 
 /**
@@ -75,23 +76,37 @@ export class NeighborhoodQuestController {
   }
 
   private registerSharedTravel(): void {
+    const woodsGate = this.host.objectRectangle("woods_gate");
     this.host.registerRegionInteraction({
       id: "woods_gate",
-      ...this.host.objectPoint("woods_gate"),
-      width: 180,
-      height: 100,
+      x: woodsGate.x + woodsGate.width / 2,
+      y: woodsGate.y + woodsGate.height / 2,
+      width: woodsGate.width,
+      height: woodsGate.height,
       label: "Enter the creek woods",
       interact: () => this.host.enterWoods(),
     });
-    const exit = this.host.objectPoint("reidenbaugh_exit");
+    const stonehengeExit = this.host.objectRectangle("exit_stonehenge");
     this.host.registerRegionInteraction({
-      id: "reidenbaugh_exit",
-      ...exit,
-      width: 170,
-      height: 120,
-      label: "Ride to Reidenbaugh",
+      id: "exit_stonehenge",
+      x: stonehengeExit.x + stonehengeExit.width / 2,
+      y: stonehengeExit.y + stonehengeExit.height / 2,
+      width: stonehengeExit.width,
+      height: stonehengeExit.height,
+      label: "Ride to Stonehenge",
       isAvailable: () => gameStore.isRyanRideStage("complete"),
-      interact: () => this.host.enterReidenbaughRoad(),
+      interact: () => this.host.enterStonehenge(),
+    });
+    const fruitvilleExit = this.host.objectRectangle("exit_fruitville");
+    this.host.registerRegionInteraction({
+      id: "exit_fruitville",
+      x: fruitvilleExit.x + fruitvilleExit.width / 2,
+      y: fruitvilleExit.y + fruitvilleExit.height / 2,
+      width: fruitvilleExit.width,
+      height: fruitvilleExit.height,
+      label: "Ride to Fruitville Pike",
+      isAvailable: () => gameStore.isBicycleUnlocked() && gameStore.isMapUnlocked("fruitville_pike"),
+      interact: () => this.host.enterFruitville(),
     });
   }
 

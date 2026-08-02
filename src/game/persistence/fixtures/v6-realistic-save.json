@@ -1,0 +1,78 @@
+{
+  "version": 6,
+  "activeChapterId": "chapter_1",
+  "activeQuestId": "catch_ryan",
+  "completedChapterIds": [],
+  "completedQuestIds": [
+    "missing_controller",
+    "andrew_mushroom_hunt",
+    "three_player_sports"
+  ],
+  "questProgress": {
+    "missingControllerStage": "complete",
+    "mushrooms": {
+      "stage": "complete",
+      "spawns": [
+        { "id": "mushroom_01", "map": "neighborhood", "x": 655, "y": 330 },
+        { "id": "mushroom_02", "map": "neighborhood", "x": 1585, "y": 360 },
+        { "id": "mushroom_03", "map": "neighborhood", "x": 2145, "y": 360 },
+        { "id": "mushroom_04", "map": "neighborhood", "x": 970, "y": 525 },
+        { "id": "mushroom_05", "map": "neighborhood", "x": 1950, "y": 590 },
+        { "id": "mushroom_06", "map": "creek", "x": 410, "y": 320 },
+        { "id": "mushroom_07", "map": "creek", "x": 1450, "y": 350 },
+        { "id": "mushroom_08", "map": "creek", "x": 480, "y": 1080 },
+        { "id": "mushroom_09", "map": "creek", "x": 620, "y": 740 },
+        { "id": "mushroom_10", "map": "creek", "x": 1320, "y": 1240 }
+      ],
+      "collectedIds": [
+        "mushroom_01",
+        "mushroom_02",
+        "mushroom_03",
+        "mushroom_04",
+        "mushroom_05",
+        "mushroom_06",
+        "mushroom_07",
+        "mushroom_08",
+        "mushroom_09",
+        "mushroom_10"
+      ]
+    },
+    "sports": { "stage": "complete" },
+    "ryanRide": {
+      "stage": "ride_reidenbaugh_road",
+      "selectedDestination": "reidenbaugh",
+      "routeSeed": 20070818
+    }
+  },
+  "questHistory": [
+    "missing_controller.started",
+    "missing_controller.andrew_consulted",
+    "missing_controller.creek_clue_found",
+    "missing_controller.controller_recovered",
+    "missing_controller.controller_returned",
+    "andrew_mushroom_hunt.started",
+    "andrew_mushroom_hunt.all_collected",
+    "andrew_mushroom_hunt.jeremy_fed",
+    "andrew_mushroom_hunt.billy_supplied",
+    "andrew_mushroom_hunt.andrew_supplied",
+    "three_player_sports.started",
+    "three_player_sports.skateboarded",
+    "three_player_sports.played_baseball",
+    "three_player_sports.played_basketball",
+    "catch_ryan.started",
+    "catch_ryan.destination_selected",
+    "catch_ryan.neighborhood_departed"
+  ],
+  "inventory": ["xbox controller", "lucky_marble"],
+  "secrets": ["creek_token", "andrew_note"],
+  "currentMap": "reidenbaugh_road",
+  "discoveredMaps": ["neighborhood", "creek", "reidenbaugh_road"],
+  "unlockedMaps": ["neighborhood", "creek", "reidenbaugh_road", "reidenbaugh"],
+  "settings": {
+    "masterVolume": 0.35,
+    "muted": true,
+    "textSize": "large",
+    "reducedMotion": true
+  },
+  "lastSavedAt": "2026-07-31T22:14:09.000Z"
+}

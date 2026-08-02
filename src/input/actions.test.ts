@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ActionOwnership, actionForKeyboardCode, applyDeadzone, gamepadMovement } from "./actions";
+import { ActionOwnership, GAMEPAD_BUTTON_ACTIONS, actionForKeyboardCode, applyDeadzone, gamepadMovement } from "./actions";
 
 function pad(axes: number[], pressed: number[] = []): Pick<Gamepad, "axes" | "buttons"> {
   return {
@@ -16,6 +16,7 @@ describe("semantic input mapping", () => {
     expect(actionForKeyboardCode("Escape")).toBe("back");
     expect(actionForKeyboardCode("KeyB")).toBe("menu");
     expect(actionForKeyboardCode("KeyF")).toBe("toggleBicycle");
+    expect(GAMEPAD_BUTTON_ACTIONS[2]).toBe("toggleBicycle"); // Xbox X / PlayStation Square.
   });
 
   it("removes stick drift and rescales deliberate input", () => {

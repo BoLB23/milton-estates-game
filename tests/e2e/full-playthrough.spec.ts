@@ -142,7 +142,7 @@ test("completes the rendered quest, reloads in the creek, and records history", 
   await page.evaluate(() => localStorage.removeItem("milton-estates-save"));
   await page.reload();
   await startNewGame(page);
-  await waitForSave(page, { version: 6, questStage: "talk_to_jeremy", currentMap: "neighborhood" });
+  await waitForSave(page, { version: 7, questStage: "talk_to_jeremy", currentMap: "neighborhood" });
   await captureCheckpoint(page, "checkpoint-4-neighborhood.png");
   await captureBackpackMap(page);
 
@@ -233,7 +233,7 @@ test("preserves dialogue through pause and requires restart confirmation", async
 test("replay mutations never overwrite canonical completion", async ({ page }) => {
   await page.goto("/");
   // Let Boot finish its initial autosave before replacing it with the fixture.
-  await waitForSave(page, { version: 6 });
+  await waitForSave(page, { version: 7 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -288,7 +288,7 @@ test("portrait phones show the landscape orientation message", async ({ page }) 
 
 test("a creek reload keeps Escape, B, and the return interaction responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 6 });
+  await waitForSave(page, { version: 7 });
 
   const installCreekSave = async () => {
     await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
@@ -355,7 +355,7 @@ test("a creek reload keeps Escape, B, and the return interaction responsive", as
 
 test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 6 });
+  await waitForSave(page, { version: 7 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -417,7 +417,7 @@ test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
 test("starts and completes the rendered mushroom quest without losing menu input", async ({ page }) => {
   test.slow();
   await page.goto("/");
-  await waitForSave(page, { version: 6 });
+  await waitForSave(page, { version: 7 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -513,7 +513,7 @@ test("starts and completes the rendered mushroom quest without losing menu input
 
 test("starts and completes the rendered Three-Player Sports quest", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 6 });
+  await waitForSave(page, { version: 7 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -612,7 +612,7 @@ test("starts and completes the rendered Three-Player Sports quest", async ({ pag
   await advanceDialogue(page, 1);
   await page.waitForTimeout(160);
   await page.keyboard.press("F4");
-  await waitForSave(page, { currentMap: "reidenbaugh_road", questStage: "ride_reidenbaugh_road" });
+  await waitForSave(page, { currentMap: "stonehenge", questStage: "ride_stonehenge" });
   await page.waitForTimeout(500);
   await page.keyboard.press("F4");
   await page.waitForTimeout(500);

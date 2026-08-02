@@ -32,6 +32,8 @@ describe("map content", () => {
     expect(markers.map(({ id }) => id)).toEqual([
       "billy_home",
       "creek_woods",
+      "stonehenge_exit",
+      "fruitville_exit",
       "obj_jeremy",
     ]);
   });

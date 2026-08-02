@@ -8,8 +8,10 @@ import { MenuScene } from "./scenes/MenuScene";
 import { UIScene } from "./scenes/UIScene";
 import { FrontEndScene } from "./scenes/FrontEndScene";
 import { InputRouterScene } from "./scenes/InputRouterScene";
-import { ReidenbaughRoadScene } from "./scenes/ReidenbaughRoadScene";
 import { ReidenbaughScene } from "./scenes/ReidenbaughScene";
+import { StonehengeScene } from "./scenes/StonehengeScene";
+import { FruitvillePikeScene } from "./scenes/FruitvillePikeScene";
+import { BentCreekScene } from "./scenes/BentCreekScene";
 import { WelcomeScene } from "./scenes/WelcomeScene";
 
 const game = new Phaser.Game({
@@ -32,7 +34,20 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, InputRouterScene, WelcomeScene, FrontEndScene, NeighborhoodScene, CreekScene, ReidenbaughRoadScene, ReidenbaughScene, UIScene, MenuScene],
+  scene: [
+    BootScene,
+    InputRouterScene,
+    WelcomeScene,
+    FrontEndScene,
+    NeighborhoodScene,
+    CreekScene,
+    StonehengeScene,
+    ReidenbaughScene,
+    FruitvillePikeScene,
+    BentCreekScene,
+    UIScene,
+    MenuScene,
+  ],
 });
 
 // Phaser owns the sole SoundManager, its AudioContext, and autoplay unlock.

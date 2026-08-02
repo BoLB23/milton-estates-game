@@ -1,11 +1,12 @@
 import Phaser from "phaser";
 import { hasAvailableQuest, QUEST_BY_ID } from "../content/chapters";
 import { getObjective } from "../content/quest";
-import { EVENT, gameEvents, inputCapture, type ChoiceOption, type ChoiceRequest, type InputActionEvent } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type ChoiceOption, type ChoiceRequest, type InputActionEvent, type TextEntryRequest } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { DialogueRequest, GameState, QuestId, QuestStage } from "../game/types";
 import { selectHudInventory } from "../presentation/hudInventory";
 import { createPresentationPolicy } from "../presentation/presentationPolicy";
+import { TextEntryModal } from "../ui/TextEntryModal";
 
 const UI_DEPTH = 1_000;
 const UI_FONT = '"Courier New", monospace';
@@ -39,6 +40,7 @@ export class UIScene extends Phaser.Scene {
   private choicePanel?: Phaser.GameObjects.Container;
   private choiceEntries: Array<{ option: ChoiceOption; card: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; reason?: Phaser.GameObjects.Text }> = [];
   private choiceFocus = 0;
+  private textEntryModal?: TextEntryModal;
   private latestHint = "";
   private previousStage?: QuestStage;
   private previousQuestId?: QuestId;
@@ -70,6 +72,8 @@ export class UIScene extends Phaser.Scene {
     gameEvents.on(EVENT.dialogueCancelled, this.cancelDialogue, this);
     gameEvents.on(EVENT.choice, this.handleChoice, this);
     gameEvents.on(EVENT.choiceCancelled, this.cancelChoice, this);
+    gameEvents.on(EVENT.textEntry, this.handleTextEntry, this);
+    gameEvents.on(EVENT.textEntryCancelled, this.cancelTextEntry, this);
     gameEvents.on(EVENT.toast, this.handleToast, this);
     gameEvents.on(EVENT.hint, this.handleHint, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
@@ -292,6 +296,7 @@ export class UIScene extends Phaser.Scene {
       `quest: ${state.activeQuestId} / ${state.questStage}`,
       `inventory: ${state.inventory.join(", ") || "empty"}`,
       `save: v${state.version}`,
+      "F2: geometry overlay",
       "F4: teleport to objective",
     ]);
     this.previousStage = state.questStage;
@@ -432,7 +437,7 @@ export class UIScene extends Phaser.Scene {
     this.clearChoice();
     this.choice = request;
     this.choiceFocus = Math.max(0, request.options.findIndex((option) => option.enabled !== false));
-    inputCapture.capture("choice");
+    inputCapture.capture("choice", { blockMenuToggle: true });
     this.updateHintVisibility();
 
     const shadow = this.add.rectangle(480, 315, 660, 250, 0x07131c, 0.58);
@@ -469,6 +474,38 @@ export class UIScene extends Phaser.Scene {
     children.push(footer);
     this.choicePanel = this.add.container(0, 0, children).setDepth(UI_DEPTH + 5);
     this.updateChoiceFocus();
+  }
+
+  private handleTextEntry(request: TextEntryRequest): void {
+    const previousModal = this.textEntryModal;
+    if (previousModal) {
+      previousModal.cancel();
+      // A cancellation callback may synchronously publish a newer request.
+      if (this.textEntryModal && this.textEntryModal !== previousModal) return;
+    }
+    this.cancelDialogue();
+    this.clearChoice();
+    let modal: TextEntryModal | undefined;
+    modal = TextEntryModal.mount(this, request, {
+      capture: inputCapture,
+      owner: "text-entry-ui",
+      onResolve: () => this.clearTextEntryModal(modal),
+    });
+    this.textEntryModal = modal;
+    this.updateHintVisibility();
+  }
+
+  private cancelTextEntry(): void {
+    const modal = this.textEntryModal;
+    if (!modal) return;
+    if (!modal.cancel()) this.clearTextEntryModal(modal);
+  }
+
+  /** Clears the exact resolved modal before its caller-owned callback runs. */
+  private clearTextEntryModal(modal: TextEntryModal | undefined): void {
+    if (!modal || this.textEntryModal !== modal) return;
+    this.textEntryModal = undefined;
+    this.updateHintVisibility();
   }
 
   private selectChoice(index = this.choiceFocus): void {
@@ -519,11 +556,12 @@ export class UIScene extends Phaser.Scene {
 
   private handleInputAction(event: InputActionEvent): void {
     if (!event.pressed || this.sys.isPaused()) return;
+    if (this.textEntryModal) return;
     if (this.choice) {
       if (event.action === "moveUp") this.moveChoiceFocus(-1);
       else if (event.action === "moveDown") this.moveChoiceFocus(1);
       else if (event.action === "interact") this.selectChoice();
-      else if (event.action === "back") this.cancelChoice();
+      else if (event.action === "back" || event.action === "menu") this.cancelChoice();
       return;
     }
     if (event.action === "interact" && this.dialogue && this.dialoguePanel.visible) this.advanceDialogue();
@@ -564,7 +602,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private updateHintVisibility(): void {
-    const visible = this.latestHint.trim().length > 0 && !this.dialogue && !this.choice;
+    const visible = this.latestHint.trim().length > 0 && !this.dialogue && !this.choice && !this.textEntryModal;
     this.hintPanel.setVisible(visible);
     this.tweens.killTweensOf(this.hintPanel);
     if (!visible) {
@@ -583,6 +621,8 @@ export class UIScene extends Phaser.Scene {
     gameEvents.off(EVENT.dialogueCancelled, this.cancelDialogue, this);
     gameEvents.off(EVENT.choice, this.handleChoice, this);
     gameEvents.off(EVENT.choiceCancelled, this.cancelChoice, this);
+    gameEvents.off(EVENT.textEntry, this.handleTextEntry, this);
+    gameEvents.off(EVENT.textEntryCancelled, this.cancelTextEntry, this);
     gameEvents.off(EVENT.toast, this.handleToast, this);
     gameEvents.off(EVENT.hint, this.handleHint, this);
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
@@ -590,6 +630,8 @@ export class UIScene extends Phaser.Scene {
     this.toastTimer?.remove(false);
     this.objectiveTimer?.remove(false);
     this.saveTimer?.remove(false);
+    this.textEntryModal?.destroy();
+    this.textEntryModal = undefined;
   }
 
   /** Keeps dynamic copy inside its card even at the player's large-text setting. */
@@ -626,6 +668,7 @@ export class UIScene extends Phaser.Scene {
     this.choicePanel = undefined;
     this.choiceEntries = [];
     this.choiceFocus = 0;
+    this.textEntryModal = undefined;
     this.latestHint = "";
     this.previousStage = undefined;
     this.previousQuestId = undefined;

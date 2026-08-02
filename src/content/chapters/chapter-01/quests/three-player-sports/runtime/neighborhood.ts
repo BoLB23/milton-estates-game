@@ -58,7 +58,7 @@ export class SportsNeighborhoodBinding implements QuestRuntimeBinding {
       meet_billy_to_play_baseball: {
         id: "billy_home",
         anchor: "billy",
-        label: "Meet Billy to play baseball",
+        label: "Play baseball at Billy's house",
         event: { type: "played_baseball_with_billy" },
       },
       meet_andrew_to_play_basketball: {
