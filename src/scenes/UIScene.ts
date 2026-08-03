@@ -298,6 +298,7 @@ export class UIScene extends Phaser.Scene {
       `save: v${state.version}`,
       "F2: geometry overlay",
       "F4: teleport to objective",
+      "F6: collision inspector",
     ]);
     this.previousStage = state.questStage;
     this.previousQuestId = state.activeQuestId;

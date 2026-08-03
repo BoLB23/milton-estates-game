@@ -80,7 +80,7 @@ The Backpack contains the quest history, local map, save/restart controls, and s
 
 Progress is saved automatically in that browser. Use Backpack → Save to save immediately or restart the mission with confirmation.
 
-During development builds, F2 overlays authored collision and map anchors, F3 toggles a state panel, and F4 moves Billy to the current objective for rapid end-to-end playtesting. These shortcuts are not included in production builds.
+During development builds, F2 overlays authored collision and map anchors, F3 toggles a state panel, F4 moves Billy to the current objective, and F6 shows camera-correct collision inspection data for rapid map playtesting. These shortcuts are not included in production builds.
 
 ## Project shape
 

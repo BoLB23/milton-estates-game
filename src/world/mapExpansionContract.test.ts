@@ -39,7 +39,7 @@ const boundaryExits: Readonly<Record<typeof EXPANSION_MAP_IDS[number], MapValida
   neighborhood: [
     { objectId: "woods_gate", side: "north" },
     { objectId: "exit_stonehenge", side: "east" },
-    { objectId: "exit_fruitville", side: "south" },
+    { objectId: "exit_fruitville", side: "west" },
   ],
   stonehenge: [
     { objectId: "exit_milton", side: "west" },

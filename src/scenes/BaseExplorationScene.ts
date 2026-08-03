@@ -4,6 +4,7 @@ import { MushroomHuntController } from "../world/MushroomHuntController";
 import { PlayerLocomotionController, REGIONAL_BICYCLE_TUNING, type PlayerTravelMode } from "../world/PlayerLocomotionController";
 import type { RegionInteraction } from "../world/contracts";
 import { COLLISION_GRID_TILE_SIZE, type MountedCollisionGrid, TiledRuntimeWorld, type TiledRuntimeObject, type WorldPoint } from "../world/tiledRuntime";
+import { inspectCollisionPoint, type CollisionInspectionResult } from "../world/collisionInspection";
 import { inputState } from "./InputRouterScene";
 import type { DialogueLine, Interactable, MapId } from "../game/types";
 import { assetUrl } from "../content/assets";
@@ -43,6 +44,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private tiledRuntime?: TiledRuntimeWorld;
   private geometryDebugOverlay?: Phaser.GameObjects.Container;
   private playerGeometryDebug?: Phaser.GameObjects.Graphics;
+  private collisionInspectionText?: Phaser.GameObjects.Text;
+  private collisionInspectionEnabled = false;
   private readonly dynamicObstacles = new Map<string, Phaser.GameObjects.Zone>();
   private lastEmittedPlayerX = Number.NaN;
   private lastEmittedPlayerY = Number.NaN;
@@ -68,6 +71,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.geometryDebugOverlay?.destroy(true);
     this.geometryDebugOverlay = undefined;
     this.playerGeometryDebug = undefined;
+    this.collisionInspectionText?.destroy();
+    this.collisionInspectionText = undefined;
+    this.collisionInspectionEnabled = false;
     for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
     this.dynamicObstacles.clear();
     this.mapId = mapId;
@@ -129,6 +135,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.geometryDebugOverlay?.destroy(true);
       this.geometryDebugOverlay = undefined;
       this.playerGeometryDebug = undefined;
+      this.collisionInspectionText?.destroy();
+      this.collisionInspectionText = undefined;
+      this.collisionInspectionEnabled = false;
       for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
       this.dynamicObstacles.clear();
     });
@@ -182,6 +191,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.updatePlayerPresentation({ x: next.velocityX, y: next.velocityY }, next.speed > 0);
     this.syncBicycleVisual();
     this.drawPlayerGeometryDebug();
+    this.updateCollisionInspection();
     this.emitPlayerLocation();
 
     const nearby = this.closestInteractable(62);
@@ -351,8 +361,22 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.travelMode = mode;
     this.locomotion.setMode(mode);
     this.player.setVelocity(0, 0);
-    if (mode === "bicycle") this.player.setSize(150, 105).setOffset(125, 260);
-    else this.player.setSize(110, 95).setOffset(145, 275);
+    if (mode === "bicycle") {
+      // Keep Billy's feet at the authored contact point, but tighten the
+      // display slightly so his hips sit over the bicycle saddle instead of
+      // reading as a standing character floating above it.
+      this.player
+        .setScale(0.16)
+        .setOrigin(PLAYER_ORIGIN_X, 0.92)
+        .setSize(150, 105)
+        .setOffset(125, 260);
+    } else {
+      this.player
+        .setScale(0.18)
+        .setOrigin(PLAYER_ORIGIN_X, PLAYER_ORIGIN_Y)
+        .setSize(110, 95)
+        .setOffset(145, 275);
+    }
     (this.player.body as Phaser.Physics.Arcade.Body).reset(this.player.x, this.player.y);
     this.syncBicycleVisual();
   }
@@ -412,26 +436,93 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     );
   }
 
-  /** Drawn behind Billy so bicycle mode is visually distinct from walking. */
+  /**
+   * Drawn behind Billy so the bike reads as a vehicle rather than a detached
+   * icon. The frame follows the project's illustrated 2px-detail language,
+   * with enough silhouette and hardware detail to remain legible at map zoom.
+   */
   private drawBicycleVisual(): void {
     const bike = this.bicycleVisual;
     if (!bike) return;
+    const rearWheel = { x: -38, y: 10 };
+    const frontWheel = { x: 38, y: 10 };
+    const saddle = { x: -14, y: -20 };
+    const crank = { x: 0, y: 10 };
+    const headset = { x: 27, y: -10 };
+
     bike.clear();
-    bike.lineStyle(4, 0x202d38, 1).strokeCircle(-25, 10, 12).strokeCircle(25, 10, 12);
-    bike.lineStyle(4, 0xc84c3f, 1)
-      .lineBetween(-25, 10, -3, -11)
-      .lineBetween(-3, -11, 8, 10)
-      .lineBetween(8, 10, -25, 10)
-      .lineBetween(-3, -11, 19, -11)
-      .lineBetween(19, -11, 25, 10)
-      .lineBetween(19, -11, 26, -21)
-      .lineBetween(23, -21, 31, -21);
-    bike.fillStyle(0xf2c35c, 1).fillCircle(-3, -11, 3);
+
+    // Cool afternoon shadow, offset southeast like the rest of the world art.
+    bike.fillStyle(0x173026, 0.22).fillEllipse(0, 31, 112, 13);
+
+    // Tires, rims, hubs, and spokes give the wheels a proper bicycle read.
+    bike.lineStyle(7, 0x18252f, 1)
+      .strokeCircle(rearWheel.x, rearWheel.y, 18)
+      .strokeCircle(frontWheel.x, frontWheel.y, 18);
+    bike.lineStyle(2, 0xb8c3bd, 0.8)
+      .strokeCircle(rearWheel.x, rearWheel.y, 13)
+      .strokeCircle(frontWheel.x, frontWheel.y, 13);
+    for (const wheel of [rearWheel, frontWheel]) {
+      bike.lineStyle(1, 0x9caeac, 0.62);
+      for (const angle of [0, Math.PI / 4, Math.PI / 2, (Math.PI * 3) / 4]) {
+        const dx = Math.cos(angle) * 13;
+        const dy = Math.sin(angle) * 13;
+        bike.lineBetween(wheel.x - dx, wheel.y - dy, wheel.x + dx, wheel.y + dy);
+      }
+      bike.fillStyle(0x52656b, 1).fillCircle(wheel.x, wheel.y, 3);
+      bike.fillStyle(0xe8c15f, 1).fillCircle(wheel.x, wheel.y, 1.5);
+    }
+
+    // Mudguards sit just above the tire arcs and keep the silhouette readable.
+    bike.lineStyle(2, 0x31434a, 0.95)
+      .beginPath().arc(rearWheel.x, rearWheel.y, 21, Math.PI, Math.PI * 2, false, 0).strokePath()
+      .beginPath().arc(frontWheel.x, frontWheel.y, 21, Math.PI, Math.PI * 2, false, 0).strokePath();
+
+    // Outline the frame first, then add the warm red/orange painted tubing.
+    const frameSegments = [
+      [rearWheel.x, rearWheel.y, saddle.x, saddle.y],
+      [saddle.x, saddle.y, crank.x, crank.y],
+      [crank.x, crank.y, rearWheel.x, rearWheel.y],
+      [saddle.x, saddle.y, headset.x, headset.y],
+      [headset.x, headset.y, crank.x, crank.y],
+      [headset.x, headset.y, frontWheel.x, frontWheel.y],
+    ] as const;
+    bike.lineStyle(7, 0x572f31, 1);
+    for (const [x1, y1, x2, y2] of frameSegments) bike.lineBetween(x1, y1, x2, y2);
+    bike.lineStyle(4, 0xc84c3f, 1);
+    for (const [x1, y1, x2, y2] of frameSegments) bike.lineBetween(x1, y1, x2, y2);
+
+    // Painted highlights make the frame feel dimensional instead of symbolic.
+    bike.lineStyle(1.5, 0xf0785e, 0.9)
+      .lineBetween(saddle.x + 2, saddle.y + 2, crank.x - 1, crank.y - 2)
+      .lineBetween(saddle.x + 3, saddle.y + 1, headset.x - 3, headset.y + 1)
+      .lineBetween(headset.x - 2, headset.y + 2, frontWheel.x - 2, frontWheel.y - 5);
+
+    // Seat post, padded saddle, handlebars, brake lever, and bell.
+    bike.lineStyle(3, 0x27343b, 1).lineBetween(saddle.x, saddle.y, saddle.x - 2, saddle.y - 8);
+    bike.fillStyle(0x28343a, 1).fillRoundedRect(saddle.x - 10, saddle.y - 11, 18, 5, 2);
+    bike.fillStyle(0x5d6d70, 1).fillRoundedRect(saddle.x - 7, saddle.y - 10, 12, 2, 1);
+    bike.lineStyle(3, 0x27343b, 1).lineBetween(headset.x, headset.y, headset.x + 5, headset.y - 13);
+    bike.lineStyle(3, 0x27343b, 1)
+      .lineBetween(headset.x + 5, headset.y - 13, headset.x + 14, headset.y - 13)
+      .lineBetween(headset.x + 8, headset.y - 13, headset.x + 11, headset.y - 8);
+    bike.lineStyle(2, 0x8a4740, 1).lineBetween(headset.x + 8, headset.y - 12, headset.x + 13, headset.y - 12);
+    bike.fillStyle(0xe8c15f, 1).fillCircle(headset.x + 7, headset.y - 16, 2);
+
+    // Chain, crank, pedals, and safety reflectors finish the mechanical read.
+    bike.lineStyle(1.5, 0x66716e, 0.92)
+      .beginPath().arc(crank.x, crank.y, 6, 0, Math.PI * 2, false, 0).strokePath()
+      .lineBetween(rearWheel.x + 2, rearWheel.y + 2, crank.x - 4, crank.y + 2)
+      .lineBetween(rearWheel.x + 2, rearWheel.y - 2, crank.x - 4, crank.y - 2);
+    bike.lineStyle(2, 0x27343b, 1).lineBetween(crank.x + 3, crank.y + 3, crank.x + 9, crank.y + 8);
+    bike.fillStyle(0x27343b, 1).fillRoundedRect(crank.x + 7, crank.y + 7, 8, 3, 1);
+    bike.fillStyle(0xf1c65b, 1).fillCircle(rearWheel.x - 16, rearWheel.y - 17, 2).fillCircle(frontWheel.x + 15, frontWheel.y - 17, 2);
   }
 
   private syncBicycleVisual(): void {
     this.bicycleVisual
-      ?.setPosition(this.player.x, this.player.y + 28)
+      ?.setPosition(this.player.x, this.player.y - 2)
+      .setScale(this.player.flipX ? -0.6 : 0.6, 0.6)
       .setVisible(this.travelMode === "bicycle");
   }
 
@@ -571,9 +662,106 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     graphics.lineBetween(body.center.x, body.center.y - 8, body.center.x, body.center.y + 8);
   }
 
+  /** F6 exposes camera-correct player and pointer coordinates for collision authoring. */
+  private toggleCollisionInspection(): void {
+    if (!import.meta.env.DEV) return;
+
+    this.collisionInspectionEnabled = !this.collisionInspectionEnabled;
+    if (!this.collisionInspectionEnabled) {
+      this.collisionInspectionText?.setVisible(false);
+      gameEvents.emit(EVENT.toast, "Collision inspector hidden.");
+      return;
+    }
+
+    if (!this.collisionInspectionText) {
+      this.collisionInspectionText = this.add.text(16, 145, "", {
+        fontFamily: "Courier New, monospace",
+        fontSize: "11px",
+        color: "#d8ffe6",
+        backgroundColor: "#071511ee",
+        padding: { x: 9, y: 7 },
+        align: "left",
+        lineSpacing: 2,
+      })
+        .setOrigin(0, 0)
+        .setDepth(10_001);
+    }
+    this.collisionInspectionText.setVisible(true);
+    this.updateCollisionInspection();
+    gameEvents.emit(EVENT.toast, "Collision inspector shown — F6 toggles it.");
+  }
+
+  private updateCollisionInspection(): void {
+    if (!this.collisionInspectionEnabled || !this.collisionInspectionText || !this.player?.active) return;
+
+    const pointer = this.input.activePointer;
+    const pointerWorld = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const playerPoint = { x: this.player.x, y: this.player.y };
+    const playerStatus = inspectCollisionPoint(this.mountedCollisionGrid?.grid, playerPoint);
+    const pointerStatus = inspectCollisionPoint(this.mountedCollisionGrid?.grid, pointerWorld);
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const gridLabel = this.mountedCollisionGrid
+      ? `${this.mountedCollisionGrid.grid.width}x${this.mountedCollisionGrid.grid.height} @ ${this.mountedCollisionGrid.grid.tileSize}px`
+      : "unavailable (legacy collision-rects)";
+
+    this.positionCollisionInspection();
+
+    this.collisionInspectionText.setText([
+      "COLLISION INSPECTOR  •  F6",
+      `map: ${this.mapId}`,
+      `grid: ${gridLabel}`,
+      `player world: ${this.formatWorldPoint(playerPoint)}`,
+      `player cell: ${this.formatCell(playerStatus)}`,
+      `player blocked: ${this.formatStatus(playerStatus)}`,
+      `body: ${this.formatBody(body)}`,
+      `pointer world: ${this.formatWorldPoint(pointerWorld)}`,
+      `pointer cell: ${this.formatCell(pointerStatus)}`,
+      `pointer blocked: ${this.formatStatus(pointerStatus)}`,
+      "F2: geometry overlay  •  F3: state panel",
+    ]);
+  }
+
+  /** Keeps the world-scene text at a fixed screen inset despite camera scroll and zoom. */
+  private positionCollisionInspection(): void {
+    const text = this.collisionInspectionText;
+    if (!text) return;
+
+    const camera = this.cameras.main;
+    text.setPosition(
+      camera.worldView.x + 16 / camera.zoomX,
+      camera.worldView.y + 145 / camera.zoomY,
+    );
+  }
+
+  private formatWorldPoint(point: WorldPoint): string {
+    return `(${this.formatNumber(point.x)}, ${this.formatNumber(point.y)})`;
+  }
+
+  private formatCell(result: CollisionInspectionResult): string {
+    return result.cell ? `(${result.cell.x}, ${result.cell.y})` : "—";
+  }
+
+  private formatStatus(result: CollisionInspectionResult): string {
+    switch (result.status) {
+      case "walkable": return "WALKABLE";
+      case "blocked": return "BLOCKED";
+      case "out-of-bounds": return "OUT OF BOUNDS";
+      case "unavailable": return "N/A";
+    }
+  }
+
+  private formatBody(body: Phaser.Physics.Arcade.Body): string {
+    return `x${this.formatNumber(body.x)}, y${this.formatNumber(body.y)}, w${this.formatNumber(body.width)}, h${this.formatNumber(body.height)}`;
+  }
+
+  private formatNumber(value: number): string {
+    return Number.isFinite(value) ? value.toFixed(1) : "—";
+  }
+
   private handleDebugKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
     if (event.code === "F2") this.toggleGeometryDebugOverlay();
+    if (event.code === "F6") this.toggleCollisionInspection();
     if (event.code === "F4") this.debugTeleportToObjective();
   };
 

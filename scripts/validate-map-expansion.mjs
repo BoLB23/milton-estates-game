@@ -25,7 +25,7 @@ const regionalBicycleSpeed = Number(bicycleTuningBlock?.match(/\bmaxSpeed:\s*(\d
 const specs = {
   neighborhood: {
     image: "neighborhood-master-v2.png",
-    boundary: { woods_gate: "north", exit_stonehenge: "east", exit_fruitville: "south" },
+    boundary: { woods_gate: "north", exit_stonehenge: "east", exit_fruitville: "west" },
     mustHave: [
       "spawn_home", "spawn_woods", "spawn_stonehenge", "spawn_fruitville", "woods_gate", "exit_stonehenge", "exit_fruitville",
       "ryan_invite", "bike_mount_milton", ...Array.from({ length: 12 }, (_, index) => `ryan_depart_${String(index).padStart(2, "0")}`),
