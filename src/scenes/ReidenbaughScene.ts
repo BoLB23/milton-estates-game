@@ -90,7 +90,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
   }
 
   private startChase(): void {
-    this.setPlayerTravelMode("bicycle");
+    this.setScriptedTransportOverride("bicycle");
     const seed = gameStore.getState().questProgress.ryanRide.routeSeed ?? 0;
     const selected = selectRyanLoop(REIDENBAUGH_CHASE_ROUTES.map((route) => route.id), seed, 0);
     const route = REIDENBAUGH_CHASE_ROUTES.find((candidate) => candidate.id === selected.loopId)!;
@@ -125,8 +125,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
 
   private mountPostQuest(): void {
     if (!gameStore.isBicycleUnlocked()) return;
-    this.enableBicycleToggle();
-    this.setPlayerTravelMode("bicycle");
+    this.setScriptedTransportOverride(null);
     const post = this.tiledWorld.point("ryan_post");
     if (!this.ryan) {
       this.ryan = this.physics.add.sprite(post.x, post.y, "ryan")

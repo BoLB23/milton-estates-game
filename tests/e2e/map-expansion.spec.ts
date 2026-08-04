@@ -66,6 +66,17 @@ async function launchMap(page: Page, map: string): Promise<void> {
   await page.waitForTimeout(1_800);
 }
 
+async function readStableSave(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem("milton-estates-save");
+    if (!raw) return null;
+    const save = JSON.parse(raw) as { lastSavedAt?: unknown; lastKnownLocation?: unknown };
+    delete save.lastSavedAt;
+    delete save.lastKnownLocation;
+    return JSON.stringify(save);
+  });
+}
+
 async function launchBentCreek(page: Page): Promise<void> {
   await launchMap(page, "bent_creek");
 }
@@ -114,7 +125,7 @@ async function pressTouchAction(page: Page, action: "menu" | "interact"): Promis
   await page.waitForTimeout(180);
 }
 
-test("loads Bent Creek on demand and keeps the staffed gate transient", async ({ page }) => {
+test("loads Bent Creek on demand and checkpoints the unlocked gate", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await launchBentCreek(page);
@@ -141,44 +152,48 @@ test("loads Bent Creek on demand and keeps the staffed gate transient", async ({
     .toBe("bent_creek");
 });
 
-test("keeps the BIKE touch control locked until Catch Ryan unlocks it", async ({ page }) => {
+test("removes direct bicycle touch control and exposes Backpack item actions", async ({ page }) => {
   await page.goto("/");
   await page.waitForTimeout(900);
-  await expect.poll(() => page.evaluate(() =>
-    document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.hidden,
-  )).toBe(true);
+  await expect(page.locator('[data-game-action="toggleBicycle"]')).toHaveCount(0);
 
   await launchMap(page, "neighborhood");
-  await expect.poll(() => page.evaluate(() => ({
-    hidden: document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.hidden,
-    disabled: document.querySelector<HTMLButtonElement>('[data-game-action="toggleBicycle"]')?.disabled,
-  }))).toEqual({ hidden: false, disabled: false });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(160);
+  await page.mouse.click(430, 115); // Items tab.
+  await page.waitForTimeout(160);
+  await page.mouse.click(730, 242); // RIDE BIKE.
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("milton-estates-save") ?? "{}").equipment?.transport))
+    .toBe("bicycle");
+  await page.mouse.click(730, 242); // PUT BIKE AWAY.
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("milton-estates-save") ?? "{}").equipment?.transport))
+    .toBe(null);
 });
 
 test("the gate rejects an invalid answer without touching SaveData", async ({ page }) => {
   await launchBentCreek(page);
-  const before = await page.evaluate(() => localStorage.getItem("milton-estates-save"));
+  const before = await readStableSave(page);
   await openGatePrompt(page);
   await page.keyboard.type("someone");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(350);
-  expect(await page.evaluate(() => localStorage.getItem("milton-estates-save"))).toBe(before);
+  expect(await readStableSave(page)).toBe(before);
 });
 
 test("a touch Backpack press cancels the gate prompt without opening the Backpack", async ({ page }) => {
   await launchBentCreek(page);
-  const before = await page.evaluate(() => localStorage.getItem("milton-estates-save"));
+  const before = await readStableSave(page);
   await openGatePrompt(page);
 
   await pressTouchAction(page, "menu");
-  await page.mouse.click(675, 115); // Would select Settings if Backpack leaked open.
+  await page.mouse.click(760, 115); // Would select Settings if Backpack leaked open.
   await page.mouse.click(190, 335); // Would toggle sound on that page.
-  expect(await page.evaluate(() => localStorage.getItem("milton-estates-save"))).toBe(before);
+  expect(await readStableSave(page)).toBe(before);
 
   // A fresh back press must still open the Backpack after the cancellation.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 6; index += 1) {
     await page.keyboard.press("KeyR");
     await page.waitForTimeout(60);
   }

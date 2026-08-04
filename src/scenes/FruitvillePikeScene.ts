@@ -35,9 +35,6 @@ export class FruitvillePikeScene extends BaseExplorationScene {
 
   private mountTravel(): void {
     if (!gameStore.isBicycleUnlocked()) return;
-    // Fruitville is the bicycle-only arterial leg; walking would bypass the
-    // authored ride pace and contradict the road presentation.
-    this.setPlayerTravelMode("bicycle");
     this.mountTransition("exit_milton", "Return to Milton Estates", "neighborhood", { spawn: "fruitville" });
     // Bent Creek's reciprocal spawn is outside the staffed barrier. The
     // attendant must be the only way into the private side of the map.

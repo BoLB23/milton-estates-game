@@ -65,7 +65,6 @@ export class NeighborhoodScene extends BaseExplorationScene {
     // route actor is mounted even when the next input arrives before the
     // dialogue completion callback runs.
     gameEvents.on(EVENT.stateChanged, this.handleRyanRideStateChanged, this);
-    if (gameStore.isBicycleUnlocked()) this.enableBicycleToggle();
     if (gameStore.isRyanRideStage("depart_neighborhood")) this.startRide();
     this.events.on("ryan-map-reveal", this.showMapReveal, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -110,7 +109,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
     const mount = this.tiledWorld.point("bike_mount_milton");
     this.getPlayerSprite().setPosition(mount.x, mount.y).setVelocity(0, 0);
     (this.getPlayerSprite().body as Phaser.Physics.Arcade.Body).reset(mount.x, mount.y);
-    this.setPlayerTravelMode("bicycle");
+    this.setScriptedTransportOverride("bicycle");
     const start = this.tiledWorld.point("ryan_depart_00");
     this.rideRyan = this.physics.add.sprite(start.x, start.y, "ryan").setScale(1.2).setDepth(49).setName("ryan-ride");
     this.rideFollower = new RyanRouteFollower({

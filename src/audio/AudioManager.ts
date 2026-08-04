@@ -31,7 +31,8 @@ type EventEmitterAdapter = {
 /** Semantic state sounds stay testable and independent from the sound backend. */
 export function deriveAudioCues(previous: GameState, next: GameState): AudioCue[] {
   const cues: AudioCue[] = [];
-  if (!previous.inventory.includes("xbox_controller") && next.inventory.includes("xbox_controller")) {
+  if (previous.inventory.every((stack) => stack.itemId !== "xbox_controller")
+    && next.inventory.some((stack) => stack.itemId === "xbox_controller")) {
     cues.push("controllerPickup");
   }
   if (next.secrets.some((secret) => !previous.secrets.includes(secret))) cues.push("tokenPickup");

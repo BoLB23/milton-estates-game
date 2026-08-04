@@ -1,4 +1,6 @@
 import type Phaser from "phaser";
+import { isItemId } from "../content/items";
+import type { ItemId } from "../game/types";
 
 export const COLLISION_GRID_LAYER = "collision-grid";
 export const COLLISION_GRID_TILE_SIZE = 32;
@@ -24,6 +26,16 @@ export interface TiledRuntimeObject {
   height?: number;
   properties?: readonly TiledProperty[] | Readonly<Record<string, unknown>>;
   polygon?: readonly WorldPoint[];
+}
+
+export interface TiledPickup {
+  id: string;
+  itemId: ItemId;
+  quantity: number;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
 }
 
 interface TiledObjectLayer { objects: TiledRuntimeObject[]; }
@@ -385,7 +397,11 @@ export class TiledRuntimeWorld {
   }
 
   public property(name: string, propertyName: string): unknown {
-    const properties = this.object(name).properties;
+    return this.propertyFromObject(this.object(name), propertyName);
+  }
+
+  private propertyFromObject(object: TiledRuntimeObject, propertyName: string): unknown {
+    const properties = object.properties;
     if (!properties) return undefined;
     if (Array.isArray(properties)) {
       const list = properties as readonly TiledProperty[];
@@ -415,6 +431,28 @@ export class TiledRuntimeWorld {
       }
       return { x, y, width, height };
     });
+  }
+
+  /** Parses one-time item pickups from the authored interactions layer. */
+  public pickups(): readonly TiledPickup[] {
+    return [...this.objects.values()]
+      .filter((object) => object.type === "pickup" || object.class === "pickup")
+      .map((object) => {
+        const itemId = this.propertyFromObject(object, "itemId");
+        const quantityValue = this.propertyFromObject(object, "quantity") ?? 1;
+        if (!isItemId(itemId) || typeof quantityValue !== "number" || !Number.isInteger(quantityValue) || quantityValue <= 0) {
+          throw new Error(`Invalid authored pickup: ${object.name}`);
+        }
+        return {
+          id: object.name,
+          itemId,
+          quantity: quantityValue,
+          x: object.x,
+          y: object.y,
+          width: object.width,
+          height: object.height,
+        };
+      });
   }
 
   /** Returns named, property-bearing solid footprints for dynamic blockers. */

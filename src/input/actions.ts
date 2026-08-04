@@ -6,7 +6,6 @@ export type SemanticAction =
   | "interact"
   | "back"
   | "menu"
-  | "toggleBicycle"
   | "tabPrevious"
   | "tabNext";
 
@@ -71,7 +70,6 @@ const KEY_ACTIONS: Readonly<Record<string, SemanticAction>> = {
   ArrowRight: "moveRight", KeyD: "moveRight",
   KeyE: "interact", Space: "interact", Enter: "interact",
   Escape: "back", KeyB: "menu",
-  KeyF: "toggleBicycle",
   BracketLeft: "tabPrevious", KeyQ: "tabPrevious",
   BracketRight: "tabNext", KeyR: "tabNext",
 };
@@ -105,7 +103,6 @@ export function gamepadMovement(gamepad: Pick<Gamepad, "axes" | "buttons">): Mov
 export const GAMEPAD_BUTTON_ACTIONS: Readonly<Record<number, SemanticAction>> = {
   0: "interact",
   1: "back",
-  2: "toggleBicycle",
   4: "tabPrevious",
   5: "tabNext",
   9: "menu",

@@ -53,6 +53,38 @@ describe("TMJ runtime sources", () => {
       }
     }
   });
+
+  it("parses typed pickups from the interactions layer", () => {
+    const layer = {
+      objects: [{
+        name: "pickup_milton_field_token_01",
+        type: "pickup",
+        x: 880,
+        y: 912,
+        properties: [
+          { name: "itemId", type: "string", value: "field_token" },
+          { name: "quantity", type: "int", value: 1 },
+        ],
+      }],
+    };
+    const tilemap = {
+      width: 45,
+      height: 33,
+      tileWidth: 32,
+      tileHeight: 32,
+      getObjectLayer: (name: string) => name === "interactions" ? layer : null,
+    } as unknown as Phaser.Tilemaps.Tilemap;
+    const runtime = new TiledRuntimeWorld(tilemap);
+    expect(runtime.pickups()).toEqual([{
+      id: "pickup_milton_field_token_01",
+      itemId: "field_token",
+      quantity: 1,
+      x: 880,
+      y: 912,
+      width: undefined,
+      height: undefined,
+    }]);
+  });
 });
 
 describe("collision-grid runtime contract", () => {

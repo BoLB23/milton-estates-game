@@ -15,6 +15,23 @@ export const MAP_IDS = [
   "bent_creek",
 ] as const satisfies readonly MapId[];
 
+export type ItemId = "xbox_controller" | "bicycle" | "field_token";
+
+export interface InventoryStack {
+  itemId: ItemId;
+  quantity: number;
+}
+
+export interface EquipmentState {
+  transport: "bicycle" | null;
+}
+
+export interface PlayerMapLocation {
+  map: MapId;
+  x: number;
+  y: number;
+}
+
 /** Stable content IDs. These values are persisted and must not be renamed. */
 export type ChapterId = "chapter_1";
 export type QuestId =
@@ -146,7 +163,7 @@ export interface PlayerSettings {
 }
 
 export interface SaveData {
-  version: 7;
+  version: 8;
   activeChapterId: ChapterId;
   activeQuestId: QuestId;
   completedChapterIds: ChapterId[];
@@ -154,7 +171,10 @@ export interface SaveData {
   questProgress: QuestProgress;
   /** Ordered semantic milestones. Display strings must not be persisted here. */
   questHistory: QuestMilestone[];
-  inventory: string[];
+  inventory: InventoryStack[];
+  equipment: EquipmentState;
+  collectedPickupIds: string[];
+  lastKnownLocation: PlayerMapLocation;
   secrets: string[];
   currentMap: MapId;
   discoveredMaps: MapId[];

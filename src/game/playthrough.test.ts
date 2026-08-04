@@ -36,9 +36,9 @@ describe("complete playthrough scenarios", () => {
     advance(store, EVENTS[3]!);
 
     expect(store.getState()).toMatchObject({
-      version: 7,
+      version: 8,
       questStage: "complete",
-      inventory: [CONTROLLER_ITEM],
+      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
       discoveredMaps: ["neighborhood", "creek"],
       questHistory: [
         "missing_controller.started",
@@ -68,7 +68,7 @@ describe("complete playthrough scenarios", () => {
     expect(store.getState()).toMatchObject({
       questStage: "complete",
       secrets: ["creek_token"],
-      inventory: [CONTROLLER_ITEM],
+      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
     });
   });
 
@@ -85,7 +85,7 @@ describe("complete playthrough scenarios", () => {
     expect(store.getState()).toMatchObject({
       currentMap: "creek",
       questStage: "return_to_jeremy",
-      inventory: [CONTROLLER_ITEM],
+      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
     });
 
     store.setCurrentMap("neighborhood");

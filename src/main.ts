@@ -13,6 +13,7 @@ import { StonehengeScene } from "./scenes/StonehengeScene";
 import { FruitvillePikeScene } from "./scenes/FruitvillePikeScene";
 import { BentCreekScene } from "./scenes/BentCreekScene";
 import { WelcomeScene } from "./scenes/WelcomeScene";
+import { MickeyDragRaceScene } from "./scenes/MickeyDragRaceScene";
 
 const game = new Phaser.Game({
   // The browser behavior suite uses Canvas to avoid
@@ -45,6 +46,7 @@ const game = new Phaser.Game({
     ReidenbaughScene,
     FruitvillePikeScene,
     BentCreekScene,
+    MickeyDragRaceScene,
     UIScene,
     MenuScene,
   ],

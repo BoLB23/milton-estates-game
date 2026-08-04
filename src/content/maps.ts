@@ -3,6 +3,8 @@ import { assetUrl } from "./assets";
 
 export type MapMarkerKind = "landmark" | "exit" | "objective";
 export interface MapPoint { x: number; y: number; }
+export interface RegionalMapBounds { x: number; y: number; width: number; height: number; }
+export interface RegionalMapDisplayBounds extends RegionalMapBounds {}
 
 export interface IllustratedMapLayer {
   id: string;
@@ -42,7 +44,8 @@ export interface MapDefinition {
   authoredObjectIds: readonly string[];
   markers: readonly MapMarker[];
   /** Placement of this map inside the regional fold-out artwork in MenuScene. */
-  regionalMapBounds: Readonly<{ x: number; y: number; width: number; height: number }>;
+  /** Normalized to the source fold-out image, never to a canvas layout. */
+  regionalMapBounds: Readonly<RegionalMapBounds>;
 }
 
 export interface MapSelection {
@@ -55,6 +58,18 @@ export interface MapSelection {
 const EXPANSION_WORLD = { width: 1440, height: 1056 };
 const neighborhood = EXPANSION_WORLD;
 const creek = { width: 2048, height: 1536 };
+
+const REGIONAL_FOLDOUT_DESIGN_SIZE = { width: 960, height: 540 };
+
+/** Converts the former 960x540 authoring space into source-image fractions. */
+function regionalBounds(x: number, y: number, width: number, height: number): RegionalMapBounds {
+  return {
+    x: x / REGIONAL_FOLDOUT_DESIGN_SIZE.width,
+    y: y / REGIONAL_FOLDOUT_DESIGN_SIZE.height,
+    width: width / REGIONAL_FOLDOUT_DESIGN_SIZE.width,
+    height: height / REGIONAL_FOLDOUT_DESIGN_SIZE.height,
+  };
+}
 
 /** The canonical world, artwork, collision, and menu metadata for each map. */
 export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
@@ -75,6 +90,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       "ryan_depart_00", "ryan_depart_01", "ryan_depart_02", "ryan_depart_03", "ryan_depart_04", "ryan_depart_05",
       "ryan_depart_06", "ryan_depart_07", "ryan_depart_08", "ryan_depart_09", "ryan_depart_10", "ryan_depart_11",
       "andrew_house", "billy_house", "jeremy_house", "qa_home_route", "qa_stonehenge_route", "qa_fruitville_route",
+      "pickup_milton_field_token_01",
     ],
     markers: [
       { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.567, y: 0.864, initiallyVisible: true },
@@ -95,7 +111,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "obj_ryan_invite", kind: "objective", label: "Talk to Ryan", x: 0.589, y: 0.924, questId: "catch_ryan", stages: ["invite", "choose_destination"] },
       { id: "obj_stonehenge_departure", kind: "objective", label: "Follow Ryan toward Stonehenge", x: 0.85, y: 0.35, questId: "catch_ryan", stages: ["depart_neighborhood"] },
     ],
-    regionalMapBounds: { x: 320, y: 205, width: 235, height: 140 },
+    regionalMapBounds: regionalBounds(320, 205, 235, 140),
   },
   creek: {
     id: "creek", label: "Creek Woods", worldWidth: creek.width, worldHeight: creek.height,
@@ -113,7 +129,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "obj_return_home", kind: "objective", label: "Return to Wheatfield Drive", x: 0.669, y: 0.951, questId: "missing_controller", stages: ["return_to_jeremy"] },
       { id: "obj_mushroom_creek", kind: "objective", label: "Search Creek Woods for mushrooms", x: 0.4, y: 0.38, questId: "andrew_mushroom_hunt", stages: ["search_mushrooms"] },
     ],
-    regionalMapBounds: { x: 200, y: 190, width: 285, height: 190 },
+    regionalMapBounds: regionalBounds(200, 190, 285, 190),
   },
   stonehenge: {
     id: "stonehenge", label: "Stonehenge", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
@@ -137,7 +153,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "stonehenge_to_school", kind: "exit", label: "Reidenbaugh Elementary", x: 0.956, y: 0.03 },
       { id: "obj_stonehenge_route", kind: "objective", label: "Ride across Stonehenge", x: 0.7, y: 0.3, questId: "catch_ryan", stages: ["ride_stonehenge"] },
     ],
-    regionalMapBounds: { x: 550, y: 145, width: 125, height: 120 },
+    regionalMapBounds: regionalBounds(550, 145, 125, 120),
   },
   reidenbaugh: {
     id: "reidenbaugh", label: "Reidenbaugh Elementary", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
@@ -163,7 +179,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "reidenbaugh_return", kind: "exit", label: "Back to Stonehenge", x: 0.011, y: 0.939 },
       { id: "obj_ryan_school", kind: "objective", label: "Catch Ryan at the school", x: 0.544, y: 0.591, questId: "catch_ryan", stages: ["chase_reidenbaugh"] },
     ],
-    regionalMapBounds: { x: 600, y: 55, width: 165, height: 90 },
+    regionalMapBounds: regionalBounds(600, 55, 165, 90),
   },
   fruitville_pike: {
     id: "fruitville_pike", label: "Fruitville Pike", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
@@ -185,7 +201,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "fruitville_to_milton", kind: "exit", label: "Milton Estates", x: 0.422, y: 0.985 },
       { id: "fruitville_to_bent", kind: "exit", label: "Bent Creek", x: 0.667, y: 0.03 },
     ],
-    regionalMapBounds: { x: 500, y: 315, width: 170, height: 65 },
+    regionalMapBounds: regionalBounds(500, 315, 170, 65),
   },
   bent_creek: {
     id: "bent_creek", label: "Bent Creek", worldWidth: EXPANSION_WORLD.width, worldHeight: EXPANSION_WORLD.height,
@@ -208,7 +224,7 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
       { id: "bent_creek_clubhouse", kind: "landmark", label: "Bent Creek clubhouse", x: 0.878, y: 0.197 },
       { id: "bent_creek_return", kind: "exit", label: "Back to Fruitville Pike", x: 0.011, y: 0.924 },
     ],
-    regionalMapBounds: { x: 665, y: 330, width: 115, height: 48 },
+    regionalMapBounds: regionalBounds(665, 330, 115, 48),
   },
 };
 
@@ -223,10 +239,26 @@ export function getMapDefinition(mapId: MapId): MapDefinition { return MAP_DEFIN
 export function getIllustratedMapLayers(mapId: MapId): readonly IllustratedMapLayer[] { return MAP_DEFINITIONS[mapId].layers; }
 
 /** Projects a normalized authored-map coordinate onto the regional fold-out. */
-export function projectRegionalMapPoint(map: MapDefinition, point: MapPoint): MapPoint {
+export function projectRegionalMapPoint(
+  map: MapDefinition,
+  point: MapPoint,
+  displayBounds: RegionalMapDisplayBounds = { x: 0, y: 0, width: 1, height: 1 },
+): MapPoint {
   return {
-    x: map.regionalMapBounds.x + point.x * map.regionalMapBounds.width,
-    y: map.regionalMapBounds.y + point.y * map.regionalMapBounds.height,
+    x: displayBounds.x + (map.regionalMapBounds.x + point.x * map.regionalMapBounds.width) * displayBounds.width,
+    y: displayBounds.y + (map.regionalMapBounds.y + point.y * map.regionalMapBounds.height) * displayBounds.height,
+  };
+}
+
+export function projectRegionalMapBounds(
+  map: MapDefinition,
+  displayBounds: RegionalMapDisplayBounds,
+): RegionalMapBounds {
+  return {
+    x: displayBounds.x + map.regionalMapBounds.x * displayBounds.width,
+    y: displayBounds.y + map.regionalMapBounds.y * displayBounds.height,
+    width: map.regionalMapBounds.width * displayBounds.width,
+    height: map.regionalMapBounds.height * displayBounds.height,
   };
 }
 

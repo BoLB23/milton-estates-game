@@ -31,7 +31,7 @@ function completeCatchRyan(store: GameStore): void {
 
 afterEach(() => gameEvents.removeAllListeners());
 
-describe("GameStore save v7", () => {
+describe("GameStore save v8", () => {
   it("identifies whether this browser had a save before the initial autosave", () => {
     const freshStorage = new MemoryStorage();
     const returningStorage = new MemoryStorage();
@@ -43,7 +43,7 @@ describe("GameStore save v7", () => {
 
   it("starts with trustworthy mission and menu defaults", () => {
     expect(makeStore().getState()).toMatchObject({
-      version: 7,
+      version: 8,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -66,14 +66,14 @@ describe("GameStore save v7", () => {
 
     const state = makeStore(storage).getState();
     expect(state).toMatchObject({
-      version: 7,
+      version: 8,
       activeQuestId: "catch_ryan",
       completedQuestIds: ["missing_controller", "andrew_mushroom_hunt", "three_player_sports"],
       currentMap: "stonehenge",
       discoveredMaps: ["neighborhood", "stonehenge", "creek"],
       unlockedMaps: ["neighborhood", "creek", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"],
       questStage: "ride_stonehenge",
-      inventory: [CONTROLLER_ITEM, "lucky_marble"],
+      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
       secrets: ["creek_token", "andrew_note"],
       settings: { masterVolume: 0.35, muted: true, textSize: "large", reducedMotion: true },
       lastSavedAt: "2026-07-31T22:14:09.000Z",
@@ -94,7 +94,7 @@ describe("GameStore save v7", () => {
     expect(validateSaveInvariants(state)).toEqual([]);
 
     const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-    expect(persisted).toMatchObject({ version: 7, currentMap: "stonehenge" });
+    expect(persisted).toMatchObject({ version: 8, currentMap: "stonehenge" });
     expect(JSON.stringify(persisted)).not.toContain("reidenbaugh_road");
     expect(persisted.questProgress.mushrooms.spawns).toEqual(state.questProgress.mushrooms.spawns);
   });
@@ -104,7 +104,7 @@ describe("GameStore save v7", () => {
     const writer = makeStore(storage);
     writer.setCurrentMap("creek");
     const valid = makeStore(storage).getState();
-    expect(valid.version).toBe(7);
+    expect(valid.version).toBe(8);
     expect(validateSaveInvariants(valid)).toEqual([]);
 
     const invalid = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
@@ -114,7 +114,7 @@ describe("GameStore save v7", () => {
     storage.setItem("milton-estates-save", JSON.stringify(invalid));
 
     expect(makeStore(storage).getState()).toMatchObject({
-      version: 7,
+      version: 8,
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
       unlockedMaps: ["neighborhood", "creek"],
@@ -146,14 +146,14 @@ describe("GameStore save v7", () => {
     store.updateSettings({ textSize: "large", reducedMotion: true });
 
     expect(store.getState()).toMatchObject({
-      version: 7,
+      version: 8,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
       completedQuestIds: [],
       questStage: "search_creek",
       questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found"],
-      inventory: [CONTROLLER_ITEM],
+      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
       secrets: ["creek_token"],
       currentMap: "creek",
       discoveredMaps: ["neighborhood", "creek"],
@@ -180,15 +180,15 @@ describe("GameStore save v7", () => {
 
       const state = makeStore(storage).getState();
       expect(state).toMatchObject({
-        version: 7,
+      version: 8,
         questStage: "return_to_jeremy",
         questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found", "missing_controller.controller_recovered"],
-        inventory: [CONTROLLER_ITEM],
+        inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
         discoveredMaps: ["neighborhood", "creek"],
         lastSavedAt: null,
       });
       const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-      expect(persisted.version).toBe(7);
+      expect(persisted.version).toBe(8);
       expect(persisted).not.toHaveProperty("questStage");
     },
   );
@@ -208,11 +208,11 @@ describe("GameStore save v7", () => {
     }));
 
     const state = makeStore(storage).getState();
-    expect(state.inventory).toEqual([CONTROLLER_ITEM]);
+    expect(state.inventory).toEqual([{ itemId: CONTROLLER_ITEM, quantity: 1 }]);
     expect(state.questHistory).toEqual(["missing_controller.controller_returned"]);
     expect(state.discoveredMaps).toEqual(["neighborhood", "creek"]);
     expect(state.completedQuestIds).toEqual(["missing_controller"]);
-    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(7);
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(8);
   });
 
   it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
@@ -279,7 +279,7 @@ describe("GameStore save v7", () => {
   it("does not expose mutable nested state", () => {
     const store = makeStore();
     const snapshot = store.getState();
-    snapshot.inventory.push("injected-item");
+    snapshot.inventory.push({ itemId: "field_token", quantity: 1 });
     snapshot.questHistory.push("missing_controller.controller_returned");
     snapshot.discoveredMaps.push("creek");
     snapshot.settings.muted = true;
@@ -480,6 +480,22 @@ describe("GameStore save v7", () => {
     expect(storage.getItem("milton-estates-save")).toBe(persisted);
   });
 
+  it("keeps Mickey's race unlock and fastest time inside the existing save", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    expect(store.getMickeyDragRaceRecord()).toEqual({ unlocked: false, introSeen: false, beaten: false, bestTimeMs: undefined });
+
+    completeCatchRyan(store);
+    store.openBentCreekGate();
+    store.markMickeyDragRaceIntroSeen();
+    store.recordMickeyDragRace(24_860, false);
+    store.recordMickeyDragRace(23_120, true);
+    store.recordMickeyDragRace(25_000, true);
+
+    expect(store.getMickeyDragRaceRecord()).toEqual({ unlocked: true, introSeen: true, beaten: true, bestTimeMs: 23_120 });
+    expect(makeStore(storage).getMickeyDragRaceRecord()).toEqual({ unlocked: true, introSeen: true, beaten: true, bestTimeMs: 23_120 });
+  });
+
   it("repairs a saved Sports completion that predates the Catch Ryan handoff", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
@@ -504,6 +520,54 @@ describe("GameStore save v7", () => {
       questStage: "invite",
       completedQuestIds: ["missing_controller", "andrew_mushroom_hunt", "three_player_sports"],
     });
+  });
+
+  it("migrates v7 inventory strings and awards the permanent bicycle after Catch Ryan", () => {
+    const storage = new MemoryStorage();
+    const writer = makeStore(storage);
+    completeCatchRyan(writer);
+    const legacy = JSON.parse(storage.getItem("milton-estates-save") ?? "null") as Record<string, unknown>;
+    legacy.version = 7;
+    legacy.inventory = [CONTROLLER_ITEM];
+    delete legacy.equipment;
+    delete legacy.collectedPickupIds;
+    delete legacy.lastKnownLocation;
+    storage.setItem("milton-estates-save", JSON.stringify(legacy));
+
+    const migrated = makeStore(storage).getState();
+    expect(migrated.version).toBe(8);
+    expect(migrated.inventory).toEqual([
+      { itemId: CONTROLLER_ITEM, quantity: 1 },
+      { itemId: "bicycle", quantity: 1 },
+    ]);
+    expect(migrated.equipment).toEqual({ transport: null });
+    expect(migrated.collectedPickupIds).toEqual([]);
+  });
+
+  it("collects each stable pickup once and persists both stacks and collection IDs", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+
+    expect(store.collectPickup("pickup_milton_field_token_01", "field_token")).toBe(true);
+    expect(store.collectPickup("pickup_milton_field_token_01", "field_token")).toBe(false);
+    expect(store.countItem("field_token")).toBe(1);
+    expect(store.hasItem("field_token")).toBe(true);
+    expect(store.getState().collectedPickupIds).toEqual(["pickup_milton_field_token_01"]);
+
+    const reloaded = makeStore(storage).getState();
+    expect(reloaded.inventory).toEqual([{ itemId: "field_token", quantity: 1 }]);
+    expect(reloaded.collectedPickupIds).toEqual(["pickup_milton_field_token_01"]);
+  });
+
+  it("keeps bicycle preference separate from scripted quest travel", () => {
+    const store = makeStore();
+    expect(store.setEquippedTransport("bicycle")).toBe(false);
+    completeCatchRyan(store);
+    expect(store.getState().equipment.transport).toBe(null);
+    expect(store.setEquippedTransport("bicycle")).toBe(true);
+    expect(store.getState().equipment.transport).toBe("bicycle");
+    expect(store.setEquippedTransport(null)).toBe(true);
+    expect(store.getState().equipment.transport).toBe(null);
   });
 
   it("remaps legacy mushroom coordinates while preserving stable IDs and partial collection", () => {
@@ -609,7 +673,7 @@ describe("GameStore save v7", () => {
     expect(state.questStage).toBe("search_mushrooms");
     expect(state.questProgress.missingControllerStage).toBe("search_creek");
     const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-    expect(persisted.version).toBe(7);
+    expect(persisted.version).toBe(8);
     expect(persisted).not.toHaveProperty("questStage");
   });
 

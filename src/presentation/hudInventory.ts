@@ -22,7 +22,7 @@ function carriedMushrooms(stage: MushroomQuestStage, collectedCount: number): nu
 export function selectHudInventory(
   state: Pick<GameState, "inventory" | "questProgress">,
 ): HudInventory {
-  const controllerCount = state.inventory.includes(CONTROLLER_ITEM)
+  const controllerCount = state.inventory.some((stack) => stack.itemId === CONTROLLER_ITEM && stack.quantity > 0)
     && state.questProgress.missingControllerStage === "return_to_jeremy"
     ? 1
     : 0;

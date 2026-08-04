@@ -1,18 +1,21 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
+import { getItemDefinition, ITEMS } from "../content/items";
 import { CHAPTER_REGISTRY, hasAvailableQuest, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
-import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapPoint, selectActiveObjectiveMarker, type MapDefinition } from "../content/maps";
+import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapBounds, projectRegionalMapPoint, selectActiveObjectiveMarker, type MapDefinition, type RegionalMapDisplayBounds } from "../content/maps";
 import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage, type PlayerMapLocation } from "../game/events";
-import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
+import { gameStore } from "../game/GameStore";
 import type { GameState, PlayerSettings } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 
-const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "map", "save", "settings", "help"];
+const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "items", "map", "save", "settings", "help"];
 const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
   resume: "RESUME",
   chapters: "CHAPTERS",
   quests: "QUESTS",
+  games: "GAMES",
+  items: "ITEMS",
   map: "MAP",
   save: "SAVE",
   settings: "SETTINGS",
@@ -31,6 +34,7 @@ export class MenuScene extends Phaser.Scene {
   private selectedQuestIndex = 0;
   private playerLocation?: PlayerMapLocation;
   private questTabBadge?: Phaser.GameObjects.Container;
+  private gamesTab?: Phaser.GameObjects.Text;
 
   constructor() { super("menu"); }
 
@@ -44,6 +48,7 @@ export class MenuScene extends Phaser.Scene {
     this.restartArmed = false;
     this.selectedQuestIndex = 0;
     this.questTabBadge = undefined;
+    this.gamesTab = undefined;
     this.state = gameStore.getState();
     this.sound.mute = this.state.settings.muted;
     this.sound.volume = this.state.settings.masterVolume;
@@ -100,6 +105,15 @@ export class MenuScene extends Phaser.Scene {
         this.overlay.add(this.questTabBadge);
       }
     });
+    this.gamesTab = scrapbookText(this, this.overlay, 622, 53, "MINI GAMES", {
+      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff3c9", fontStyle: "bold",
+      backgroundColor: "#8b4f36", padding: { x: 8, y: 5 },
+    }, createPresentationPolicy(this.state.settings).textScale)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => {
+        gameEvents.emit(EVENT.audioCue, "menuNavigate");
+        this.selectPage("games");
+      });
     this.updateQuestTabBadge();
   }
 
@@ -157,6 +171,8 @@ export class MenuScene extends Phaser.Scene {
       tab.setColor(selected ? "#33271f" : "#efe1ba");
       tab.setBackgroundColor(selected ? "#f3c95f" : "#8b4f36");
     });
+    this.gamesTab?.setColor(page === "games" ? "#33271f" : "#fff3c9")
+      .setBackgroundColor(page === "games" ? "#f3c95f" : "#8b4f36");
     this.renderPage();
   }
 
@@ -167,6 +183,8 @@ export class MenuScene extends Phaser.Scene {
       case "resume": this.renderResume(); break;
       case "chapters": this.renderChapters(); break;
       case "quests": this.renderQuests(); break;
+      case "games": this.renderGames(); break;
+      case "items": this.renderItems(); break;
       case "map": this.renderMap(); break;
       case "save": this.renderSave(); break;
       case "settings": this.renderSettings(); break;
@@ -260,7 +278,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private renderResume(): void {
-    const hasController = this.state.inventory.includes(CONTROLLER_ITEM);
+    const hasController = this.state.inventory.some((stack) => stack.itemId === "xbox_controller" && stack.quantity > 0);
     this.heading("Summer afternoon — paused", `Pinned: ${getObjective(this.state.questStage, this.state.activeQuestId)}`);
     this.card(68, 231, 500, 132);
     this.note(88, 248, "TODAY'S FIELD NOTE", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
@@ -277,6 +295,72 @@ export class MenuScene extends Phaser.Scene {
     this.note(718, 305, `${this.state.secrets.length} secret${this.state.secrets.length === 1 ? "" : "s"} found`, { fontSize: "14px" });
     this.button(68, 400, "RESUME GAME", () => this.closeMenu());
     this.note(348, 412, "ESC closes the backpack, too.", { fontSize: "14px", color: "#76624f", fontStyle: "italic" });
+  }
+
+  private renderItems(): void {
+    this.heading("Items", "Everything you collect lives here. Use an item from its row when it has an action.");
+    const stacks = this.state.inventory;
+    if (stacks.length === 0) {
+      this.card(68, 231, 796, 98);
+      this.note(92, 257, "Your backpack is empty.", { fontSize: "21px", fontStyle: "bold" });
+      this.note(92, 291, "Explore Milton and check the illustrated map for new field finds.", { fontSize: "14px", color: "#675544" });
+      return;
+    }
+
+    stacks.forEach((stack, index) => {
+      const definition = getItemDefinition(stack.itemId);
+      const y = 226 + index * 86;
+      this.card(68, y, 796, 72, index % 2 === 0 ? 0xfff8df : 0xe9d29e);
+      this.drawItemIcon(90, y + 18, stack.itemId);
+      this.note(148, y + 13, definition.label.toUpperCase(), { fontSize: "16px", fontStyle: "bold" });
+      this.note(148, y + 39, `${definition.description}  •  ${stack.quantity}`, { fontSize: "12px", color: "#675544", wordWrap: { width: 420 } });
+      if (stack.itemId === "bicycle") {
+        const action = this.bicycleAction();
+        const actionButton = this.button(638, y + 16, action.label, () => {
+          if (!action.disabled) {
+            gameStore.setEquippedTransport(action.equipped ? null : "bicycle");
+            gameEvents.emit(EVENT.toast, action.equipped ? "Walking preference saved." : "Bicycle preference saved.");
+            this.renderPage();
+          }
+        }, 194).setBackgroundColor(action.disabled ? "#c8bda8" : action.equipped ? "#f3c95f" : "#b8d6a4");
+        if (action.disabled) actionButton.disableInteractive();
+        this.note(638, y + 54, action.reason, { fontSize: "10px", color: action.disabled ? "#9a573a" : "#675544", wordWrap: { width: 194 } });
+      } else {
+        this.note(638, y + 28, definition.useKind === "none" ? "NO ACTION" : "VIEW", { fontSize: "12px", color: "#76624f", fontStyle: "bold" });
+      }
+    });
+  }
+
+  private drawItemIcon(x: number, y: number, itemId: keyof typeof ITEMS): void {
+    if (itemId === "xbox_controller") {
+      this.pageContent.add(this.add.image(x + 16, y + 16, "controller").setScale(0.9).setTint(0x315f4c));
+      return;
+    }
+    const icon = this.add.graphics();
+    if (itemId === "bicycle") {
+      icon.lineStyle(3, 0x315f4c, 1).strokeCircle(x + 10, y + 18, 9).strokeCircle(x + 42, y + 18, 9)
+        .lineBetween(x + 10, y + 18, x + 25, y + 4).lineBetween(x + 25, y + 4, x + 42, y + 18)
+        .lineBetween(x + 10, y + 18, x + 32, y + 18).lineBetween(x + 32, y + 18, x + 25, y + 4);
+    } else {
+      icon.fillStyle(0xe0ad4d, 1).fillCircle(x + 26, y + 16, 13).lineStyle(2, 0x8d5f2b, 1).strokeCircle(x + 26, y + 16, 13);
+    }
+    this.pageContent.add(icon);
+  }
+
+  private bicycleAction(): { label: string; reason: string; disabled: boolean; equipped: boolean } {
+    const equipped = this.state.equipment.transport === "bicycle";
+    if (this.state.currentMap === "creek") {
+      return { label: equipped ? "PUT BIKE AWAY" : "RIDE BIKE", reason: "Creek Woods forces walking.", disabled: true, equipped };
+    }
+    if (this.state.currentMap === "fruitville_pike") {
+      return { label: equipped ? "PUT BIKE AWAY" : "RIDE BIKE", reason: "Fruitville Pike requires bicycle.", disabled: true, equipped };
+    }
+    return {
+      label: equipped ? "PUT BIKE AWAY" : "RIDE BIKE",
+      reason: equipped ? "Saved preference: walking." : "Saved preference: bicycle.",
+      disabled: false,
+      equipped,
+    };
   }
 
   private renderQuests(): void {
@@ -340,6 +424,42 @@ export class MenuScene extends Phaser.Scene {
     this.note(388, 454, "Live registry view — new quest definitions appear here automatically.", { fontSize: "13px", color: "#76624f", fontStyle: "italic", wordWrap: { width: 430 } });
   }
 
+  private renderGames(): void {
+    const race = gameStore.getMickeyDragRaceRecord();
+    this.heading("Mini games", "Quick challenges unlocked during your summer adventure.");
+    this.card(68, 226, 796, 184, race.unlocked ? 0xfff8df : 0xe9d29e);
+    this.note(94, 247, "MICKEY'S DRAG RACE", { fontSize: "20px", fontStyle: "bold" });
+    if (!race.unlocked) {
+      this.note(94, 286, "🔒 Unlock the Bent Creek gate to meet Mickey and open this mini game.", {
+        fontSize: "16px", color: "#a34237", wordWrap: { width: 680 },
+      });
+      return;
+    }
+    this.note(94, 282, "Hold GAS to build RPM. Hit SHIFT in the gold zone for every gear change.", {
+      fontSize: "15px", color: "#675544", wordWrap: { width: 500 },
+    });
+    this.note(94, 324, race.bestTimeMs ? `BEST TIME  •  ${this.formatRaceTime(race.bestTimeMs)}` : "BEST TIME  •  Not set yet", {
+      fontSize: "16px", color: "#315f4c", fontStyle: "bold",
+    });
+    this.note(94, 354, race.beaten ? "✓ Mickey has been beaten. Race again to improve your time." : "Mickey is still waiting at Bent Creek.", {
+      fontSize: "14px", color: race.beaten ? "#315f4c" : "#9a573a",
+    });
+    this.button(578, 342, "PLAY DRAG RACE", () => this.launchMickeyDragRace(), 258);
+  }
+
+  private formatRaceTime(timeMs: number): string {
+    const seconds = timeMs / 1000;
+    return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+  }
+
+  private launchMickeyDragRace(): void {
+    const returnMap = gameStore.getState().currentMap;
+    this.closeMenu();
+    this.scene.stop(returnMap);
+    // Keep this scene alive: it owns the Backpack's global input listeners.
+    this.scene.launch("mickey_drag_race", { returnMap });
+  }
+
   private questStatusLabel(status: ReturnType<typeof selectQuestState>): string {
     return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
   }
@@ -385,30 +505,37 @@ export class MenuScene extends Phaser.Scene {
   private renderMap(): void {
     const map = this.add.image(480, 301, "regional-foldout-map").setDisplaySize(620, 349);
     this.pageContent.add(map);
+    const imageBounds = map.getBounds();
+    const displayBounds: RegionalMapDisplayBounds = {
+      x: imageBounds.x,
+      y: imageBounds.y,
+      width: imageBounds.width,
+      height: imageBounds.height,
+    };
     const definition = getMapDefinition(this.state.currentMap);
-    // The position comes from the active exploration scene, not a landmark.
-    const playerLocation = this.playerLocation?.map === this.state.currentMap
-      ? this.playerLocation
-      : { map: this.state.currentMap, x: 0.5, y: 0.5 };
-    const playerPosition = projectRegionalMapPoint(definition, playerLocation);
+    // The live event is preferred; a throttled checkpoint keeps the marker
+    // sensible when the world is paused or the browser has just reloaded.
+    const playerLocation = this.playerLocation ?? this.state.lastKnownLocation;
+    const playerDefinition = getMapDefinition(playerLocation.map);
+    const playerPosition = projectRegionalMapPoint(playerDefinition, playerLocation, displayBounds);
     const objective = selectActiveObjectiveMarker({
       currentMap: this.state.currentMap,
       questId: this.state.activeQuestId,
       stage: this.state.questStage,
       discoveredIds: [],
     });
-    const objectivePosition = objective ? projectRegionalMapPoint(definition, objective) : undefined;
+    const objectivePosition = objective ? projectRegionalMapPoint(definition, objective, displayBounds) : undefined;
     const unexplored = Object.values(MAP_DEFINITIONS).filter((candidate) =>
       !this.state.discoveredMaps.includes(candidate.id) && !this.state.unlockedMaps.includes(candidate.id),
     );
     unexplored.forEach((candidate) => {
-      const bounds = candidate.regionalMapBounds;
+      const bounds = projectRegionalMapBounds(candidate, displayBounds);
       const cover = this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0x475057, 0.46)
         .setOrigin(0).setStrokeStyle(2, 0x283033, 0.42);
       this.pageContent.add(cover);
     });
     unexplored.forEach((candidate) => {
-      const labelPosition = this.regionalMapLabelPosition(candidate);
+      const labelPosition = this.regionalMapLabelPosition(candidate, displayBounds);
       scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNEXPLORED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", color: "#e1e5dc", fontStyle: "bold",
         backgroundColor: "#283033aa", padding: { x: 5, y: 3 },
@@ -416,7 +543,7 @@ export class MenuScene extends Phaser.Scene {
     });
     for (const candidate of Object.values(MAP_DEFINITIONS)) {
       if (this.state.discoveredMaps.includes(candidate.id) || !this.state.unlockedMaps.includes(candidate.id)) continue;
-      const labelPosition = this.regionalMapLabelPosition(candidate);
+      const labelPosition = this.regionalMapLabelPosition(candidate, displayBounds);
       scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNLOCKED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "10px", color: "#fff4cd", fontStyle: "bold",
         backgroundColor: "#315f4ccc", padding: { x: 4, y: 2 },
@@ -432,9 +559,9 @@ export class MenuScene extends Phaser.Scene {
     const topology = this.add.graphics().setDepth(-1);
     topology.lineStyle(3, 0x8f6b4b, 0.65);
     for (const [fromId, toId] of topologyPaths) {
-      const from = MAP_DEFINITIONS[fromId].regionalMapBounds;
-      const to = MAP_DEFINITIONS[toId].regionalMapBounds;
-      topology.lineBetween(from.x + from.width / 2, from.y + from.height / 2, to.x + to.width / 2, to.y + to.height / 2);
+      const from = projectRegionalMapPoint(MAP_DEFINITIONS[fromId], { x: 0.5, y: 0.5 }, displayBounds);
+      const to = projectRegionalMapPoint(MAP_DEFINITIONS[toId], { x: 0.5, y: 0.5 }, displayBounds);
+      topology.lineBetween(from.x, from.y, to.x, to.y);
     }
     this.pageContent.add(topology);
     this.pageContent.add(this.add.circle(playerPosition.x, playerPosition.y, 12, 0xc94b3f, 1).setStrokeStyle(3, 0xfff4cd, 1));
@@ -452,8 +579,8 @@ export class MenuScene extends Phaser.Scene {
     }, createPresentationPolicy(this.state.settings).textScale);
   }
 
-  private regionalMapLabelPosition(candidate: MapDefinition): { x: number; y: number } {
-    const bounds = candidate.regionalMapBounds;
+  private regionalMapLabelPosition(candidate: MapDefinition, displayBounds: RegionalMapDisplayBounds): { x: number; y: number } {
+    const bounds = projectRegionalMapBounds(candidate, displayBounds);
     return {
       x: bounds.x + bounds.width / 2,
       y: bounds.y + bounds.height / 2,
@@ -531,8 +658,8 @@ export class MenuScene extends Phaser.Scene {
     this.heading("Settings & controls", "Everything here saves automatically.");
     this.card(68, 226, 796, 78);
     this.note(88, 242, "KEYBOARD", { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
-    this.note(88, 263, "Move  WASD / arrows     Talk  E / Space     Backpack  Esc     Bike  F", { fontSize: "15px", fontStyle: "bold" });
-    this.note(88, 282, "Bike: gamepad X / Square or touch BIKE", { fontSize: "12px", color: "#675544", fontStyle: "bold" });
+    this.note(88, 263, "Move  WASD / arrows     Talk  E / Space     Backpack  Esc / B", { fontSize: "15px", fontStyle: "bold" });
+    this.note(88, 282, "Items: open the Items page to ride or put away the bicycle.", { fontSize: "12px", color: "#675544", fontStyle: "bold" });
     this.button(68, 315, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }));
     this.button(360, 315, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
       this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });

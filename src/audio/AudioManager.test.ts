@@ -11,7 +11,7 @@ function state(changes: Partial<GameState> = {}): GameState {
 describe("deriveAudioCues", () => {
   it("distinguishes the controller and token pickups", () => {
     const previous = state();
-    const next = state({ inventory: ["xbox_controller"], secrets: ["creek_token"] });
+    const next = state({ inventory: [{ itemId: "xbox_controller", quantity: 1 }], secrets: ["creek_token"] });
     expect(deriveAudioCues(previous, next)).toEqual(["controllerPickup", "tokenPickup"]);
   });
 

@@ -73,6 +73,7 @@ describe("illustrated map layers", () => {
       "qa_home_route",
       "qa_stonehenge_route",
       "qa_fruitville_route",
+      "pickup_milton_field_token_01",
     ]);
     expect(MAP_DEFINITIONS.creek.authoredObjectIds).toEqual([
       "spawn_home",

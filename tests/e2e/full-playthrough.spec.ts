@@ -5,7 +5,7 @@ type BrowserSave = {
   activeQuestId: string;
   questStage: string;
   currentMap: string;
-  inventory: string[];
+  inventory: Array<{ itemId: string; quantity: number }>;
   questHistory: string[];
   completedQuestIds: string[];
   questProgress: {
@@ -119,7 +119,7 @@ async function startQuestFromJournal(page: Page, stepsFromFirstQuest: number): P
 async function toggleSoundFromBackpack(page: Page, key: "Escape" | "KeyB"): Promise<void> {
   await page.keyboard.press(key);
   await page.waitForTimeout(160);
-  await page.mouse.click(675, 115); // Settings tab.
+  await page.mouse.click(760, 115); // Settings tab.
   await page.waitForTimeout(100);
   await page.mouse.click(190, 335); // Sound toggle.
   await page.waitForTimeout(100);
@@ -135,7 +135,7 @@ async function captureCheckpoint(page: Page, filename: string): Promise<void> {
 async function captureBackpackMap(page: Page): Promise<void> {
   if (process.env.CAPTURE_DOCS !== "1") return;
   await page.keyboard.press("Escape");
-  await page.mouse.click(450, 115);
+  await page.mouse.click(540, 115);
   await page.screenshot({ path: "docs/checkpoint-5-backpack-map.png" });
   await page.keyboard.press("Escape");
 }
@@ -145,7 +145,7 @@ test("completes the rendered quest, reloads in the creek, and records history", 
   await page.evaluate(() => localStorage.removeItem("milton-estates-save"));
   await page.reload();
   await startNewGame(page);
-  await waitForSave(page, { version: 7, questStage: "talk_to_jeremy", currentMap: "neighborhood" });
+  await waitForSave(page, { version: 8, questStage: "talk_to_jeremy", currentMap: "neighborhood" });
   await captureCheckpoint(page, "checkpoint-4-neighborhood.png");
   await captureBackpackMap(page);
 
@@ -174,7 +174,7 @@ test("completes the rendered quest, reloads in the creek, and records history", 
   await page.keyboard.press("KeyE");
   await waitForSave(page, {
     questStage: "return_to_jeremy",
-    inventory: ["xbox_controller"],
+    inventory: [{ itemId: "xbox_controller", quantity: 1 }],
   });
 
   await page.reload();
@@ -216,7 +216,7 @@ test("preserves dialogue through pause and requires restart confirmation", async
 
   await page.keyboard.press("Escape");
   await page.waitForTimeout(160);
-  await page.mouse.click(550, 115); // Save tab.
+  await page.mouse.click(650, 115); // Save tab.
   await page.waitForTimeout(100);
   await page.mouse.click(200, 355); // Arm restart once.
   await page.waitForTimeout(100);
@@ -225,7 +225,7 @@ test("preserves dialogue through pause and requires restart confirmation", async
 
   await page.keyboard.press("Escape");
   await page.waitForTimeout(160);
-  await page.mouse.click(550, 115);
+  await page.mouse.click(650, 115);
   await page.waitForTimeout(100);
   await page.mouse.click(200, 355);
   await page.waitForTimeout(100);
@@ -236,7 +236,7 @@ test("preserves dialogue through pause and requires restart confirmation", async
 test("replay mutations never overwrite canonical completion", async ({ page }) => {
   await page.goto("/");
   // Let Boot finish its initial autosave before replacing it with the fixture.
-  await waitForSave(page, { version: 7 });
+  await waitForSave(page, { version: 8 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -270,14 +270,14 @@ test("replay mutations never overwrite canonical completion", async ({ page }) =
   await page.mouse.click(260, 392); // Chapter Select.
   await page.mouse.click(630, 398); // Open Quest Journal.
   await page.mouse.click(630, 418); // Replay completed Missing Controller.
-  await waitForSave(page, { questStage: "complete", inventory: ["xbox_controller"] });
+  await waitForSave(page, { questStage: "complete", inventory: [{ itemId: "xbox_controller", quantity: 1 }] });
 
   await teleportAndInteract(page);
   await advanceDialogue(page, 3);
   expect(await readSerializedSave(page)).toBe(canonical);
 
   await page.reload();
-  await waitForSave(page, { questStage: "complete", inventory: ["xbox_controller"] });
+  await waitForSave(page, { questStage: "complete", inventory: [{ itemId: "xbox_controller", quantity: 1 }] });
 });
 
 test("portrait phones show the landscape orientation message", async ({ page }) => {
@@ -291,7 +291,7 @@ test("portrait phones show the landscape orientation message", async ({ page }) 
 
 test("a creek reload keeps Escape, B, and the return interaction responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 7 });
+  await waitForSave(page, { version: 8 });
 
   const installCreekSave = async () => {
     await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
@@ -332,6 +332,7 @@ test("a creek reload keeps Escape, B, and the return interaction responsive", as
       lastSavedAt: "2026-07-16T12:00:00.000Z",
     })));
     await page.reload();
+    await waitForSave(page, { version: 8, currentMap: "creek", questStage: "feed_mushroom_to_jeremy" });
     await continueGame(page);
     await page.waitForTimeout(850);
     await waitForSave(page, { currentMap: "creek", questStage: "feed_mushroom_to_jeremy" });
@@ -358,7 +359,7 @@ test("a creek reload keeps Escape, B, and the return interaction responsive", as
 
 test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 7 });
+  await waitForSave(page, { version: 8 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -420,7 +421,7 @@ test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
 test("starts and completes the rendered mushroom quest without losing menu input", async ({ page }) => {
   test.slow();
   await page.goto("/");
-  await waitForSave(page, { version: 7 });
+  await waitForSave(page, { version: 8 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -449,7 +450,7 @@ test("starts and completes the rendered mushroom quest without losing menu input
       "missing_controller.controller_recovered",
       "missing_controller.controller_returned",
     ],
-    inventory: ["xbox_controller"],
+      inventory: ["xbox_controller"],
     secrets: [],
     currentMap: "neighborhood",
     discoveredMaps: ["neighborhood", "creek"],
@@ -466,7 +467,7 @@ test("starts and completes the rendered mushroom quest without losing menu input
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(120);
-  await page.mouse.click(675, 115);
+  await page.mouse.click(760, 115);
   await page.waitForTimeout(100);
   await page.mouse.click(190, 335);
   await expect.poll(() => readSave(page)).toMatchObject({ settings: { muted: true } });
@@ -508,7 +509,7 @@ test("starts and completes the rendered mushroom quest without losing menu input
 
   await page.keyboard.press("KeyB");
   await page.waitForTimeout(120);
-  await page.mouse.click(675, 115);
+  await page.mouse.click(760, 115);
   await page.waitForTimeout(100);
   await page.mouse.click(190, 335);
   await expect.poll(() => readSave(page)).toMatchObject({ settings: { muted: false } });
@@ -516,7 +517,7 @@ test("starts and completes the rendered mushroom quest without losing menu input
 
 test("starts and completes the rendered Three-Player Sports quest", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 7 });
+  await waitForSave(page, { version: 8 });
   await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
     version: 4,
     activeChapterId: "chapter_1",
@@ -596,7 +597,7 @@ test("starts and completes the rendered Three-Player Sports quest", async ({ pag
   await page.waitForTimeout(200);
   await page.keyboard.press("KeyB");
   await page.waitForTimeout(120);
-  await page.mouse.click(675, 115); // Settings tab.
+  await page.mouse.click(760, 115); // Settings tab.
   await page.waitForTimeout(100);
   await page.mouse.click(190, 335);
   await expect.poll(() => readSave(page)).toMatchObject({ settings: { muted: true } });

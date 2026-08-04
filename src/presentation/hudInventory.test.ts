@@ -11,7 +11,7 @@ function state(options: {
   hasController?: boolean;
 } = {}) {
   return {
-    inventory: options.hasController === false ? [] : ["xbox_controller"],
+    inventory: options.hasController === false ? [] : [{ itemId: "xbox_controller" as const, quantity: 1 }],
     questProgress: {
       missingControllerStage: options.controllerStage ?? "return_to_jeremy",
       mushrooms: {

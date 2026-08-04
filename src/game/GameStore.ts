@@ -1,4 +1,5 @@
 import { createMushroomSpawns, repairMushroomSpawnLayout } from "../content/mushrooms";
+import { getItemDefinition, isItemId } from "../content/items";
 import {
   advanceMushroomStage,
   advanceExploreBentCreekStage,
@@ -23,6 +24,9 @@ import type {
   ChapterId,
   GameState,
   MapId,
+  ItemId,
+  InventoryStack,
+  EquipmentState,
   MissingControllerStage,
   ExploreBentCreekStage,
   MushroomQuestStage,
@@ -33,6 +37,7 @@ import type {
   QuestProgress,
   QuestStage,
   SaveData,
+  PlayerMapLocation,
   SportsQuestStage,
   RyanRideStage,
   RideDestination,
@@ -40,6 +45,9 @@ import type {
 
 const STORAGE_KEY = "milton-estates-save";
 const LEGACY_CONTROLLER_ITEMS = new Set(["xbox-controller", "xbox controller"]);
+const MICKEY_DRAG_RACE_INTRO = "mickey_drag_race.intro_seen";
+const MICKEY_DRAG_RACE_BEATEN = "mickey_drag_race.beaten";
+const MICKEY_DRAG_RACE_BEST_PREFIX = "mickey_drag_race.best_ms:";
 export const CONTROLLER_ITEM = "xbox_controller";
 export { MUSHROOM_COUNT } from "./quests/specs";
 
@@ -64,6 +72,13 @@ const DEFAULT_SETTINGS: PlayerSettings = {
   reducedMotion: false,
 };
 
+const DEFAULT_EQUIPMENT: EquipmentState = { transport: null };
+const DEFAULT_LAST_KNOWN_LOCATION: PlayerMapLocation = {
+  map: "neighborhood",
+  x: 816 / 1440,
+  y: 976 / 1056,
+};
+
 function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
   return {
     missingControllerStage: "talk_to_jeremy",
@@ -80,7 +95,7 @@ function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
 
 function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
   return {
-    version: 7,
+    version: 8,
     activeChapterId: "chapter_1",
     activeQuestId: "missing_controller",
     completedChapterIds: [],
@@ -88,6 +103,9 @@ function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
     questProgress: createQuestProgress(seed),
     questHistory: [],
     inventory: [],
+    equipment: { ...DEFAULT_EQUIPMENT },
+    collectedPickupIds: [],
+    lastKnownLocation: { ...DEFAULT_LAST_KNOWN_LOCATION },
     secrets: [],
     currentMap: "neighborhood",
     discoveredMaps: ["neighborhood"],
@@ -113,23 +131,26 @@ type SaveDataV2 = {
   lastSavedAt: string | null;
 };
 
-type SaveDataV3 = Omit<SaveData, "version" | "questProgress"> & {
+type SaveDataV3 = Omit<SaveData, "version" | "questProgress" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
   version: 3;
   questStage: LegacyMissingControllerStage;
+  inventory: string[];
 };
 
 type LegacyQuestProgress = Omit<QuestProgress, "missingControllerStage" | "ryanRide" | "exploreBentCreek"> & {
   missingControllerStage: LegacyMissingControllerStage;
 };
 
-type SaveDataV4 = Omit<SaveData, "version" | "questProgress"> & {
+type SaveDataV4 = Omit<SaveData, "version" | "questProgress" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
   version: 4;
   questStage: QuestStage | "search_yards";
   questProgress: LegacyQuestProgress;
+  inventory: string[];
 };
-type SaveDataV5 = Omit<SaveData, "version" | "questProgress" | "unlockedMaps"> & {
+type SaveDataV5 = Omit<SaveData, "version" | "questProgress" | "inventory" | "unlockedMaps" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
   version: 5;
   questProgress: Omit<QuestProgress, "ryanRide" | "exploreBentCreek">;
+  inventory: string[];
 };
 
 type SaveDataV6MapId = "neighborhood" | "creek" | "reidenbaugh_road" | "reidenbaugh";
@@ -140,12 +161,26 @@ type SaveDataV6QuestProgress = Omit<QuestProgress, "mushrooms" | "ryanRide" | "e
   };
   ryanRide: Omit<QuestProgress["ryanRide"], "stage"> & { stage: SaveDataV6RyanRideStage };
 };
-type SaveDataV6 = Omit<SaveData, "version" | "questProgress" | "currentMap" | "discoveredMaps" | "unlockedMaps"> & {
+type SaveDataV6 = Omit<SaveData, "version" | "questProgress" | "inventory" | "currentMap" | "discoveredMaps" | "unlockedMaps" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
   version: 6;
   questProgress: SaveDataV6QuestProgress;
   currentMap: SaveDataV6MapId;
   discoveredMaps: SaveDataV6MapId[];
   unlockedMaps: SaveDataV6MapId[];
+  inventory: string[];
+};
+
+type SaveDataV7 = Omit<SaveData, "version" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
+  version: 7;
+  inventory: string[];
+};
+
+type NormalizableSave = Omit<SaveData, "version" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
+  version: 7 | 8;
+  inventory: readonly (InventoryStack | string)[];
+  equipment?: EquipmentState;
+  collectedPickupIds?: string[];
+  lastKnownLocation?: PlayerMapLocation;
 };
 
 type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & {
@@ -173,7 +208,10 @@ function copySave(save: SaveData): SaveData {
     completedQuestIds: [...save.completedQuestIds],
     questProgress: copyQuestProgress(save.questProgress),
     questHistory: [...save.questHistory],
-    inventory: [...save.inventory],
+    inventory: save.inventory.map((stack) => ({ ...stack })),
+    equipment: { ...save.equipment },
+    collectedPickupIds: [...save.collectedPickupIds],
+    lastKnownLocation: { ...save.lastKnownLocation },
     secrets: [...save.secrets],
     discoveredMaps: [...save.discoveredMaps],
     unlockedMaps: [...save.unlockedMaps],
@@ -192,8 +230,42 @@ function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
 
-function normalizeInventory(inventory: string[]): string[] {
-  return unique(inventory.map((item) => LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item));
+function normalizeInventory(inventory: readonly (InventoryStack | string)[]): InventoryStack[] {
+  const quantities = new Map<ItemId, number>();
+  for (const entry of inventory) {
+    const itemId = typeof entry === "string"
+      ? LEGACY_CONTROLLER_ITEMS.has(entry) ? CONTROLLER_ITEM : isItemId(entry) ? entry : undefined
+      : entry.itemId;
+    if (!itemId) continue;
+    const quantity = typeof entry === "string" ? 1 : entry.quantity;
+    if (!Number.isInteger(quantity) || quantity <= 0) continue;
+    const limit = getItemDefinition(itemId).stackLimit;
+    quantities.set(itemId, Math.min(limit, (quantities.get(itemId) ?? 0) + quantity));
+  }
+  return [...quantities].map(([itemId, quantity]) => ({ itemId, quantity }));
+}
+
+function addToInventory(inventory: readonly InventoryStack[], itemId: ItemId, quantity: number): InventoryStack[] | undefined {
+  if (!isItemId(itemId) || !Number.isInteger(quantity) || quantity <= 0) return undefined;
+  const next = inventory.map((stack) => ({ ...stack }));
+  const definition = getItemDefinition(itemId);
+  let remaining = quantity;
+  const existing = next.find((stack) => stack.itemId === itemId);
+  if (existing) {
+    const room = definition.stackLimit - existing.quantity;
+    const added = Math.min(room, remaining);
+    existing.quantity += added;
+    remaining -= added;
+  }
+  if (remaining > 0 && next.length < Number.POSITIVE_INFINITY) {
+    // Item definitions currently have a single stack per item. Keeping this
+    // branch explicit makes the stack limit the only capacity rule to revisit
+    // when a future item needs multiple stacks.
+    if (definition.stackLimit < remaining) return undefined;
+    next.push({ itemId, quantity: remaining });
+    remaining = 0;
+  }
+  return remaining === 0 ? next : undefined;
 }
 
 function historyForQuestStage(questId: QuestId, stage: QuestStage): QuestMilestone[] {
@@ -202,6 +274,32 @@ function historyForQuestStage(questId: QuestId, stage: QuestStage): QuestMilesto
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isInventoryStack(value: unknown): value is InventoryStack {
+  if (typeof value !== "object" || value === null) return false;
+  const stack = value as Partial<InventoryStack>;
+  return isItemId(stack.itemId) && typeof stack.quantity === "number"
+    && Number.isInteger(stack.quantity) && stack.quantity > 0
+    && stack.quantity <= getItemDefinition(stack.itemId).stackLimit;
+}
+
+function isInventoryStackArray(value: unknown): value is InventoryStack[] {
+  return Array.isArray(value) && value.every(isInventoryStack);
+}
+
+function isEquipmentState(value: unknown): value is EquipmentState {
+  if (typeof value !== "object" || value === null) return false;
+  return (value as Partial<EquipmentState>).transport === null
+    || (value as Partial<EquipmentState>).transport === "bicycle";
+}
+
+function isPlayerMapLocation(value: unknown): value is PlayerMapLocation {
+  if (typeof value !== "object" || value === null) return false;
+  const location = value as Partial<PlayerMapLocation>;
+  return isMapId(location.map)
+    && typeof location.x === "number" && Number.isFinite(location.x) && location.x >= 0 && location.x <= 1
+    && typeof location.y === "number" && Number.isFinite(location.y) && location.y >= 0 && location.y <= 1;
 }
 
 function isEnumArray<T extends string>(value: unknown, allowed: readonly T[]): value is T[] {
@@ -430,15 +528,31 @@ function isSaveDataV6(value: unknown): value is SaveDataV6 {
     && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
 }
 
-function isSaveData(value: unknown): value is SaveData {
+function isSaveDataV7(value: unknown): value is SaveDataV7 {
   if (typeof value !== "object" || value === null) return false;
-  const save = value as Partial<SaveData>;
+  const save = value as Partial<SaveDataV7>;
   return save.version === 7 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
     && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
     && isEnumArray(save.completedQuestIds, ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
     && isQuestProgress(save.questProgress)
     && isEnumArray(save.questHistory, QUEST_MILESTONES)
     && isStringArray(save.inventory) && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
+    && isEnumArray(save.unlockedMaps, MAP_IDS)
+    && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+function isSaveData(value: unknown): value is SaveData {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveData>;
+  return save.version === 8 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
+    && isQuestProgress(save.questProgress)
+    && isEnumArray(save.questHistory, QUEST_MILESTONES)
+    && isInventoryStackArray(save.inventory) && isEquipmentState(save.equipment)
+    && isStringArray(save.collectedPickupIds) && isPlayerMapLocation(save.lastKnownLocation)
+    && isStringArray(save.secrets)
     && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
     && isEnumArray(save.unlockedMaps, MAP_IDS)
     && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
@@ -461,7 +575,7 @@ function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
   };
 }
 
-function normalizeSave(save: SaveData): SaveData | undefined {
+function normalizeSave(save: NormalizableSave): SaveData | undefined {
   const questProgress = normalizeQuestProgress(save.questProgress);
   if (!IMPLEMENTED_QUEST_IDS.includes(save.activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) return undefined;
   // Saves created while the Sports-to-Ryan handoff was being introduced can
@@ -491,8 +605,15 @@ function normalizeSave(save: SaveData): SaveData | undefined {
     ...(regionalAccessGranted ? RYAN_UNLOCKED_MAPS : []),
   ]);
   if (!unlockedMaps.includes(save.currentMap) || discoveredMaps.some((map) => !unlockedMaps.includes(map))) return undefined;
+  const inventory = normalizeInventory(save.inventory);
+  const catchRyanComplete = save.completedQuestIds.includes("catch_ryan")
+    || questProgress.ryanRide.stage === "complete";
+  if (catchRyanComplete && !inventory.some((stack) => stack.itemId === "bicycle")) {
+    inventory.push({ itemId: "bicycle", quantity: 1 });
+  }
   const normalized: SaveData = {
     ...save,
+    version: 8,
     activeQuestId: shouldActivateBentCreek
       ? "explore_bent_creek"
       : shouldActivateRyan ? "catch_ryan" : save.activeQuestId,
@@ -500,7 +621,12 @@ function normalizeSave(save: SaveData): SaveData | undefined {
     completedQuestIds: unique([...save.completedQuestIds, ...completedFromProgress]),
     questProgress,
     questHistory: unique(save.questHistory),
-    inventory: normalizeInventory(save.inventory),
+    inventory,
+    equipment: { ...(save.equipment ?? DEFAULT_EQUIPMENT) },
+    collectedPickupIds: unique(save.collectedPickupIds ?? []),
+    lastKnownLocation: {
+      ...(save.lastKnownLocation ?? { ...DEFAULT_LAST_KNOWN_LOCATION, map: save.currentMap }),
+    },
     secrets: unique(save.secrets),
     discoveredMaps,
     unlockedMaps,
@@ -607,6 +733,10 @@ function migrateV6Save(save: SaveDataV6): SaveData {
     discoveredMaps: save.discoveredMaps.map(migrateV6MapId),
     unlockedMaps: save.unlockedMaps.map(migrateV6MapId),
   }) ?? copySave(DEFAULT_SAVE);
+}
+
+function migrateV7Save(save: SaveDataV7): SaveData {
+  return normalizeSave({ ...save, version: 7 }) ?? copySave(DEFAULT_SAVE);
 }
 
 function migrateV2Save(save: SaveDataV2): SaveData {
@@ -763,10 +893,54 @@ export class GameStore {
   }
 
   public addInventoryItem(item: string): void {
-    const current = this.replayState ?? this.state;
     const normalized = LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item;
-    if (current.inventory.includes(normalized)) return;
-    this.update({ ...current, inventory: [...current.inventory, normalized] });
+    if (!isItemId(normalized)) return;
+    const current = this.replayState ?? this.state;
+    if (this.hasItem(normalized)) return;
+    const inventory = addToInventory(current.inventory, normalized, 1);
+    if (!inventory) return;
+    this.update({ ...current, inventory });
+  }
+
+  public collectPickup(pickupId: string, itemId: ItemId, quantity = 1): boolean {
+    const current = this.replayState ?? this.state;
+    if (!pickupId || !isItemId(itemId) || !Number.isInteger(quantity) || quantity <= 0) return false;
+    if (current.collectedPickupIds.includes(pickupId)) return false;
+    const inventory = addToInventory(current.inventory, itemId, quantity);
+    if (!inventory) return false;
+    this.update({
+      ...current,
+      inventory,
+      collectedPickupIds: [...current.collectedPickupIds, pickupId],
+    });
+    return true;
+  }
+
+  public countItem(itemId: ItemId): number {
+    return (this.replayState ?? this.state).inventory
+      .filter((stack) => stack.itemId === itemId)
+      .reduce((total, stack) => total + stack.quantity, 0);
+  }
+
+  public hasItem(itemId: ItemId): boolean {
+    return this.countItem(itemId) > 0;
+  }
+
+  public setEquippedTransport(itemId: "bicycle" | null): boolean {
+    const current = this.replayState ?? this.state;
+    if (itemId !== null && (!isItemId(itemId) || !this.hasItem(itemId))) return false;
+    if (current.equipment.transport === itemId) return true;
+    this.update({ ...current, equipment: { transport: itemId } });
+    return true;
+  }
+
+  public setLastKnownLocation(location: PlayerMapLocation): void {
+    if (!isPlayerMapLocation(location)) throw new RangeError("Invalid player map location");
+    const current = this.replayState ?? this.state;
+    if (current.lastKnownLocation.map === location.map
+      && current.lastKnownLocation.x === location.x
+      && current.lastKnownLocation.y === location.y) return;
+    this.update({ ...current, lastKnownLocation: { ...location } });
   }
 
   public addSecret(secret: string): void {
@@ -803,7 +977,7 @@ export class GameStore {
   }
 
   public isMapUnlocked(mapId: SaveData["currentMap"]): boolean { return (this.replayState ?? this.state).unlockedMaps.includes(mapId); }
-  public isBicycleUnlocked(): boolean { return (this.replayState ?? this.state).completedQuestIds.includes("catch_ryan"); }
+  public isBicycleUnlocked(): boolean { return this.hasItem("bicycle"); }
   public isRyanRideStage(stage: RyanRideStage): boolean { return this.isQuestAt("catch_ryan", stage); }
 
   public acceptRyanRide(): void { this.advanceRyanRide({ type: "accepted_ride" }); }
@@ -857,6 +1031,9 @@ export class GameStore {
     const unlockedMaps = next === "complete"
       ? unique<MapId>([...current.unlockedMaps, ...RYAN_UNLOCKED_MAPS])
       : current.unlockedMaps;
+    const inventory = !this.replayState && next === "complete"
+      ? addToInventory(current.inventory, "bicycle", 1) ?? current.inventory
+      : current.inventory;
     this.update({
       ...current,
       activeQuestId: !this.replayState && next === "complete" ? "explore_bent_creek" : current.activeQuestId,
@@ -864,6 +1041,7 @@ export class GameStore {
       discoveredMaps: currentMap ? unique<SaveData["currentMap"]>([...current.discoveredMaps, currentMap]) : current.discoveredMaps,
       unlockedMaps,
       completedQuestIds,
+      inventory,
       questProgress: { ...copyQuestProgress(current.questProgress), ryanRide: { ...current.questProgress.ryanRide, stage: next } },
       questHistory: unique([...current.questHistory, ...historyForQuestStage("catch_ryan", next)]),
     });
@@ -897,6 +1075,9 @@ export class GameStore {
       questProgress,
       questHistory: [],
       inventory: [],
+      equipment: { ...DEFAULT_EQUIPMENT },
+      collectedPickupIds: [],
+      lastKnownLocation: { ...DEFAULT_LAST_KNOWN_LOCATION },
       secrets: [],
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
@@ -917,8 +1098,48 @@ export class GameStore {
   }
 
   public saveNow(): void { this.update(this.replayState ?? this.state); }
-  public hasInventoryItem(item: string): boolean { return (this.replayState ?? this.state).inventory.includes(item); }
+  public hasInventoryItem(item: string): boolean {
+    const normalized = LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item;
+    return isItemId(normalized) && this.hasItem(normalized);
+  }
   public hasSecret(secret: string): boolean { return (this.replayState ?? this.state).secrets.includes(secret); }
+
+  /**
+   * Mini-game records are stored in the existing save's extensible secrets
+   * list. This deliberately keeps every v8 save readable without a schema
+   * migration while still resetting records with a new game or mission reset.
+   */
+  public getMickeyDragRaceRecord(): { unlocked: boolean; introSeen: boolean; beaten: boolean; bestTimeMs?: number } {
+    const current = this.replayState ?? this.state;
+    const best = current.secrets
+      .filter((secret) => secret.startsWith(MICKEY_DRAG_RACE_BEST_PREFIX))
+      .map((secret) => Number(secret.slice(MICKEY_DRAG_RACE_BEST_PREFIX.length)))
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .reduce<number | undefined>((fastest, value) => fastest === undefined ? value : Math.min(fastest, value), undefined);
+    return {
+      unlocked: current.questProgress.exploreBentCreek.stage === "complete",
+      introSeen: current.secrets.includes(MICKEY_DRAG_RACE_INTRO),
+      beaten: current.secrets.includes(MICKEY_DRAG_RACE_BEATEN),
+      bestTimeMs: best,
+    };
+  }
+
+  public markMickeyDragRaceIntroSeen(): void {
+    const current = this.replayState ?? this.state;
+    if (current.secrets.includes(MICKEY_DRAG_RACE_INTRO)) return;
+    this.update({ ...current, secrets: [...current.secrets, MICKEY_DRAG_RACE_INTRO] });
+  }
+
+  public recordMickeyDragRace(timeMs: number, won: boolean): void {
+    if (!Number.isInteger(timeMs) || timeMs <= 0) return;
+    const current = this.replayState ?? this.state;
+    const existingBest = this.getMickeyDragRaceRecord().bestTimeMs;
+    const bestTimeMs = existingBest === undefined ? timeMs : Math.min(existingBest, timeMs);
+    const secrets = current.secrets.filter((secret) => !secret.startsWith(MICKEY_DRAG_RACE_BEST_PREFIX));
+    secrets.push(`${MICKEY_DRAG_RACE_BEST_PREFIX}${bestTimeMs}`);
+    if (won && !secrets.includes(MICKEY_DRAG_RACE_BEATEN)) secrets.push(MICKEY_DRAG_RACE_BEATEN);
+    this.update({ ...current, secrets: unique(secrets) });
+  }
 
   /** Starts a canonical fresh game while preserving the player's preferences. */
   public newGame(): void {
@@ -955,6 +1176,12 @@ export class GameStore {
           catch { /* The repaired in-memory save remains usable if storage is read-only. */ }
         }
         return normalized;
+      }
+      if (isSaveDataV7(parsed)) {
+        const migrated = migrateV7Save(parsed);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
+        catch { /* The in-memory migration remains usable if storage is read-only. */ }
+        return migrated;
       }
       if (isSaveDataV6(parsed)) {
         const migrated = migrateV6Save(parsed);

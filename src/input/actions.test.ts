@@ -15,8 +15,8 @@ describe("semantic input mapping", () => {
     expect(actionForKeyboardCode("Space")).toBe("interact");
     expect(actionForKeyboardCode("Escape")).toBe("back");
     expect(actionForKeyboardCode("KeyB")).toBe("menu");
-    expect(actionForKeyboardCode("KeyF")).toBe("toggleBicycle");
-    expect(GAMEPAD_BUTTON_ACTIONS[2]).toBe("toggleBicycle"); // Xbox X / PlayStation Square.
+    expect(actionForKeyboardCode("KeyF")).toBeUndefined();
+    expect(GAMEPAD_BUTTON_ACTIONS[2]).toBeUndefined(); // Bicycle is controlled from the Backpack.
   });
 
   it("removes stick drift and rescales deliberate input", () => {

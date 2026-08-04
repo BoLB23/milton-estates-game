@@ -1,9 +1,11 @@
-import type { DialogueRequest, GameState, MapId } from "./types";
+import type { DialogueRequest, GameState, PlayerMapLocation } from "./types";
 import type { SemanticActionEvent } from "../input/actions";
+
+export type { PlayerMapLocation } from "./types";
 
 export type { SemanticAction as InputAction, SemanticActionEvent as InputActionEvent } from "../input/actions";
 
-export type MenuPage = "resume" | "chapters" | "quests" | "map" | "save" | "settings" | "help";
+export type MenuPage = "resume" | "chapters" | "quests" | "games" | "items" | "map" | "save" | "settings" | "help";
 interface MenuRequest {
   page?: MenuPage;
 }
@@ -67,12 +69,6 @@ export const EVENT = {
 } as const;
 
 /** A live, normalized world coordinate used by the backpack map. */
-export interface PlayerMapLocation {
-  map: MapId;
-  x: number;
-  y: number;
-}
-
 /**
  * The complete contract for cross-scene application communication.
  *

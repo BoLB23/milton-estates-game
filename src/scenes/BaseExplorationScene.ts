@@ -1,12 +1,14 @@
 import Phaser from "phaser";
 import { EVENT, gameEvents, inputCapture, type ChoiceRequest, type InputActionEvent, type TextEntryRequest } from "../game/events";
 import { MushroomHuntController } from "../world/MushroomHuntController";
+import { PickupController } from "../world/PickupController";
 import { PlayerLocomotionController, REGIONAL_BICYCLE_TUNING, type PlayerTravelMode } from "../world/PlayerLocomotionController";
 import type { RegionInteraction } from "../world/contracts";
 import { COLLISION_GRID_TILE_SIZE, type MountedCollisionGrid, TiledRuntimeWorld, type TiledRuntimeObject, type WorldPoint } from "../world/tiledRuntime";
 import { inspectCollisionPoint, type CollisionInspectionResult } from "../world/collisionInspection";
 import { inputState } from "./InputRouterScene";
-import type { DialogueLine, Interactable, MapId } from "../game/types";
+import type { DialogueLine, Interactable, MapId, GameState } from "../game/types";
+import { gameStore } from "../game/GameStore";
 import { assetUrl } from "../content/assets";
 import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
 
@@ -35,10 +37,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private nearbyInteractable?: Interactable;
   private playerFacing: "up" | "down" | "left" | "right" = "down";
   private mushroomHunt?: MushroomHuntController;
+  private pickupController?: PickupController;
   private locomotion = new PlayerLocomotionController();
   private travelMode: PlayerTravelMode = "walking";
-  private bicycleAvailable = false;
   private bicycleVisual?: Phaser.GameObjects.Graphics;
+  private scriptedTransportOverride: PlayerTravelMode | null = null;
   private mapId!: MapId;
   private mountedCollisionGrid?: MountedCollisionGrid;
   private tiledRuntime?: TiledRuntimeWorld;
@@ -49,6 +52,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private readonly dynamicObstacles = new Map<string, Phaser.GameObjects.Zone>();
   private lastEmittedPlayerX = Number.NaN;
   private lastEmittedPlayerY = Number.NaN;
+  private lastCheckpointAt = Number.NEGATIVE_INFINITY;
+  private worldPaused = false;
 
   protected initializeWorld(mapId: MapId, spawn: { x: number; y: number }): void {
     // Phaser reuses Scene instances after stop/start. All references below
@@ -63,7 +68,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.playerFacing = "down";
     this.travelMode = "walking";
     this.locomotion = new PlayerLocomotionController(mapId === "creek" ? undefined : REGIONAL_BICYCLE_TUNING);
-    this.bicycleAvailable = false;
+    this.scriptedTransportOverride = null;
     this.bicycleVisual = undefined;
     this.mountedCollisionGrid?.destroy();
     this.mountedCollisionGrid = undefined;
@@ -79,6 +84,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.mapId = mapId;
     this.lastEmittedPlayerX = Number.NaN;
     this.lastEmittedPlayerY = Number.NaN;
+    this.lastCheckpointAt = Number.NEGATIVE_INFINITY;
+    this.worldPaused = false;
     this.mushroomHunt = new MushroomHuntController({
       world: this,
       registerInteraction: (interactable) => this.registerInteraction(interactable),
@@ -89,6 +96,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       showChoice: (request) => this.showChoice(request),
       addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
       objectPoint: (name) => this.objectPoint(name),
+    });
+    this.pickupController = new PickupController({
+      world: this,
+      registerInteraction: (interactable) => this.registerInteraction(interactable),
+      unregisterInteraction: (id) => this.unregisterInteraction(id),
     });
     gameEvents.emit(EVENT.hint, "");
 
@@ -107,7 +119,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       .setOffset(145, 275);
     this.bicycleVisual = this.add.graphics().setDepth(49).setVisible(false);
     this.drawBicycleVisual();
+    this.syncEffectiveTransport();
     this.emitPlayerLocation();
+    this.checkpointPlayerLocation(true);
     this.physics.add.collider(this.player, this.obstacles);
     // F4 is a development-only playtest hook. Playwright uses Vite's dev
     // server, so this is unavailable from production builds by design.
@@ -117,10 +131,16 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.cameras.main.setZoom(REGIONAL_CAMERA_ZOOM);
     gameEvents.on(EVENT.interactRequested, this.handleRequestedInteraction, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
+    gameEvents.on(EVENT.stateChanged, this.handleStateChanged, this);
+    this.events.on(Phaser.Scenes.Events.PAUSE, this.handleWorldPause, this);
+    this.events.on(Phaser.Scenes.Events.RESUME, this.handleWorldResume, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (import.meta.env.DEV) window.removeEventListener("keydown", this.handleDebugKeyDown);
       gameEvents.off(EVENT.interactRequested, this.handleRequestedInteraction, this);
       gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
+      gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);
+      this.events.off(Phaser.Scenes.Events.PAUSE, this.handleWorldPause, this);
+      this.events.off(Phaser.Scenes.Events.RESUME, this.handleWorldResume, this);
       gameEvents.emit(EVENT.dialogueCancelled);
       gameEvents.emit(EVENT.choiceCancelled);
       gameEvents.emit(EVENT.textEntryCancelled);
@@ -129,6 +149,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       gameEvents.emit(EVENT.hint, "");
       this.mushroomHunt?.dispose();
       this.mushroomHunt = undefined;
+      this.pickupController?.dispose();
+      this.pickupController = undefined;
       this.mountedCollisionGrid?.destroy();
       this.mountedCollisionGrid = undefined;
       this.tiledRuntime = undefined;
@@ -193,6 +215,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.drawPlayerGeometryDebug();
     this.updateCollisionInspection();
     this.emitPlayerLocation();
+    this.checkpointPlayerLocation();
 
     const nearby = this.closestInteractable(62);
     this.nearbyInteractable = nearby;
@@ -213,6 +236,13 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     gameEvents.emit(EVENT.playerLocationChanged, { map: this.mapId, ...point });
   }
 
+  private checkpointPlayerLocation(force = false): void {
+    if (!force && this.time.now - this.lastCheckpointAt < 1_000) return;
+    const point = normalizeWorldMapPoint(getMapDefinition(this.mapId), this.player);
+    gameStore.setLastKnownLocation({ map: this.mapId, ...point });
+    this.lastCheckpointAt = this.time.now;
+  }
+
   protected addObstacle(x: number, y: number, width: number, height: number): Phaser.GameObjects.Zone {
     const zone = this.add.zone(x + width / 2, y + height / 2, width, height);
     // StaticGroup creates the static Arcade body when the zone is added.
@@ -224,6 +254,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   /** Mounts the authored 32px collision grid and exact finite map bounds. */
   protected mountCollisionGrid(runtime: TiledRuntimeWorld): MountedCollisionGrid {
     this.tiledRuntime = runtime;
+    this.pickupController?.mount(runtime);
     const tileset = this.textures.exists("map.collision-grid")
       ? runtime.tilemap.addTilesetImage("collision-grid", "map.collision-grid", 32, 32, 0, 0)
       : null;
@@ -248,6 +279,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   /** Registers a Tiled world that has legacy rectangle collision instead of a 32px grid. */
   protected setTiledRuntime(runtime: TiledRuntimeWorld): void {
     this.tiledRuntime = runtime;
+    this.pickupController?.mount(runtime);
   }
 
   protected removeDynamicObstacle(name: string): void {
@@ -381,9 +413,20 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.syncBicycleVisual();
   }
 
-  /** Enables the post-quest F-key bicycle switch without changing the current mode. */
-  protected enableBicycleToggle(): void {
-    this.bicycleAvailable = true;
+  protected setScriptedTransportOverride(mode: PlayerTravelMode | null): void {
+    this.scriptedTransportOverride = mode;
+    if (!this.worldPaused) this.syncEffectiveTransport();
+  }
+
+  protected syncEffectiveTransport(): void {
+    if (!this.player?.active) return;
+    const forcedMapTransport: PlayerTravelMode | null = this.mapId === "creek"
+      ? "walking"
+      : this.mapId === "fruitville_pike" ? "bicycle" : null;
+    const effectiveTransport = this.scriptedTransportOverride
+      ?? forcedMapTransport
+      ?? (gameStore.getState().equipment.transport ?? "walking");
+    this.setPlayerTravelMode(effectiveTransport);
   }
 
   protected getPlayerPosition(): { x: number; y: number } {
@@ -772,21 +815,26 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
 
   private handleInputAction(event: InputActionEvent): void {
     if (!event.pressed || inputCapture.isCaptured()) return;
-    if (event.action === "toggleBicycle") {
-      if (!this.bicycleAvailable || this.inputLocked) return;
-      const next = this.travelMode === "bicycle" ? "walking" : "bicycle";
-      this.setPlayerTravelMode(next);
-      gameEvents.emit(EVENT.toast, next === "bicycle"
-        ? "Bicycle enabled — F, gamepad X / Square, or BIKE to walk."
-        : "Walking — F, gamepad X / Square, or BIKE to ride.");
-      return;
-    }
     if (event.action !== "interact") return;
     // Let every listener finish handling this key event before opening world
     // dialogue. A microtask is independent of the scene clock, so an input
     // queued just before pause cannot survive and fire later on resume.
     queueMicrotask(() => this.handleRequestedInteraction());
   }
+
+  private handleStateChanged = (_state: GameState): void => {
+    if (this.worldPaused || this.sys.isPaused()) return;
+    this.syncEffectiveTransport();
+  };
+
+  private handleWorldPause = (): void => {
+    this.worldPaused = true;
+  };
+
+  private handleWorldResume = (): void => {
+    this.worldPaused = false;
+    this.syncEffectiveTransport();
+  };
 
   private closestInteractable(maxDistance: number): Interactable | undefined {
     let closest: Interactable | undefined;

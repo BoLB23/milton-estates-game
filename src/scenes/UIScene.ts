@@ -294,7 +294,7 @@ export class UIScene extends Phaser.Scene {
     this.debugText?.setText([
       `map: ${state.currentMap}`,
       `quest: ${state.activeQuestId} / ${state.questStage}`,
-      `inventory: ${state.inventory.join(", ") || "empty"}`,
+      `inventory: ${state.inventory.map((stack) => `${stack.itemId} x${stack.quantity}`).join(", ") || "empty"}`,
       `save: v${state.version}`,
       "F2: geometry overlay",
       "F4: teleport to objective",

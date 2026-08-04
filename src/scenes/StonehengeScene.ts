@@ -54,7 +54,7 @@ export class StonehengeScene extends BaseExplorationScene {
   }
 
   private startRide(): void {
-    this.setPlayerTravelMode("bicycle");
+    this.setScriptedTransportOverride("bicycle");
     const start = this.tiledWorld.point("stonehenge_route_00");
     this.ryan = this.physics.add.sprite(start.x, start.y, "ryan")
       .setScale(1.2)
@@ -78,8 +78,7 @@ export class StonehengeScene extends BaseExplorationScene {
 
   private mountFreeTravel(): void {
     if (!gameStore.isBicycleUnlocked()) return;
-    this.enableBicycleToggle();
-    this.setPlayerTravelMode("bicycle");
+    this.setScriptedTransportOverride(null);
     this.mountTransition("exit_milton", "Return to Milton Estates", "neighborhood", { spawn: "stonehenge" });
     this.mountTransition("exit_reidenbaugh", "Enter Reidenbaugh Elementary", "reidenbaugh", { spawn: "stonehenge" });
     for (const [objectId, label, text] of [
