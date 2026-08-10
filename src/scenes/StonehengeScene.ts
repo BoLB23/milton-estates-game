@@ -22,6 +22,15 @@ export class StonehengeScene extends BaseExplorationScene {
 
   public create(data?: { spawn?: "milton" | "reidenbaugh" }): void {
     gameStore.setCurrentMap("stonehenge");
+    // A save can be captured between the Ryan ride's durable stage update and
+    // the queued scene handoff. Re-entering Stonehenge must resume the chase,
+    // not leave the player in free travel with a Reidenbaugh objective.
+    if (gameStore.isRyanRideStage("chase_reidenbaugh")) {
+      gameStore.setCurrentMap("reidenbaugh");
+      gameEvents.emit(EVENT.toast, "Ryan is waiting at Reidenbaugh — continuing the chase.");
+      this.scene.start("reidenbaugh", { spawn: "stonehenge" });
+      return;
+    }
     this.tiledWorld = new TiledRuntimeWorld(this.make.tilemap({ key: STONEHENGE_MAP.tiledMapKey }));
     const activeRide = gameStore.isRyanRideStage("ride_stonehenge");
     const spawnName = activeRide || data?.spawn !== "reidenbaugh" ? "spawn_milton" : "spawn_reidenbaugh";

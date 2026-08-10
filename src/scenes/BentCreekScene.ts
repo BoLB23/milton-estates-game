@@ -148,7 +148,8 @@ export class BentCreekScene extends BaseExplorationScene {
       label: "Return to Fruitville Pike",
       isAvailable: () => gameStore.isMapUnlocked("fruitville_pike"),
       interact: () => {
-        if (gameStore.isQuestAt("attend_bonfire_at_andrews", "attend_bonfire")) {
+        const bonfireStage = gameStore.getState().questProgress.bonfire.stage;
+        if (bonfireStage === "attend_bonfire" || bonfireStage === "survive_bad_trip") {
           this.departForBonfire();
           return;
         }
@@ -185,10 +186,20 @@ export class BentCreekScene extends BaseExplorationScene {
   }
 
   private departForBonfire(): void {
-    if (!gameStore.arriveAtAndrewsBonfire()) return;
+    const bonfireStage = gameStore.getState().questProgress.bonfire.stage;
+    if (bonfireStage === "attend_bonfire") {
+      if (!gameStore.arriveAtAndrewsBonfire()) return;
+    } else if (bonfireStage !== "survive_bad_trip") {
+      return;
+    }
     this.inputLocked = true;
     this.player.setVelocity(0, 0);
-    const start = (): void => { this.scene.start("andrews_bonfire"); };
+    // The quest stage is intentionally durable before entering the minigame.
+    // Pass the retry return point explicitly so a failed run can leave and
+    // still find the bonfire activation at the Bent Creek exit.
+    const start = (): void => {
+      this.scene.start("andrews_bonfire", { returnScene: "bent_creek" });
+    };
     if (gameStore.getState().settings.reducedMotion) { start(); return; }
     this.cameras.main.fadeOut(850, 18, 14, 32);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, start);
