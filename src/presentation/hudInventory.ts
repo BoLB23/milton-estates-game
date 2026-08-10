@@ -1,4 +1,4 @@
-import type { GameState, MushroomQuestStage } from "../game/types";
+import type { InventoryStack, MushroomQuestStage, QuestProgress } from "../game/types";
 
 const CONTROLLER_ITEM = "xbox_controller";
 
@@ -18,9 +18,9 @@ function carriedMushrooms(stage: MushroomQuestStage, collectedCount: number): nu
   }
 }
 
-/** Projects persisted quest history into items Billy is still carrying. */
+/** Projects persisted quest history into items the player is still carrying. */
 export function selectHudInventory(
-  state: Pick<GameState, "inventory" | "questProgress">,
+  state: { readonly inventory: readonly InventoryStack[]; readonly questProgress: Pick<QuestProgress, "missingControllerStage" | "mushrooms"> },
 ): HudInventory {
   const controllerCount = state.inventory.some((stack) => stack.itemId === CONTROLLER_ITEM && stack.quantity > 0)
     && state.questProgress.missingControllerStage === "return_to_jeremy"

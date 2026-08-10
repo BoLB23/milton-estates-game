@@ -95,7 +95,7 @@ describe("collision-grid runtime contract", () => {
       tileWidth: 32,
       tileHeight: 32,
       data: [0, 1, -1, 0, 0, 0],
-    });
+    }, { tileSize: 32 });
 
     expect(grid).toBeInstanceOf(CollisionGrid);
     expect(grid.isWalkable({ x: 0, y: 0 })).toBe(true);
@@ -116,7 +116,7 @@ describe("collision-grid runtime contract", () => {
       width: 3,
       height: 3,
       data: [0, 1, 0, 1, 0, 0, 0, 0, 0],
-    });
+    }, { tileSize: 32 });
 
     expect(grid.canTraverse({ x: 0, y: 0 }, { x: 1, y: 1 })).toBe(false);
     expect(grid.canTraverse({ x: 1, y: 1 }, { x: 2, y: 2 })).toBe(true);
@@ -150,7 +150,7 @@ describe("collision-grid runtime contract", () => {
       camera,
       colliderTarget: { name: "player" },
       addCollider,
-    });
+    }, { tileSize: 32 });
 
     expect(mounted.bounds).toEqual({ x: 0, y: 0, width: 96, height: 64 });
     expect(mounted.grid.isBlocked({ x: 1, y: 0 })).toBe(true);
@@ -182,5 +182,22 @@ describe("collision-grid runtime contract", () => {
     expect(runtime.rectangle("exit")).toEqual({ x: 16, y: 16, width: 32, height: 32 });
     expect(runtime.property("exit", "destinationMap")).toBe("woods");
     expect(runtime.worldBounds).toEqual(getExactWorldBounds(tilemap));
+  });
+
+  it("matches artwork transforms by authored role instead of fragile layer order", () => {
+    const tilemap = {
+      width: 1, height: 1, tileWidth: 1, tileHeight: 1,
+      getObjectLayer: () => null,
+      imageLayers: [
+        { properties: [{ name: "role", value: "foreground" }, { name: "depth", value: 55 }] },
+        { properties: [{ name: "role", value: "master" }, { name: "displayX", value: 24 }, { name: "depth", value: 10 }] },
+      ],
+    } as unknown as Phaser.Tilemaps.Tilemap;
+    const runtime = new TiledRuntimeWorld(tilemap);
+    const transform = runtime.artworkTransform("master", 0, {
+      x: 0, y: 0, width: 100, height: 100, cropX: 0, cropY: 0, cropWidth: 100, cropHeight: 100, depth: 99,
+    });
+    expect(transform.x).toBe(24);
+    expect(transform.depth).toBe(10);
   });
 });

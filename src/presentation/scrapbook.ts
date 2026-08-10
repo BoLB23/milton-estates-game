@@ -83,6 +83,7 @@ export class TextFocusController {
       button.setShadow(0, 0, focused ? "#173026" : "#000000", focused ? 8 : 0, false, true);
     });
   }
+  get focusedButton(): Phaser.GameObjects.Text | undefined { return this.buttons[this.index]; }
 }
 
 export function scrapbookButton(

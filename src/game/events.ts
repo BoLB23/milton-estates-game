@@ -8,6 +8,7 @@ export type { SemanticAction as InputAction, SemanticActionEvent as InputActionE
 export type MenuPage = "resume" | "chapters" | "quests" | "games" | "items" | "map" | "save" | "settings" | "help";
 interface MenuRequest {
   page?: MenuPage;
+  storage?: boolean;
 }
 
 /** A small application-level choice contract owned and rendered by UIScene. */
@@ -64,6 +65,7 @@ export const EVENT = {
   inputAction: "input-action",
   interactRequested: "interact-requested",
   menuRequested: "menu-requested",
+  questJournalRequested: "quest-journal-requested",
   playerLocationChanged: "player-location-changed",
   audioCue: "audio-cue",
 } as const;
@@ -89,6 +91,7 @@ export interface GameEventMap {
   [EVENT.inputAction]: [event: SemanticActionEvent];
   [EVENT.interactRequested]: [];
   [EVENT.menuRequested]: [request?: MenuRequest];
+  [EVENT.questJournalRequested]: [];
   [EVENT.playerLocationChanged]: [location: PlayerMapLocation];
   [EVENT.audioCue]: [cue: AudioCue];
 }

@@ -13,6 +13,7 @@ class PlaythroughStorage implements Storage {
 }
 
 const EVENTS: readonly QuestEvent[] = [
+  { type: "talked_to_billy" },
   { type: "talked_to_jeremy" },
   { type: "talked_to_andrew" },
   { type: "picked_up_controller" },
@@ -29,16 +30,17 @@ describe("complete playthrough scenarios", () => {
 
     advance(store, EVENTS[0]!);
     advance(store, EVENTS[1]!);
+    advance(store, EVENTS[2]!);
     store.setCurrentMap("creek");
     store.addInventoryItem(CONTROLLER_ITEM);
-    advance(store, EVENTS[2]!);
-    store.setCurrentMap("neighborhood");
     advance(store, EVENTS[3]!);
+    store.setCurrentMap("neighborhood");
+    advance(store, EVENTS[4]!);
 
     expect(store.getState()).toMatchObject({
-      version: 8,
+      version: 9,
       questStage: "complete",
-      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
+      inventory: [],
       discoveredMaps: ["neighborhood", "creek"],
       questHistory: [
         "missing_controller.started",
@@ -57,7 +59,7 @@ describe("complete playthrough scenarios", () => {
     advance(store, { type: "picked_up_controller" });
     advance(store, { type: "returned_controller" });
     store.addSecret("creek_token");
-    expect(store.getState().questStage).toBe("talk_to_jeremy");
+    expect(store.getState().questStage).toBe("talk_to_billy");
 
     store.setCurrentMap("neighborhood");
     for (const event of EVENTS) {
@@ -68,7 +70,7 @@ describe("complete playthrough scenarios", () => {
     expect(store.getState()).toMatchObject({
       questStage: "complete",
       secrets: ["creek_token"],
-      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
+      inventory: [],
     });
   });
 

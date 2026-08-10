@@ -5,7 +5,7 @@ import { getMushroomDialogue } from "./dialogue";
 describe("Andrew Mushroom Hunt dialogue", () => {
   it("preserves the authored request and handoff copy", () => {
     expect(getMushroomDialogue("ask_andrew")).toEqual([
-      { speaker: "Billy", text: "Andrew, why do you need ten mushrooms?" },
+      { speaker: "You", text: "Andrew, why do you need ten mushrooms?" },
       {
         speaker: "Andrew",
         text: "I want to make a tiny mushroom garden for the creek critters.",
@@ -15,7 +15,7 @@ describe("Andrew Mushroom Hunt dialogue", () => {
         text: "Find ten in the Milton backyards and Creek Woods, then share them around.",
       },
       {
-        speaker: "Billy",
+        speaker: "You",
         text: "All right. Ten mushrooms, three stops, no mushroom left behind.",
       },
     ]);

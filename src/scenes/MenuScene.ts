@@ -1,21 +1,25 @@
 import Phaser from "phaser";
 import { getObjective } from "../content/quest";
 import { getItemDefinition, ITEMS } from "../content/items";
-import { CHAPTER_REGISTRY, hasAvailableQuest, selectChapterProgress, selectOptionalProgress, selectQuestState, type QuestDefinition } from "../content/chapters";
-import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapBounds, projectRegionalMapPoint, selectActiveObjectiveMarker, type MapDefinition, type RegionalMapDisplayBounds } from "../content/maps";
+import { CHAPTER_REGISTRY, selectChapterProgress, selectOptionalProgress } from "../content/chapters";
+import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapBounds, projectRegionalMapPoint, selectActiveObjectiveMarker, type RegionalMapDisplayBounds } from "../content/maps";
 import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage, type PlayerMapLocation } from "../game/events";
 import { gameStore } from "../game/GameStore";
+import { isMinigameUnlocked, MINIGAMES, type MinigameId } from "../game/minigames";
 import type { GameState, PlayerSettings } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
+import { ScrollablePanel } from "../presentation/ScrollablePanel";
+import { BACKPACK_MAP_LAYOUT, spreadMapLabels } from "../presentation/backpackMapLayout";
+import { gamePlatform } from "../platform/integration";
 
-const PAGES: readonly MenuPage[] = ["resume", "chapters", "quests", "items", "map", "save", "settings", "help"];
+const PAGES: readonly MenuPage[] = ["resume", "games", "items", "map", "settings"];
 const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
-  resume: "RESUME",
+  resume: "STATUS",
   chapters: "CHAPTERS",
-  quests: "QUESTS",
+  quests: "CURRENT QUEST",
   games: "GAMES",
-  items: "ITEMS",
+  items: "BACKPACK",
   map: "MAP",
   save: "SAVE",
   settings: "SETTINGS",
@@ -25,16 +29,17 @@ const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
 export class MenuScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Container;
   private pageContent!: Phaser.GameObjects.Container;
+  private renderTarget!: Phaser.GameObjects.Container;
   private tabs: Phaser.GameObjects.Text[] = [];
   private activePage: MenuPage = "resume";
   private isOpen = false;
   private restartArmed = false;
   private state: GameState = gameStore.getState();
   private readonly focus = new TextFocusController();
-  private selectedQuestIndex = 0;
   private playerLocation?: PlayerMapLocation;
-  private questTabBadge?: Phaser.GameObjects.Container;
-  private gamesTab?: Phaser.GameObjects.Text;
+  private storageMode = false;
+  private scrollPanel?: ScrollablePanel;
+  private scrollPointerY?: number;
 
   constructor() { super("menu"); }
 
@@ -46,9 +51,8 @@ export class MenuScene extends Phaser.Scene {
     this.activePage = "resume";
     this.isOpen = false;
     this.restartArmed = false;
-    this.selectedQuestIndex = 0;
-    this.questTabBadge = undefined;
-    this.gamesTab = undefined;
+    this.storageMode = false;
+    document.body.classList.remove("backpack-open");
     this.state = gameStore.getState();
     this.sound.mute = this.state.settings.muted;
     this.sound.volume = this.state.settings.masterVolume;
@@ -60,7 +64,7 @@ export class MenuScene extends Phaser.Scene {
     const paper = this.add.rectangle(49, 39, 862, 462, 0xf1dfb7, 1)
       .setOrigin(0).setStrokeStyle(2, 0x8b6745, 1);
     const headerStrip = this.add.rectangle(49, 39, 862, 48, 0x315f4c, 1).setOrigin(0);
-    const title = this.add.text(68, 49, "BILLY'S BACKPACK", {
+    const title = this.add.text(68, 49, `${gameStore.getPlayerProfile()?.nickname ?? "PLAYER"}'S BACKPACK`, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "24px", color: "#fff3c9", fontStyle: "bold",
     }).setFontSize(createPresentationPolicy(this.state.settings).fontSize(24));
     const stitched = this.add.text(72, 75, "FIELD NOTES  •  SUMMER 2007", {
@@ -71,6 +75,7 @@ export class MenuScene extends Phaser.Scene {
     }).setFontSize(createPresentationPolicy(this.state.settings).fontSize(13)).setOrigin(1, 0);
 
     this.pageContent = this.add.container(0, 0);
+    this.renderTarget = this.pageContent;
     this.overlay = this.add.container(0, 0, [shade, pack, binding, paper, headerStrip, title, stitched, closeHint, this.pageContent])
       .setDepth(2_000).setVisible(false);
     this.buildTabs();
@@ -79,42 +84,24 @@ export class MenuScene extends Phaser.Scene {
     gameEvents.on(EVENT.menuRequested, this.handleMenuRequest, this);
     gameEvents.on(EVENT.stateChanged, this.handleStateChanged, this);
     gameEvents.on(EVENT.playerLocationChanged, this.handlePlayerLocationChanged, this);
+    this.input.on("wheel", this.handleScrollWheel, this);
+    this.input.on("pointerdown", this.handleScrollPointerDown, this);
+    this.input.on("pointermove", this.handleScrollPointerMove, this);
+    this.input.on("pointerup", this.handleScrollPointerUp, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
   }
 
   private buildTabs(): void {
     PAGES.forEach((page, index) => {
-      const tab = scrapbookText(this, this.overlay, 60 + index * 112, 96, PAGE_LABELS[page], {
+      const tab = scrapbookText(this, this.overlay, 58 + index * 170, 96, PAGE_LABELS[page], {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "15px", color: "#efe1ba", fontStyle: "bold",
-        backgroundColor: "#8b4f36", padding: { x: 12, y: 9 },
-      }, createPresentationPolicy(this.state.settings).textScale).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+        backgroundColor: "#8b4f36", padding: { x: 8, y: 9 }, align: "center",
+      }, createPresentationPolicy(this.state.settings).textScale).setFixedSize(160, 38).setInteractive({ useHandCursor: true }).on("pointerdown", () => {
         gameEvents.emit(EVENT.audioCue, "menuNavigate");
         this.selectPage(page);
       });
       this.tabs.push(tab);
-      if (page === "quests") {
-        // Keep the badge at the tab's upper-right corner instead of over the
-        // QUESTS label, including when the player's text size is enlarged.
-        const badgeX = tab.x + tab.width - 4;
-        const badgeY = tab.y - 2;
-        const dot = this.add.circle(badgeX, badgeY, 9, 0xf3c95f, 1).setStrokeStyle(2, 0x315f4c, 1);
-        const label = this.add.text(badgeX, badgeY, "!", {
-          fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "13px", color: "#315f4c", fontStyle: "bold",
-        }).setOrigin(0.5);
-        this.questTabBadge = this.add.container(0, 0, [dot, label]);
-        this.overlay.add(this.questTabBadge);
-      }
     });
-    this.gamesTab = scrapbookText(this, this.overlay, 622, 53, "MINI GAMES", {
-      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff3c9", fontStyle: "bold",
-      backgroundColor: "#8b4f36", padding: { x: 8, y: 5 },
-    }, createPresentationPolicy(this.state.settings).textScale)
-      .setInteractive({ useHandCursor: true })
-      .on("pointerdown", () => {
-        gameEvents.emit(EVENT.audioCue, "menuNavigate");
-        this.selectPage("games");
-      });
-    this.updateQuestTabBadge();
   }
 
   private toggleMenu(event?: KeyboardEvent): void {
@@ -123,13 +110,16 @@ export class MenuScene extends Phaser.Scene {
     if (this.isOpen) this.closeMenu(); else this.openMenu(this.activePage);
   }
 
-  private handleMenuRequest(request?: { page?: MenuPage }): void {
-    this.openMenu(request?.page ?? "resume");
+  private handleMenuRequest(request?: { page?: MenuPage; storage?: boolean }): void {
+    this.storageMode = request?.storage === true;
+    const requestedPage = request?.page;
+    this.openMenu(requestedPage && PAGES.includes(requestedPage) ? requestedPage : "resume");
   }
 
   private openMenu(page: MenuPage): void {
     if (!this.isOpen) {
       this.isOpen = true;
+      document.body.classList.add("backpack-open");
       inputCapture.capture("menu");
       this.scene.bringToTop();
       this.scene.pause(gameStore.getState().currentMap);
@@ -142,8 +132,10 @@ export class MenuScene extends Phaser.Scene {
   private closeMenu(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
+    document.body.classList.remove("backpack-open");
     inputCapture.release("menu");
     this.restartArmed = false;
+    this.storageMode = false;
     this.overlay.setVisible(false);
     this.scene.resume("ui");
     this.scene.resume(gameStore.getState().currentMap);
@@ -171,13 +163,14 @@ export class MenuScene extends Phaser.Scene {
       tab.setColor(selected ? "#33271f" : "#efe1ba");
       tab.setBackgroundColor(selected ? "#f3c95f" : "#8b4f36");
     });
-    this.gamesTab?.setColor(page === "games" ? "#33271f" : "#fff3c9")
-      .setBackgroundColor(page === "games" ? "#f3c95f" : "#8b4f36");
     this.renderPage();
   }
 
   private renderPage(): void {
+    this.scrollPanel?.destroy();
+    this.scrollPanel = undefined;
     this.pageContent.removeAll(true);
+    this.renderTarget = this.pageContent;
     this.focus.reset();
     switch (this.activePage) {
       case "resume": this.renderResume(); break;
@@ -207,16 +200,20 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private button(x: number, y: number, label: string, action: () => void, width = 260): Phaser.GameObjects.Text {
-    return scrapbookButton(this, this.pageContent, this.focus, x, y, label, () => {
+    const button = scrapbookButton(this, this.renderTarget, this.focus, x, y, label, () => {
       gameEvents.emit(EVENT.audioCue, "confirm");
       action();
     }, { width, color: "#f3c95f", ink: "#2e2820", focusColor: "#fff2a1", focusInk: "#172735", textScale: createPresentationPolicy(this.state.settings).textScale });
+    button.on("pointerover", () => this.scrollPanel?.scrollIntoView(button.y, button.height));
+    return button;
   }
 
   private moveButtonFocus(delta: number): void {
     if (!this.isOpen || !this.focus.hasButtons) return;
     gameEvents.emit(EVENT.audioCue, "menuNavigate");
     this.focus.move(delta);
+    const focused = this.focus.focusedButton;
+    if (focused) this.scrollPanel?.scrollIntoView(focused.y, focused.height);
   }
 
   private activateFocusedButton(): void {
@@ -237,8 +234,8 @@ export class MenuScene extends Phaser.Scene {
       case "back": this.toggleMenu(); break;
       case "tabPrevious": this.previousPage(); break;
       case "tabNext": this.nextPage(); break;
-      case "moveLeft": this.activePage === "quests" ? this.selectPreviousQuest() : this.previousPage(); break;
-      case "moveRight": this.activePage === "quests" ? this.selectNextQuest() : this.nextPage(); break;
+      case "moveLeft": this.previousPage(); break;
+      case "moveRight": this.nextPage(); break;
       case "moveUp": this.moveButtonFocus(-1); break;
       case "moveDown": this.moveButtonFocus(1); break;
       case "interact": this.activateFocusedButton(); break;
@@ -246,15 +243,43 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private card(x: number, y: number, width: number, height: number, color: number = SCRAPBOOK.card): Phaser.GameObjects.Graphics {
-    return scrapbookCard(this, this.pageContent, x, y, width, height, color, false);
+    return scrapbookCard(this, this.renderTarget, x, y, width, height, color, false);
   }
 
   private note(x: number, y: number, text: string, options: Phaser.Types.GameObjects.Text.TextStyle = {}): Phaser.GameObjects.Text {
-    const note = scrapbookText(this, this.pageContent, x, y, text, {
+    const note = scrapbookText(this, this.renderTarget, x, y, text, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "16px", color: "#43372d", ...options,
     }, createPresentationPolicy(this.state.settings).textScale);
     return note;
   }
+
+  private withRenderTarget(target: Phaser.GameObjects.Container, render: () => void): void {
+    const prior = this.renderTarget;
+    this.renderTarget = target;
+    try { render(); } finally { this.renderTarget = prior; }
+  }
+
+  private createScrollablePanel(x: number, y: number, width: number, height: number): ScrollablePanel {
+    const panel = new ScrollablePanel(this, this.pageContent, { x, y, width, height });
+    this.scrollPanel = panel;
+    return panel;
+  }
+
+  private handleScrollWheel(pointer: Phaser.Input.Pointer, _over: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number): void {
+    if (this.isOpen && this.scrollPanel?.contains(pointer.x, pointer.y)) this.scrollPanel.scrollBy(deltaY);
+  }
+
+  private handleScrollPointerDown(pointer: Phaser.Input.Pointer): void {
+    this.scrollPointerY = this.isOpen && this.scrollPanel?.contains(pointer.x, pointer.y) ? pointer.y : undefined;
+  }
+
+  private handleScrollPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (this.scrollPointerY === undefined || !pointer.isDown || !this.scrollPanel) return;
+    this.scrollPanel.scrollBy(this.scrollPointerY - pointer.y);
+    this.scrollPointerY = pointer.y;
+  }
+
+  private handleScrollPointerUp(): void { this.scrollPointerY = undefined; }
 
   /** Shrinks before clipping so player-facing copy never escapes a paper card. */
   private fitText(text: Phaser.GameObjects.Text, maxWidth: number, maxHeight: number, minimumSize: number): void {
@@ -265,75 +290,99 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  private drawController(x: number, y: number, owned: boolean): void {
-    const ink = owned ? 0x315f4c : 0x9c8c73;
-    const graphics = this.add.graphics();
-    graphics.fillStyle(owned ? 0x4b7d68 : 0xd4c8ad, 1);
-    graphics.fillRoundedRect(x, y, 92, 52, 18);
-    graphics.lineStyle(3, ink, 1).strokeRoundedRect(x, y, 92, 52, 18);
-    graphics.fillStyle(ink, 1).fillCircle(x + 65, y + 19, 4).fillCircle(x + 76, y + 27, 4);
-    graphics.fillRect(x + 21, y + 17, 22, 6).fillRect(x + 29, y + 9, 6, 22);
-    graphics.fillStyle(0xf3c95f, 1).fillCircle(x + 46, y + 29, 5);
-    this.pageContent.add(graphics);
-  }
-
   private renderResume(): void {
-    const hasController = this.state.inventory.some((stack) => stack.itemId === "xbox_controller" && stack.quantity > 0);
-    this.heading("Summer afternoon — paused", `Pinned: ${getObjective(this.state.questStage, this.state.activeQuestId)}`);
-    this.card(68, 231, 500, 132);
+    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
+    const quest = chapter.quests.find((candidate) => candidate.id === this.state.activeQuestId);
+    this.heading("Summer afternoon — paused", "Your current clue and location, all in one place.");
+    this.card(68, 231, 796, 142);
     this.note(88, 248, "TODAY'S FIELD NOTE", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
-    this.note(88, 274, getMapDefinition(this.state.currentMap).label, { fontSize: "21px", fontStyle: "bold" });
-    this.note(88, 310, "Follow the clues, check every shortcut, and be home by dinner.", {
-      fontSize: "15px", color: "#675544", wordWrap: { width: 440 },
+    this.note(88, 272, quest?.title ?? "Exploring Milton Estates", { fontSize: "21px", fontStyle: "bold", color: "#315f4c" });
+    const objective = this.note(88, 305, getObjective(this.state.questStage, this.state.activeQuestId), {
+      fontSize: "17px", color: "#43372d", fontStyle: "bold", wordWrap: { width: 735 },
     });
-    this.card(592, 231, 270, 132, 0xe9d29e);
-    this.drawController(612, 267, hasController);
-    this.note(718, 248, "PACK POCKET", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
-    this.note(718, 274, hasController ? "Xbox controller" : "Still empty", {
-      fontSize: "18px", fontStyle: "bold", color: hasController ? "#315f4c" : "#7f705f",
-    });
-    this.note(718, 305, `${this.state.secrets.length} secret${this.state.secrets.length === 1 ? "" : "s"} found`, { fontSize: "14px" });
-    this.button(68, 400, "RESUME GAME", () => this.closeMenu());
-    this.note(348, 412, "ESC closes the backpack, too.", { fontSize: "14px", color: "#76624f", fontStyle: "italic" });
+    this.fitText(objective, 735, 42, 12);
+    this.note(88, 348, `${getMapDefinition(this.state.currentMap).label}  •  ${this.state.inventory.length} carried stack${this.state.inventory.length === 1 ? "" : "s"}  •  ${this.state.secrets.length} secret${this.state.secrets.length === 1 ? "" : "s"}`, { fontSize: "13px", color: "#675544" });
+    const cloud = gameStore.getCloudSaveState();
+    if (cloud.status === "conflict") {
+      this.button(68, 400, "LOAD REMOTE SAVE", () => {
+        void gameStore.useRemoteCloudConflict().then(() => this.renderPage()).catch(() => this.renderPage());
+      }, 250);
+      this.button(338, 400, "KEEP MY LOCAL SAVE", () => {
+        void gameStore.keepLocalCloudConflict().then(() => this.renderPage()).catch(() => this.renderPage());
+      }, 280);
+    } else {
+      this.button(68, 400, "RESUME GAME", () => this.closeMenu());
+    }
+    const status = cloud.status === "saved" ? "Cloud save ✓" : cloud.status === "saving" || cloud.status === "dirty" ? "Saving to cloud…" : cloud.status === "conflict" ? "Cloud conflict — return to saves" : cloud.status === "failed" ? "Cloud save failed — retry later" : "Cloud save ready";
+    this.note(cloud.status === "conflict" ? 640 : 348, 412, cloud.status === "conflict" ? "Choose which progress to keep." : status, { fontSize: "14px", color: cloud.status === "failed" || cloud.status === "conflict" ? "#a43732" : "#76624f", fontStyle: "italic" });
   }
 
   private renderItems(): void {
-    this.heading("Items", "Everything you collect lives here. Use an item from its row when it has an action.");
+    this.heading(this.storageMode ? "Home storage" : "Backpack", this.storageMode ? "Move safe items between your carried pack and home storage." : "Everything you collect lives here. Use an item from its row when it has an action.");
+    const panel = this.createScrollablePanel(68, 226, 796, 260);
     const stacks = this.state.inventory;
-    if (stacks.length === 0) {
-      this.card(68, 231, 796, 98);
-      this.note(92, 257, "Your backpack is empty.", { fontSize: "21px", fontStyle: "bold" });
-      this.note(92, 291, "Explore Milton and check the illustrated map for new field finds.", { fontSize: "14px", color: "#675544" });
-      return;
-    }
-
-    stacks.forEach((stack, index) => {
-      const definition = getItemDefinition(stack.itemId);
-      const y = 226 + index * 86;
-      this.card(68, y, 796, 72, index % 2 === 0 ? 0xfff8df : 0xe9d29e);
-      this.drawItemIcon(90, y + 18, stack.itemId);
-      this.note(148, y + 13, definition.label.toUpperCase(), { fontSize: "16px", fontStyle: "bold" });
-      this.note(148, y + 39, `${definition.description}  •  ${stack.quantity}`, { fontSize: "12px", color: "#675544", wordWrap: { width: 420 } });
-      if (stack.itemId === "bicycle") {
-        const action = this.bicycleAction();
-        const actionButton = this.button(638, y + 16, action.label, () => {
-          if (!action.disabled) {
-            gameStore.setEquippedTransport(action.equipped ? null : "bicycle");
-            gameEvents.emit(EVENT.toast, action.equipped ? "Walking preference saved." : "Bicycle preference saved.");
-            this.renderPage();
-          }
-        }, 194).setBackgroundColor(action.disabled ? "#c8bda8" : action.equipped ? "#f3c95f" : "#b8d6a4");
-        if (action.disabled) actionButton.disableInteractive();
-        this.note(638, y + 54, action.reason, { fontSize: "10px", color: action.disabled ? "#9a573a" : "#675544", wordWrap: { width: 194 } });
-      } else {
-        this.note(638, y + 28, definition.useKind === "none" ? "NO ACTION" : "VIEW", { fontSize: "12px", color: "#76624f", fontStyle: "bold" });
+    this.withRenderTarget(panel.content, () => {
+      if (stacks.length === 0) {
+        this.card(68, 231, 796, 98);
+        this.note(92, 257, this.storageMode ? "Nothing is currently carried." : "Your backpack is empty.", { fontSize: "21px", fontStyle: "bold" });
+        this.note(92, 291, this.storageMode ? "Stored items are listed below." : "Explore Milton and check the illustrated map for new field finds.", { fontSize: "14px", color: "#675544" });
+        if (this.storageMode) this.renderStoredItems(1);
+        return;
       }
+
+      stacks.forEach((stack, index) => {
+        const definition = getItemDefinition(stack.itemId);
+        const y = 226 + index * 86;
+        this.card(68, y, 796, 72, index % 2 === 0 ? 0xfff8df : 0xe9d29e);
+        this.drawItemIcon(90, y + 18, stack.itemId);
+        this.note(148, y + 13, definition.label.toUpperCase(), { fontSize: "16px", fontStyle: "bold" });
+        this.note(148, y + 39, `${definition.description}  •  ${stack.quantity}`, { fontSize: "12px", color: "#675544", wordWrap: { width: 420 } });
+        if (this.storageMode) {
+          const restricted = stack.itemId === "xbox_controller" || stack.itemId === "field_token";
+          const deposit = this.button(638, y + 16, restricted ? "KEEP CARRIED" : "DEPOSIT", () => {
+            if (!restricted && gameStore.depositToHouseStorage(stack.itemId, stack.quantity)) this.renderPage();
+          }, 194);
+          if (restricted) deposit.disableInteractive().setBackgroundColor("#c8bda8");
+          this.note(638, y + 54, restricted ? "Quest item stays carried." : "Move this stack home.", { fontSize: "10px", color: "#675544", wordWrap: { width: 194 } });
+        } else if (stack.itemId === "bicycle") {
+          const action = this.bicycleAction();
+          const actionButton = this.button(638, y + 16, action.label, () => {
+            if (!action.disabled) {
+              const equipped = gameStore.getState().equipment.transport === "bicycle";
+              gameStore.setEquippedTransport(equipped ? null : "bicycle");
+              gameEvents.emit(EVENT.toast, equipped ? "Walking preference saved." : "Bicycle preference saved.");
+            }
+          }, 194).setBackgroundColor(action.disabled ? "#c8bda8" : action.equipped ? "#f3c95f" : "#b8d6a4");
+          if (action.disabled) actionButton.disableInteractive();
+          this.note(638, y + 54, action.reason, { fontSize: "10px", color: action.disabled ? "#9a573a" : "#675544", wordWrap: { width: 194 } });
+        } else {
+          this.note(638, y + 28, definition.useKind === "none" ? "NO ACTION" : "VIEW", { fontSize: "12px", color: "#76624f", fontStyle: "bold" });
+        }
+      });
+      if (this.storageMode) this.renderStoredItems(stacks.length);
+    });
+    const storedCount = this.storageMode ? gameStore.getHouseStorage().length : 0;
+    panel.setContentHeight(Math.max(260, stacks.length * 86 + (this.storageMode ? 48 + storedCount * 62 : 0)));
+  }
+
+  private renderStoredItems(carriedCount: number): void {
+    const stored = gameStore.getHouseStorage();
+    const startY = 226 + carriedCount * 86;
+    this.note(68, startY, "STORED AT HOME", { fontSize: "13px", color: "#9a573a", fontStyle: "bold" });
+    stored.forEach((stack, index) => {
+      const y = startY + 24 + index * 62;
+      const definition = getItemDefinition(stack.itemId);
+      this.card(68, y, 796, 52, 0xe9d29e);
+      this.note(92, y + 10, `${definition.label}  •  ${stack.quantity}`, { fontSize: "15px", fontStyle: "bold" });
+      this.button(638, y + 8, "WITHDRAW", () => {
+        if (gameStore.withdrawFromHouseStorage(stack.itemId, stack.quantity)) this.renderPage();
+      }, 194);
     });
   }
 
   private drawItemIcon(x: number, y: number, itemId: keyof typeof ITEMS): void {
     if (itemId === "xbox_controller") {
-      this.pageContent.add(this.add.image(x + 16, y + 16, "controller").setScale(0.9).setTint(0x315f4c));
+      this.renderTarget.add(this.add.image(x + 16, y + 16, "controller").setScale(0.9).setTint(0x315f4c));
       return;
     }
     const icon = this.add.graphics();
@@ -344,7 +393,7 @@ export class MenuScene extends Phaser.Scene {
     } else {
       icon.fillStyle(0xe0ad4d, 1).fillCircle(x + 26, y + 16, 13).lineStyle(2, 0x8d5f2b, 1).strokeCircle(x + 26, y + 16, 13);
     }
-    this.pageContent.add(icon);
+    this.renderTarget.add(icon);
   }
 
   private bicycleAction(): { label: string; reason: string; disabled: boolean; equipped: boolean } {
@@ -363,48 +412,18 @@ export class MenuScene extends Phaser.Scene {
     };
   }
 
-  private renderQuests(): void {
+  private renderCurrentQuest(): void {
     const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
-    const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0]!;
-    const status = selectQuestState(selected, this.state);
-    this.heading(
-      "Quest journal",
-      hasAvailableQuest(this.state)
-        ? "New quest available! Choose an unlocked memory to begin."
-        : "Browse every Chapter 1 memory — active, optional, locked, or complete.",
-    );
-    this.card(68, 222, 260, 264, 0xe9d29e);
-    chapter.quests.forEach((quest, index) => {
-      const questStatus = selectQuestState(quest, this.state);
-      const y = 228 + index * 36;
-      const selectedRow = index === this.selectedQuestIndex;
-      const row = this.add.rectangle(80, y, 236, 32, selectedRow ? 0xfff2a1 : 0xf8dfb5, 1)
-        .setOrigin(0).setStrokeStyle(selectedRow ? 3 : 1, selectedRow ? 0x315f4c : 0xa7865f, 0.9)
-        .setInteractive({ useHandCursor: true }).on("pointerdown", () => {
-          this.selectedQuestIndex = index;
-          this.renderPage();
-      });
-      this.pageContent.add(row);
-      const title = this.note(94, y + 2, `${index + 1}. ${quest.title}`, { fontSize: "12px", fontStyle: "bold" });
-      this.fitText(title, 210, 14, 9);
-      this.note(94, y + 17, this.questStatusLabel(questStatus), { fontSize: "10px", color: this.questStatusColor(questStatus), fontStyle: "bold" });
-    });
-    this.card(348, 222, 514, 264);
-    this.note(372, 240, `${selected.kind.toUpperCase()} MEMORY`, { fontSize: "12px", color: "#9a573a", fontStyle: "bold" });
-    const selectedTitle = this.note(372, 265, selected.title, { fontSize: "23px", fontStyle: "bold", wordWrap: { width: 450 } });
-    this.fitText(selectedTitle, 450, 50, 15);
-    const description = this.note(372, 322, selected.description, { fontSize: "15px", color: "#675544", wordWrap: { width: 450 } });
-    this.fitText(description, 450, 42, 11);
-    const detail = this.note(372, 371, this.questDetail(selected, status), { fontSize: "14px", color: status === "locked" ? "#a34237" : "#315f4c", wordWrap: { width: 450 }, lineSpacing: 6 });
-    this.fitText(detail, 450, 52, 10);
-    if (status !== "locked") {
-      const action = status === "completed" ? "REPLAY QUEST" : status === "active" ? "CONTINUE QUEST" : "START QUEST";
-      this.button(590, 432, action, () => this.playQuest(selected), 248);
-    } else {
-      this.note(590, 438, "LOCKED — inspect the prerequisite above", { fontSize: "13px", fontStyle: "bold", color: "#a34237" });
-    }
-    this.note(372, 463, "← / → changes the selected quest", { fontSize: "12px", color: "#76624f", fontStyle: "italic" });
+    const quest = chapter.quests.find((candidate) => candidate.id === this.state.activeQuestId);
+    this.heading("Current quest", "Your active objective stays focused here. Talk to Billy to browse past adventures.");
+    this.card(68, 226, 796, 190, 0xfff8df);
+    this.note(94, 250, quest?.title ?? "Exploring Milton Estates", { fontSize: "25px", fontStyle: "bold", color: "#315f4c" });
+    this.note(94, 298, getObjective(this.state.questStage, this.state.activeQuestId), { fontSize: "19px", fontStyle: "bold", wordWrap: { width: 720 } });
+    this.note(94, 358, quest?.description ?? "Take a look around and make yourself at home.", { fontSize: "15px", color: "#675544", wordWrap: { width: 700 }, lineSpacing: 4 });
+    this.note(94, 438, "Completed and available quest history lives with Billy.", { fontSize: "13px", color: "#76624f", fontStyle: "italic" });
   }
+
+  private renderQuests(): void { this.renderCurrentQuest(); }
 
   private renderChapters(): void {
     this.heading("Chapter scrapbook", "Browse the story structure before you choose a quest.");
@@ -426,25 +445,26 @@ export class MenuScene extends Phaser.Scene {
 
   private renderGames(): void {
     const race = gameStore.getMickeyDragRaceRecord();
-    this.heading("Mini games", "Quick challenges unlocked during your summer adventure.");
-    this.card(68, 226, 796, 184, race.unlocked ? 0xfff8df : 0xe9d29e);
-    this.note(94, 247, "MICKEY'S DRAG RACE", { fontSize: "20px", fontStyle: "bold" });
-    if (!race.unlocked) {
-      this.note(94, 286, "🔒 Unlock the Bent Creek gate to meet Mickey and open this mini game.", {
-        fontSize: "16px", color: "#a34237", wordWrap: { width: 680 },
+    this.heading("Mini games", "Beat a challenge once, then replay it here or by talking to Jeremy.");
+    MINIGAMES.forEach((game, index) => {
+      const unlocked = isMinigameUnlocked(game.id, this.state);
+      const y = 214 + index * 112;
+      this.card(68, y, 796, 100, unlocked ? 0xfff8df : 0xe9d29e);
+      this.note(92, y + 13, game.title.toUpperCase(), { fontSize: "18px", fontStyle: "bold" });
+      this.note(92, y + 42, unlocked ? game.description : `LOCKED  •  ${game.unlockHint}`, {
+        fontSize: "14px", color: unlocked ? "#675544" : "#a34237", wordWrap: { width: 510 },
       });
-      return;
-    }
-    this.note(94, 282, "Hold GAS to build RPM. Hit SHIFT in the gold zone for every gear change.", {
-      fontSize: "15px", color: "#675544", wordWrap: { width: 500 },
+      if (game.id === "mickey_drag_race" && unlocked) {
+        this.note(92, y + 72, race.bestTimeMs ? `BEST  •  ${this.formatRaceTime(race.bestTimeMs)}` : "BEST  •  Not set", {
+          fontSize: "13px", color: "#315f4c", fontStyle: "bold",
+        });
+      } else if (game.id === "don_rossi" && unlocked) {
+        this.note(92, y + 72, "Longest-survival leaderboard appears after every run.", {
+          fontSize: "13px", color: "#315f4c", fontStyle: "bold",
+        });
+      }
+      if (unlocked) this.button(641, y + 30, "PLAY AGAIN", () => this.launchMinigame(game.id), 194);
     });
-    this.note(94, 324, race.bestTimeMs ? `BEST TIME  •  ${this.formatRaceTime(race.bestTimeMs)}` : "BEST TIME  •  Not set yet", {
-      fontSize: "16px", color: "#315f4c", fontStyle: "bold",
-    });
-    this.note(94, 354, race.beaten ? "✓ Mickey has been beaten. Race again to improve your time." : "Mickey is still waiting at Bent Creek.", {
-      fontSize: "14px", color: race.beaten ? "#315f4c" : "#9a573a",
-    });
-    this.button(578, 342, "PLAY DRAG RACE", () => this.launchMickeyDragRace(), 258);
   }
 
   private formatRaceTime(timeMs: number): string {
@@ -452,58 +472,19 @@ export class MenuScene extends Phaser.Scene {
     return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
   }
 
-  private launchMickeyDragRace(): void {
+  private launchMinigame(id: MinigameId): void {
     const returnMap = gameStore.getState().currentMap;
     this.closeMenu();
     this.scene.stop(returnMap);
     // Keep this scene alive: it owns the Backpack's global input listeners.
-    this.scene.launch("mickey_drag_race", { returnMap });
-  }
-
-  private questStatusLabel(status: ReturnType<typeof selectQuestState>): string {
-    return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
-  }
-
-  private questStatusColor(status: ReturnType<typeof selectQuestState>): string {
-    return status === "completed" || status === "active" ? "#315f4c" : status === "available" ? "#275c73" : "#a34237";
-  }
-
-  private questDetail(quest: QuestDefinition, status: ReturnType<typeof selectQuestState>): string {
-    if (status === "completed") return "✓ Complete. Replay is isolated from your canonical save.";
-    if (status === "active") return `● Current objective: ${getObjective(this.state.questStage, this.state.activeQuestId)}`;
-    if (status === "available") return "○ Ready to begin whenever you are.";
-    if (!quest.implemented) return quest.kind === "finale" ? "🔒 Finish the required memories to reveal the finale." : "🔒 This memory is planned but not implemented yet.";
-    const prereqs = quest.prerequisiteQuestIds.map((id) => CHAPTER_REGISTRY.flatMap((candidate) => candidate.quests).find((candidate) => candidate.id === id)?.title ?? id);
-    return `🔒 Complete first: ${prereqs.join(", ") || "the previous memory"}.`;
-  }
-
-  private selectPreviousQuest(): void {
-    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
-    this.selectedQuestIndex = (this.selectedQuestIndex + chapter.quests.length - 1) % chapter.quests.length;
-    gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.renderPage();
-  }
-
-  private selectNextQuest(): void {
-    const chapter = CHAPTER_REGISTRY.find((candidate) => candidate.id === this.state.activeChapterId) ?? CHAPTER_REGISTRY[0]!;
-    this.selectedQuestIndex = (this.selectedQuestIndex + 1) % chapter.quests.length;
-    gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.renderPage();
-  }
-
-  private playQuest(quest: QuestDefinition): void {
-    const status = selectQuestState(quest, this.state);
-    if (status === "locked" || !quest.implemented) return;
-    const oldMap = gameStore.getState().currentMap;
-    if (status === "completed") gameStore.startQuestReplay(quest.id);
-    else gameStore.setActiveQuest(quest.chapterId, quest.id);
-    gameStore.setCurrentMap("neighborhood");
-    this.closeMenu();
-    this.launchNeighborhood(oldMap);
+    if (id === "mickey_drag_race") this.scene.launch("mickey_drag_race", { returnMap });
+    else this.scene.launch("bad_trip", { returnScene: returnMap, replay: true });
   }
 
   private renderMap(): void {
-    const map = this.add.image(480, 301, "regional-foldout-map").setDisplaySize(620, 349);
+    const mapLayout = BACKPACK_MAP_LAYOUT.map;
+    const map = this.add.image(mapLayout.x + mapLayout.width / 2, mapLayout.y + mapLayout.height / 2, "regional-foldout-map")
+      .setDisplaySize(mapLayout.width, mapLayout.height);
     this.pageContent.add(map);
     const imageBounds = map.getBounds();
     const displayBounds: RegionalMapDisplayBounds = {
@@ -528,6 +509,12 @@ export class MenuScene extends Phaser.Scene {
     const unexplored = Object.values(MAP_DEFINITIONS).filter((candidate) =>
       !this.state.discoveredMaps.includes(candidate.id) && !this.state.unlockedMaps.includes(candidate.id),
     );
+    const labeledMaps = Object.values(MAP_DEFINITIONS).filter((candidate) => !this.state.discoveredMaps.includes(candidate.id));
+    const labelAnchors = labeledMaps.map((candidate) => {
+      const bounds = projectRegionalMapBounds(candidate, displayBounds);
+      return { id: candidate.id, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    });
+    const labelPositions = spreadMapLabels(labelAnchors, displayBounds);
     unexplored.forEach((candidate) => {
       const bounds = projectRegionalMapBounds(candidate, displayBounds);
       const cover = this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0x475057, 0.46)
@@ -535,7 +522,7 @@ export class MenuScene extends Phaser.Scene {
       this.pageContent.add(cover);
     });
     unexplored.forEach((candidate) => {
-      const labelPosition = this.regionalMapLabelPosition(candidate, displayBounds);
+      const labelPosition = labelPositions.get(candidate.id)!;
       scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNEXPLORED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", color: "#e1e5dc", fontStyle: "bold",
         backgroundColor: "#283033aa", padding: { x: 5, y: 3 },
@@ -543,7 +530,7 @@ export class MenuScene extends Phaser.Scene {
     });
     for (const candidate of Object.values(MAP_DEFINITIONS)) {
       if (this.state.discoveredMaps.includes(candidate.id) || !this.state.unlockedMaps.includes(candidate.id)) continue;
-      const labelPosition = this.regionalMapLabelPosition(candidate, displayBounds);
+      const labelPosition = labelPositions.get(candidate.id)!;
       scrapbookText(this, this.pageContent, labelPosition.x, labelPosition.y, "UNLOCKED", {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "10px", color: "#fff4cd", fontStyle: "bold",
         backgroundColor: "#315f4ccc", padding: { x: 4, y: 2 },
@@ -573,18 +560,10 @@ export class MenuScene extends Phaser.Scene {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "25px", color: "#c94b3f", stroke: "#fff4cd", strokeThickness: 3,
       }, createPresentationPolicy(this.state.settings).textScale).setOrigin(0.5);
     }
-    scrapbookText(this, this.pageContent, 73, 126, "REGIONAL FOLD-OUT  •  YOU = EXACT LOCATION  ★ = CURRENT CLUE", {
+    scrapbookText(this, this.pageContent, BACKPACK_MAP_LAYOUT.legend.x, BACKPACK_MAP_LAYOUT.legend.y, "REGIONAL FOLD-OUT  •  YOU = EXACT LOCATION  ★ = CURRENT CLUE", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "12px", color: "#fff4cd", fontStyle: "bold",
       backgroundColor: "#315f4c", padding: { x: 8, y: 5 },
     }, createPresentationPolicy(this.state.settings).textScale);
-  }
-
-  private regionalMapLabelPosition(candidate: MapDefinition, displayBounds: RegionalMapDisplayBounds): { x: number; y: number } {
-    const bounds = projectRegionalMapBounds(candidate, displayBounds);
-    return {
-      x: bounds.x + bounds.width / 2,
-      y: bounds.y + bounds.height / 2,
-    };
   }
 
   private renderSave(): void {
@@ -625,9 +604,12 @@ export class MenuScene extends Phaser.Scene {
   private restartMission(): void {
     if (!this.restartArmed) { this.restartArmed = true; this.renderPage(); return; }
     const oldMap = gameStore.getState().currentMap;
+    // A confirmed restart is a new run, not a continuation of telemetry.
+    void gamePlatform.endPlaySession();
     gameStore.reset();
     this.closeMenu();
-    this.launchNeighborhood(oldMap);
+    this.launchNeighborhood(oldMap, true);
+    void gamePlatform.beginPlaySession();
     gameEvents.emit(EVENT.toast, "Mission restarted.");
   }
 
@@ -644,11 +626,11 @@ export class MenuScene extends Phaser.Scene {
     gameEvents.emit(EVENT.toast, "Returned to your saved adventure.");
   }
 
-  private launchNeighborhood(oldMap: GameState["currentMap"]): void {
+  private launchNeighborhood(oldMap: GameState["currentMap"], playIntro = false): void {
     // ScenePlugin.start would shut down the calling MenuScene and permanently
     // remove its Escape/B listeners. Stop/start only the world scene instead.
     this.scene.stop(oldMap);
-    this.scene.launch("neighborhood", { spawn: "home" });
+    this.scene.launch("neighborhood", { spawn: "home", playIntro });
     this.scene.bringToTop("ui");
     this.scene.bringToTop();
   }
@@ -699,7 +681,6 @@ export class MenuScene extends Phaser.Scene {
 
   private handleStateChanged(state: GameState): void {
     this.state = state;
-    this.updateQuestTabBadge();
     // A completion should leave the world responsive. The HUD already shows
     // the completion toast, and the player can open the journal deliberately.
     if (this.isOpen) this.renderPage();
@@ -709,12 +690,15 @@ export class MenuScene extends Phaser.Scene {
     this.playerLocation = location;
   }
 
-  private updateQuestTabBadge(): void {
-    this.questTabBadge?.setVisible(hasAvailableQuest(this.state));
-  }
-
   private cleanup(): void {
+    document.body.classList.remove("backpack-open");
     inputCapture.release("menu");
+    this.scrollPanel?.destroy();
+    this.scrollPanel = undefined;
+    this.input.off("wheel", this.handleScrollWheel, this);
+    this.input.off("pointerdown", this.handleScrollPointerDown, this);
+    this.input.off("pointermove", this.handleScrollPointerMove, this);
+    this.input.off("pointerup", this.handleScrollPointerUp, this);
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     gameEvents.off(EVENT.menuRequested, this.handleMenuRequest, this);
     gameEvents.off(EVENT.stateChanged, this.handleStateChanged, this);

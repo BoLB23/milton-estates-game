@@ -21,6 +21,18 @@ describe("game events", () => {
     expect(gameEvents.emit(EVENT.stateChanged, state)).toBe(false);
   });
 
+  it("keeps Billy's quest journal request separate from the Backpack request", () => {
+    const menuListener = vi.fn();
+    const journalListener = vi.fn();
+    gameEvents.on(EVENT.menuRequested, menuListener);
+    gameEvents.on(EVENT.questJournalRequested, journalListener);
+
+    gameEvents.emit(EVENT.questJournalRequested);
+
+    expect(journalListener).toHaveBeenCalledOnce();
+    expect(menuListener).not.toHaveBeenCalled();
+  });
+
   it("keeps modal ownership independent of emitter listener order", () => {
     const capture = new InputCapture();
     capture.capture("dialogue");

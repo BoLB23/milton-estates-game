@@ -10,6 +10,7 @@ import {
   advanceMushroomStage,
   type MushroomQuestEvent,
 } from "../rules";
+import { finishLeaderboardTimer, leaderboardLines, startLeaderboardTimer } from "../../../../../../platform/leaderboards";
 
 const INTERACTION_IDS = ["jeremy", "billy_home", "andrew"] as const;
 
@@ -91,9 +92,21 @@ export class MushroomNeighborhoodBinding implements QuestRuntimeBinding {
     this.host.showDialogue(getMushroomDialogue(dialogueId), () => {
       const current = gameStore.getState().questProgress.mushrooms.stage;
       const next = advanceMushroomStage(current, event);
+      if (current === "talk_to_andrew_for_mushrooms" && next === "search_mushrooms") {
+        startLeaderboardTimer("mushroomHunt");
+      }
       gameStore.setQuestStage(next);
       if (current === "talk_to_andrew_for_mushrooms" && next === "search_mushrooms") {
         this.host.refreshMushroomHunt();
+      }
+      if (current === "give_mushrooms_to_andrew" && next === "complete") {
+        void finishLeaderboardTimer("mushroomHunt").then((entries) => {
+          const lines = leaderboardLines(entries);
+          this.host.showDialogue([{
+            speaker: "Leaderboard",
+            text: lines.length ? `Top neighbors:\n${lines.join("\n")}` : "Mushroom Hunt time saved. No other leaderboard times yet.",
+          }]);
+        });
       }
       this.host.refreshQuestBindings();
     });

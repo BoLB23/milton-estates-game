@@ -9,7 +9,7 @@ function fixtureGrid() {
     tileWidth: 32,
     tileHeight: 32,
     data: [0, 1, 0, 0],
-  });
+  }, { tileSize: 32 });
 }
 
 describe("collision inspection", () => {

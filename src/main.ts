@@ -5,6 +5,7 @@ import { BootScene } from "./scenes/BootScene";
 import { CreekScene } from "./scenes/CreekScene";
 import { NeighborhoodScene } from "./scenes/NeighborhoodScene";
 import { MenuScene } from "./scenes/MenuScene";
+import { BillyQuestScene } from "./scenes/BillyQuestScene";
 import { UIScene } from "./scenes/UIScene";
 import { FrontEndScene } from "./scenes/FrontEndScene";
 import { InputRouterScene } from "./scenes/InputRouterScene";
@@ -14,6 +15,8 @@ import { FruitvillePikeScene } from "./scenes/FruitvillePikeScene";
 import { BentCreekScene } from "./scenes/BentCreekScene";
 import { WelcomeScene } from "./scenes/WelcomeScene";
 import { MickeyDragRaceScene } from "./scenes/MickeyDragRaceScene";
+import { AndrewsBonfireScene } from "./scenes/AndrewsBonfireScene";
+import { BadTripScene } from "./scenes/BadTripScene";
 
 const game = new Phaser.Game({
   // The browser behavior suite uses Canvas to avoid
@@ -47,8 +50,11 @@ const game = new Phaser.Game({
     FruitvillePikeScene,
     BentCreekScene,
     MickeyDragRaceScene,
+    AndrewsBonfireScene,
+    BadTripScene,
     UIScene,
     MenuScene,
+    BillyQuestScene,
   ],
 });
 

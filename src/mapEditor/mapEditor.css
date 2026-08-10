@@ -1,0 +1,59 @@
+.map-editor-panel {
+  position: fixed;
+  inset: 12px 12px 12px auto;
+  z-index: 1000;
+  width: min(390px, calc(100vw - 24px));
+  overflow: auto;
+  border: 2px solid #f6dd95;
+  border-radius: 12px;
+  color: #f8f0d2;
+  background: #0c1d25f2;
+  box-shadow: 0 12px 40px #0009;
+  font: 13px/1.35 system-ui, sans-serif;
+  user-select: none;
+}
+
+.map-editor-panel header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: #173d32;
+}
+
+.map-editor-panel header div { display: grid; gap: 2px; }
+.map-editor-panel header strong { color: #f6dd95; letter-spacing: .08em; }
+.map-editor-panel header span { color: #a9d9cb; font-size: 11px; }
+.map-editor-panel header button { width: 34px; font-size: 24px; }
+.map-editor-panel section { padding: 10px 12px; border-top: 1px solid #ffffff18; }
+.map-editor-panel h2 { margin: 0 0 8px; color: #f6dd95; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.map-editor-panel p { margin: 4px 0; color: #bcd0cf; }
+.map-editor-panel button,
+.map-editor-panel input,
+.map-editor-panel select,
+.map-editor-panel textarea {
+  border: 1px solid #71978e;
+  border-radius: 6px;
+  color: #f8f0d2;
+  background: #132c32;
+  font: inherit;
+}
+.map-editor-panel button { padding: 7px 9px; cursor: pointer; }
+.map-editor-panel button:hover:not(:disabled), .map-editor-panel button.active { border-color: #f6dd95; background: #305f50; }
+.map-editor-panel button:disabled { cursor: default; opacity: .45; }
+.map-editor-panel button.danger { margin-top: 8px; border-color: #c96b66; color: #ffc5bd; }
+.map-editor-actions, .map-editor-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+.map-editor-tools { padding: 0; }
+.map-editor-row { display: flex; align-items: end; gap: 8px; margin-top: 9px; }
+.map-editor-panel label { display: grid; gap: 3px; color: #bcd0cf; font-size: 11px; }
+.map-editor-panel input, .map-editor-panel select, .map-editor-panel textarea { min-width: 0; width: 100%; padding: 6px; user-select: text; }
+.map-editor-panel input[type="checkbox"] { width: auto; }
+.map-editor-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-bottom: 8px; }
+.map-editor-panel footer { display: grid; gap: 3px; padding: 10px 12px; border-top: 1px solid #ffffff18; }
+.map-editor-panel footer.valid strong { color: #69e5a3; }
+.map-editor-panel footer.invalid strong { color: #ff918a; }
+.map-editor-panel footer span, .map-editor-panel footer small { color: #bcd0cf; }
+.map-editor-open .touch-controls { display: none !important; }

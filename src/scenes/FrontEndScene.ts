@@ -1,18 +1,17 @@
 import Phaser from "phaser";
-import {
-  CHAPTER_REGISTRY,
-  selectChapterProgress,
-  selectOptionalProgress,
-  selectQuestState,
-  type QuestDefinition,
-} from "../content/chapters";
+import { getObjective } from "../content/quest";
+import { stageFromProgress } from "../game/persistence/questState";
 import { EVENT, gameEvents, type InputActionEvent } from "../game/events";
-import { gameStore } from "../game/GameStore";
-import type { PlayerSettings, SaveData } from "../game/types";
+import { gameStore, type MiltonCloudSave } from "../game/GameStore";
+import type { PlayerSettings } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
+import { miltonCloudSaves, gamePlatform } from "../platform/integration";
+import type { GameSaveMetadata, GamePlatformIdentityState } from "../platform/GamePlatformAdapter";
+import { toPlayerProfile } from "../platform/playerProfile";
 
-type FrontPage = "title" | "chapters" | "quests" | "settings";
+type FrontPage = "saves" | "settings";
+type SlotPreview = { metadata: GameSaveMetadata; save?: MiltonCloudSave };
 
 const PAPER = SCRAPBOOK.paper;
 const INK = SCRAPBOOK.ink;
@@ -20,237 +19,231 @@ const MUTED_INK = SCRAPBOOK.mutedInk;
 const BLUE_INK = SCRAPBOOK.blueInk;
 const RED_INK = "#a34237";
 
+function slotLabel(slotKey: string): string {
+  return slotKey.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export class FrontEndScene extends Phaser.Scene {
-  private page: FrontPage = "title";
+  private page: FrontPage = "saves";
   private content!: Phaser.GameObjects.Container;
-  private state: SaveData = gameStore.getState();
-  private newGameArmed = false;
-  private selectedQuestIndex = 0;
   private readonly focus = new TextFocusController();
+  private platformIdentity: GamePlatformIdentityState = gamePlatform.getIdentityState();
+  private unsubscribePlatformIdentity?: () => void;
+  private slots: SlotPreview[] = [];
+  private savesLoading = false;
+  private saveError?: string;
+  private confirmation?: { kind: "reset" | "delete"; slotKey: string };
 
   constructor() { super("front-end"); }
 
   create(): void {
-    this.page = "title";
-    this.newGameArmed = false;
-    this.selectedQuestIndex = 0;
-    this.focus.reset();
     this.cameras.main.setBackgroundColor("#315948");
     this.content = this.add.container(0, 0);
+    this.platformIdentity = gamePlatform.getIdentityState();
+    this.unsubscribePlatformIdentity = gamePlatform.subscribeIdentity((identity) => {
+      this.platformIdentity = identity;
+      if (identity.status === "authenticated") {
+        gameStore.setPlayerProfile(toPlayerProfile(identity.player));
+        void this.refreshSlots();
+      }
+      if (this.sys.isActive()) this.render();
+    });
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     this.render();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
   }
 
   private render(): void {
-    this.state = gameStore.getState();
     this.content.removeAll(true);
     this.focus.reset();
     this.drawDesk();
-    switch (this.page) {
-      case "title": this.renderTitle(); break;
-      case "chapters": this.renderChapters(); break;
-      case "quests": this.renderQuests(); break;
-      case "settings": this.renderSettings(); break;
-    }
+    if (this.page === "settings") this.renderSettings();
+    else this.renderSaves();
     this.focus.refresh();
   }
 
   private drawDesk(): void {
     const g = this.add.graphics();
     g.fillStyle(0x315948).fillRect(0, 0, 960, 540);
-    for (let y = 12; y < 540; y += 24) {
-      g.lineStyle(1, 0x78917f, 0.12).lineBetween(0, y, 960, y + 18);
-    }
+    for (let y = 12; y < 540; y += 24) g.lineStyle(1, 0x78917f, 0.12).lineBetween(0, y, 960, y + 18);
     g.fillStyle(0x1c332a, 0.26).fillRoundedRect(24, 20, 912, 500, 12);
     this.content.add(g);
   }
 
-  private paper(x: number, y: number, width: number, height: number, color = PAPER): Phaser.GameObjects.Graphics {
+  private paper(x: number, y: number, width: number, height: number): void {
     const g = this.add.graphics();
     g.fillStyle(0x17251f, 0.25).fillRoundedRect(x + 7, y + 8, width, height, 5);
-    g.fillStyle(color).fillRoundedRect(x, y, width, height, 5);
+    g.fillStyle(PAPER).fillRoundedRect(x, y, width, height, 5);
     g.lineStyle(2, 0xcdbf98, 0.8).strokeRoundedRect(x, y, width, height, 5);
     this.content.add(g);
-    return g;
-  }
-
-  private card(x: number, y: number, width: number, height: number, color = 0xfff8df): Phaser.GameObjects.Graphics {
-    return scrapbookCard(this, this.content, x, y, width, height, color);
-  }
-
-  private tape(x: number, y: number, angle = 0): void {
-    const tape = this.add.rectangle(x, y, 72, 19, 0xe6d78f, 0.72).setAngle(angle);
-    this.content.add(tape);
   }
 
   private text(x: number, y: number, value: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
-    return scrapbookText(this, this.content, x, y, value, style, createPresentationPolicy(this.state.settings).textScale);
+    return scrapbookText(this, this.content, x, y, value, style, createPresentationPolicy(gameStore.getState().settings).textScale);
   }
 
-  private button(x: number, y: number, label: string, action: () => void, options?: {
-    width?: number;
-    color?: string;
-    ink?: string;
-    focusColor?: string;
-    focusInk?: string;
-    audio?: boolean;
-  }): Phaser.GameObjects.Text {
+  private button(x: number, y: number, label: string, action: () => void, options?: { width?: number; color?: string }): Phaser.GameObjects.Text {
     return scrapbookButton(this, this.content, this.focus, x, y, label, () => {
-      if (options?.audio !== false) gameEvents.emit(EVENT.audioCue, "confirm");
+      gameEvents.emit(EVENT.audioCue, "confirm");
       action();
-    }, { ...options, textScale: createPresentationPolicy(this.state.settings).textScale });
+    }, { ...options, textScale: createPresentationPolicy(gameStore.getState().settings).textScale });
   }
 
-  private renderTitle(): void {
+  private renderSaves(): void {
     this.paper(45, 42, 870, 456);
-    this.tape(480, 48, -2);
-
-    const photo = this.add.graphics();
-    photo.fillStyle(0xfaf4df).fillRoundedRect(520, 92, 330, 318, 4);
-    photo.lineStyle(3, 0x475f50, 0.8).strokeRoundedRect(520, 92, 330, 318, 4);
-    this.content.add(photo);
-    const coverKey = CHAPTER_REGISTRY[0]?.coverAssetKey ?? "chapter-1-cover";
-    this.content.add(this.add.image(685, 213, coverKey).setDisplaySize(298, 210));
-    this.tape(542, 102, -8);
-    this.tape(827, 101, 9);
-    this.text(685, 337, "Wheatfield Drive, Summer 2007", {
-      fontFamily: "Comic Sans MS, cursive", fontSize: "16px", color: MUTED_INK,
-    }).setOrigin(0.5);
-
-    this.text(82, 78, "MILTON ESTATES", { fontSize: "43px", fontStyle: "bold", color: BLUE_INK });
-    this.text(86, 128, "A summer scrapbook", {
-      fontFamily: "Comic Sans MS, cursive", fontSize: "23px", color: RED_INK,
-    }).setAngle(-2);
-    this.text(84, 174, "Long days. Secret trails.\nOne missing controller.", {
-      fontSize: "19px", color: INK, lineSpacing: 6,
-    });
-
-    this.button(82, 262, "CONTINUE", () => this.launchGameplay(), { width: 360 });
-    this.button(82, 316, this.newGameArmed ? "CONFIRM NEW GAME" : "NEW GAME", () => this.newGame(), {
-      width: 360, color: this.newGameArmed ? "#a34237" : "#275c73",
-    });
-    this.button(82, 370, "CHAPTER SELECT", () => this.openPage("chapters"), { width: 360 });
-    this.button(82, 424, "SETTINGS", () => this.openPage("settings"), { width: 360, color: "#50675b" });
-  }
-
-  private newGame(): void {
-    if (!this.newGameArmed) {
-      this.newGameArmed = true;
-      this.render();
-      // Rendering rebuilds the focus list. Keep the confirmation target
-      // selected so the second keyboard confirm cannot fall back to Continue.
-      this.focus.move(1);
+    this.text(82, 75, "MILTON ESTATES", { fontSize: "37px", fontStyle: "bold", color: BLUE_INK });
+    const identity = this.platformIdentity;
+    if (identity.status === "idle" || identity.status === "loading") {
+      this.text(82, 145, "Checking your Game Lab identity…", { fontSize: "21px", color: INK });
+      this.text(82, 188, "Your cloud saves will appear here once you are signed in.", { fontSize: "15px", color: MUTED_INK });
       return;
     }
-    gameStore.newGame();
-    this.newGameArmed = false;
-    this.launchGameplay();
-  }
+    if (identity.status === "unauthorized" || identity.status === "unavailable") {
+      const unavailable = identity.status === "unavailable";
+      this.text(82, 145, unavailable ? "Game Lab is unavailable." : "Sign in to Game Lab to play Milton Estates.", { fontSize: "21px", color: RED_INK, wordWrap: { width: 700 } });
+      this.text(82, 202, unavailable ? "Check the connection, then try again. Cloud saves are required." : identity.message, { fontSize: "15px", color: MUTED_INK, wordWrap: { width: 690 } });
+      this.button(82, 274, "RETRY", () => void gamePlatform.initializeIdentity(), { width: 245, color: "#275c73" });
+      return;
+    }
 
-  private renderChapters(): void {
-    const chapter = CHAPTER_REGISTRY[0];
-    const progress = selectChapterProgress(chapter, this.state.completedQuestIds);
-    const optional = selectOptionalProgress(chapter, this.state.completedQuestIds);
-    this.paper(45, 42, 870, 456);
-    this.tape(480, 48, -2);
-    this.text(80, 76, "CHAPTER SCRAPBOOK", { fontSize: "31px", fontStyle: "bold", color: BLUE_INK });
-    this.text(80, 121, `CHAPTER ${chapter.number}  •  ${chapter.dateLabel}`, { fontSize: "13px", fontStyle: "bold", color: RED_INK });
-    this.text(80, 153, chapter.title, { fontSize: "25px", fontStyle: "bold", color: INK, wordWrap: { width: 475 } });
-    this.text(80, 198, chapter.description, { fontSize: "16px", color: MUTED_INK, wordWrap: { width: 480 }, lineSpacing: 5 });
-    this.text(80, 270, `${chapter.quests.length} memories in this chapter`, { fontSize: "15px", fontStyle: "bold", color: BLUE_INK });
-    this.text(80, 298, `${progress.completed}/${progress.total} complete  •  ${optional.completed}/${optional.total} optional`, { fontSize: "14px", color: MUTED_INK });
-    this.card(80, 340, 500, 116, 0xe9d29e);
-    this.text(100, 358, "QUEST JOURNAL", { fontSize: "13px", fontStyle: "bold", color: RED_INK });
-    this.text(100, 386, chapter.quests.map((quest, index) => `${index + 1}. ${quest.title}`).join("\n"), { fontSize: "14px", color: INK, lineSpacing: 5 });
-    this.content.add(this.add.image(735, 220, chapter.coverAssetKey).setDisplaySize(230, 162));
-    this.text(735, 314, "Summer 2007", { fontFamily: "Comic Sans MS, cursive", fontSize: "15px", color: MUTED_INK }).setOrigin(0.5);
-    this.button(630, 402, "OPEN QUEST JOURNAL  →", () => this.openPage("quests"), { width: 230, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7" });
-    this.backButton();
-  }
-
-  private renderQuests(): void {
-    const chapter = CHAPTER_REGISTRY[0];
-    const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0];
-    const state = selectQuestState(selected, this.state);
-    this.paper(45, 42, 870, 456);
-    this.tape(480, 48, 2);
-    this.text(80, 76, "QUEST JOURNAL", { fontSize: "31px", fontStyle: "bold", color: BLUE_INK });
-    this.text(80, 121, "CHAPTER 1  •  SELECT A MEMORY", { fontSize: "13px", fontStyle: "bold", color: RED_INK });
-    chapter.quests.forEach((quest, index) => {
-      const questState = selectQuestState(quest, this.state);
-      const y = 154 + index * 50;
-      const zone = this.add.rectangle(80, y, 330, 42, index === this.selectedQuestIndex ? 0xfff2a1 : 0xe9d29e, 1)
-        .setOrigin(0).setStrokeStyle(index === this.selectedQuestIndex ? 3 : 1, index === this.selectedQuestIndex ? 0x315f4c : 0xa7865f, 0.9)
-        .setInteractive({ useHandCursor: true })
-        .on("pointerdown", () => {
-          gameEvents.emit(EVENT.audioCue, "menuNavigate");
-          this.selectedQuestIndex = index;
-          this.render();
-      });
-      this.content.add(zone);
-      this.text(100, y + 4, quest.title, { fontSize: "12px", fontStyle: "bold", color: INK, wordWrap: { width: 285 } });
-      this.text(100, y + 23, this.frontQuestStatus(questState), { fontSize: "10px", color: this.frontQuestStatusColor(questState), fontStyle: "bold" });
-    });
-    this.card(450, 154, 415, 248, 0xfff8df);
-    this.text(474, 176, `${selected.kind.toUpperCase()}  •  ${state.toUpperCase()}`, { fontSize: "12px", color: state === "locked" ? RED_INK : BLUE_INK, fontStyle: "bold" });
-    this.text(474, 206, selected.title, { fontSize: "23px", fontStyle: "bold", color: INK, wordWrap: { width: 360 } });
-    this.text(474, 262, selected.description, { fontSize: "15px", color: MUTED_INK, wordWrap: { width: 355 }, lineSpacing: 5 });
-    if (state === "locked") {
-      const prereq = selected.prerequisiteQuestIds.length
-        ? selected.prerequisiteQuestIds.map((id) => chapter.quests.find((quest) => quest.id === id)?.title ?? id).join(", ")
-        : "the previous Chapter 1 memory";
-      const reason = !selected.implemented
-        ? selected.kind === "finale" ? "Finish every required Chapter 1 memory to reveal the finale." : "This memory has not been added to the game yet."
-        : `Complete ${prereq} first.`;
-      this.text(474, 335, `🔒 ${reason}`, { fontSize: "13px", color: RED_INK, wordWrap: { width: 350 }, lineSpacing: 4 });
-    } else {
-      const action = state === "completed" ? "REPLAY" : state === "active" ? "CONTINUE" : "START";
-      this.text(474, 335, state === "completed" ? "Replay is isolated from your canonical save." : "Ready whenever you are.", { fontSize: "13px", color: "#315f4c", wordWrap: { width: 350 } });
-      this.button(585, 420, `${action} QUEST  →`, () => this.playQuest(selected), {
-        width: 220, color: "#a34237", focusColor: "#a34237", focusInk: "#f9f1d7",
+    const profile = gameStore.getPlayerProfile();
+    this.text(82, 126, `Welcome, ${profile?.nickname ?? "Neighbor"}.`, { fontSize: "20px", fontStyle: "bold", color: INK });
+    this.drawProfilePreview(810, 130);
+    if (gameStore.hasLegacyBrowserSave()) {
+      this.text(82, 158, "A previous browser save was found. It cannot be imported and has not been deleted; start a fresh cloud save to continue.", {
+        fontSize: "12px", color: RED_INK, wordWrap: { width: 670 }, lineSpacing: 3,
       });
     }
-    this.text(474, 468, "← / → changes the selected quest", { fontSize: "12px", color: MUTED_INK, fontStyle: "italic" });
-    this.backButton();
+    if (this.savesLoading) {
+      this.text(82, 214, "Loading cloud saves…", { fontSize: "18px", color: MUTED_INK });
+      return;
+    }
+    if (this.saveError) this.text(82, 205, this.saveError, { fontSize: "14px", color: RED_INK, wordWrap: { width: 670 } });
+    if (this.slots.length === 0) {
+      this.text(82, 225, "No cloud saves yet. Start your moving day.", { fontSize: "19px", color: INK });
+      this.button(82, 290, "NEW GAME", () => void this.createSave(), { width: 300, color: "#275c73" });
+    } else {
+      this.renderSlotCards();
+      this.button(82, 440, "NEW SAVE", () => void this.createSave(), { width: 220, color: "#275c73" });
+    }
+    this.button(720, 455, "SETTINGS", () => { this.page = "settings"; this.render(); }, { width: 170, color: "#50675b" });
   }
 
-  private frontQuestStatus(status: ReturnType<typeof selectQuestState>): string {
-    return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
+  private renderSlotCards(): void {
+    const visible = this.slots.slice(0, 3);
+    visible.forEach((slot, index) => {
+      const y = 205 + index * 72;
+      scrapbookCard(this, this.content, 82, y, 770, 62, 0xfff8df);
+      const state = slot.save;
+      const stage = state ? stageFromProgress(state.questProgress, state.activeQuestId) : undefined;
+      const objective = state && stage ? getObjective(stage, state.activeQuestId) : "Loading save details…";
+      const location = state ? state.currentMap.replace(/_/g, " ") : "";
+      this.text(99, y + 9, slotLabel(slot.metadata.slotKey), { fontSize: "16px", color: BLUE_INK, fontStyle: "bold" });
+      this.text(99, y + 33, `${location}${location ? "  •  " : ""}${objective}`, { fontSize: "11px", color: MUTED_INK, wordWrap: { width: 360 } });
+      this.text(470, y + 10, `Saved ${new Date(slot.metadata.updatedAt).toLocaleDateString()}`, { fontSize: "11px", color: MUTED_INK });
+      this.button(610, y + 10, "CONTINUE", () => void this.continueSlot(slot.metadata.slotKey), { width: 110, color: "#275c73" });
+      this.button(728, y + 10, "⋯", () => { this.confirmation = { kind: "reset", slotKey: slot.metadata.slotKey }; this.render(); }, { width: 60, color: "#50675b" });
+    });
+    if (this.confirmation) this.renderConfirmation();
   }
 
-  private frontQuestStatusColor(status: ReturnType<typeof selectQuestState>): string {
-    return status === "locked" ? RED_INK : status === "completed" || status === "active" ? "#3b765b" : BLUE_INK;
+  private renderConfirmation(): void {
+    const { kind, slotKey } = this.confirmation!;
+    scrapbookCard(this, this.content, 240, 150, 480, 250, 0xe9d29e);
+    this.text(275, 182, kind === "reset" ? `Start over in ${slotLabel(slotKey)}?` : `Delete ${slotLabel(slotKey)}?`, { fontSize: "22px", color: INK, fontStyle: "bold", wordWrap: { width: 400 } });
+    this.text(275, 244, kind === "reset" ? "This replaces the cloud save with a new moving day." : "This removes this cloud save. This cannot be undone.", { fontSize: "15px", color: MUTED_INK, wordWrap: { width: 390 }, lineSpacing: 4 });
+    this.button(275, 330, kind === "reset" ? "START OVER" : "DELETE", () => void this.confirmSlotAction(), { width: 190, color: RED_INK });
+    this.button(480, 330, "CANCEL", () => { this.confirmation = undefined; this.render(); }, { width: 170, color: "#50675b" });
   }
 
-  private playQuest(quest: QuestDefinition): void {
-    const state = selectQuestState(quest, this.state);
-    if (!quest.implemented || state === "locked") return;
-    if (state === "completed") gameStore.startQuestReplay(quest.id);
-    else gameStore.setActiveQuest(quest.chapterId, quest.id);
-    gameStore.setCurrentMap("neighborhood");
-    this.launchGameplay();
+  private async refreshSlots(): Promise<void> {
+    if (this.platformIdentity.status !== "authenticated" || this.savesLoading) return;
+    this.savesLoading = true;
+    this.saveError = undefined;
+    this.render();
+    try {
+      gameStore.connectCloudSave(miltonCloudSaves);
+      const metadata = await miltonCloudSaves.listSlots();
+      const slots = await Promise.all(metadata.map(async (item) => {
+        try { return { metadata: item, save: (await miltonCloudSaves.peek(item.slotKey)).data }; }
+        catch { return { metadata: item }; }
+      }));
+      this.slots = slots;
+    } catch {
+      this.saveError = "Could not load your cloud saves. Please retry.";
+    } finally {
+      this.savesLoading = false;
+      if (this.sys.isActive()) this.render();
+    }
+  }
+
+  private nextSlotKey(): string {
+    const occupied = new Set(this.slots.map((slot) => slot.metadata.slotKey));
+    for (let index = 1; ; index += 1) {
+      const key = index === 1 ? "primary" : `save-${index}`;
+      if (!occupied.has(key)) return key;
+    }
+  }
+
+  private async createSave(slotKey = this.nextSlotKey()): Promise<void> {
+    try {
+      const snapshot = gameStore.createFreshCloudSave();
+      await miltonCloudSaves.create(slotKey, snapshot);
+      this.launchGameplay();
+    } catch {
+      this.saveError = "Could not create that cloud save. Please retry.";
+      this.render();
+    }
+  }
+
+  private async continueSlot(slotKey: string): Promise<void> {
+    try {
+      const save = await miltonCloudSaves.load(slotKey);
+      if (!gameStore.hydrateCloudSave(save.data)) throw new Error("Invalid save");
+      this.launchGameplay();
+    } catch {
+      this.saveError = "Could not load that cloud save. Please retry.";
+      this.render();
+    }
+  }
+
+  private async confirmSlotAction(): Promise<void> {
+    const action = this.confirmation;
+    this.confirmation = undefined;
+    if (!action) return;
+    try {
+      if (action.kind === "reset") {
+        await miltonCloudSaves.delete(action.slotKey);
+        await this.createSave(action.slotKey);
+        return;
+      }
+      await miltonCloudSaves.delete(action.slotKey);
+      await this.refreshSlots();
+    } catch {
+      this.saveError = "Could not update that cloud save. Please retry.";
+      this.render();
+    }
+  }
+
+  private drawProfilePreview(x: number, y: number): void {
+    const profile = gameStore.getPlayerProfile();
+    const color = Phaser.Display.Color.HexStringToColor(profile?.tshirtColor?.startsWith("#") ? profile.tshirtColor : "#4f8cc9").color;
+    const g = this.add.graphics();
+    g.fillStyle(0xf1c39f).fillCircle(x, y - 12, 18);
+    g.fillStyle(0x4a332a).fillRoundedRect(x - 18, y - 31, 36, 12, 5);
+    g.fillStyle(color).fillRoundedRect(x - 20, y + 5, 40, 35, 8);
+    this.content.add(g);
   }
 
   private renderSettings(): void {
     this.paper(160, 65, 640, 410);
-    this.tape(480, 70, 2);
-    const settings = this.state.settings;
+    const settings = gameStore.getState().settings;
     this.text(205, 102, "SETTINGS", { fontSize: "31px", fontStyle: "bold", color: BLUE_INK });
-    this.text(205, 146, "Saved automatically — even when you start a new scrapbook.", {
-      fontFamily: "Comic Sans MS, cursive", fontSize: "15px", color: MUTED_INK,
-    });
-    this.button(205, 205, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }), { width: 550 });
-    this.button(205, 263, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => {
-      this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) });
-    }, { width: 550 });
-    this.button(205, 321, `TEXT SIZE: ${settings.textSize.toUpperCase()}`, () => {
-      this.changeSettings({ textSize: cycleTextSize(settings.textSize) });
-    }, { width: 550 });
-    this.button(205, 379, settings.reducedMotion ? "REDUCED MOTION: ON" : "REDUCED MOTION: OFF", () => {
-      this.changeSettings({ reducedMotion: !settings.reducedMotion });
-    }, { width: 550, color: "#50675b" });
-    this.backButton();
+    this.button(205, 184, settings.muted ? "SOUND: MUTED" : "SOUND: ON", () => this.changeSettings({ muted: !settings.muted }), { width: 550 });
+    this.button(205, 242, `VOLUME: ${Math.round(settings.masterVolume * 100)}%`, () => this.changeSettings({ masterVolume: nextVolume(settings.masterVolume) }), { width: 550 });
+    this.button(205, 300, `TEXT SIZE: ${settings.textSize.toUpperCase()}`, () => this.changeSettings({ textSize: cycleTextSize(settings.textSize) }), { width: 550 });
+    this.button(205, 358, settings.reducedMotion ? "REDUCED MOTION: ON" : "REDUCED MOTION: OFF", () => this.changeSettings({ reducedMotion: !settings.reducedMotion }), { width: 550, color: "#50675b" });
+    this.button(610, 430, "← SAVES", () => { this.page = "saves"; this.render(); }, { width: 145, color: "#50675b" });
   }
 
   private changeSettings(changes: Partial<PlayerSettings>): void {
@@ -261,72 +254,25 @@ export class FrontEndScene extends Phaser.Scene {
     this.render();
   }
 
-  private openPage(page: FrontPage): void {
-    this.page = page;
-    this.newGameArmed = false;
-    this.render();
-  }
-
-  private backButton(): void {
-    this.button(735, 45, "← BACK", () => this.goBack(), { width: 160, color: "#50675b", audio: false });
-  }
-
-  private goBack(event?: KeyboardEvent): void {
-    event?.preventDefault();
-    gameEvents.emit(EVENT.audioCue, "back");
-    if (this.page === "quests") this.openPage("chapters");
-    else if (this.page !== "title") this.openPage("title");
-    else if (this.newGameArmed) { this.newGameArmed = false; this.render(); }
-  }
-
-  private selectPreviousQuest(): void {
-    if (this.page !== "quests") return;
-    gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    const count = CHAPTER_REGISTRY[0].quests.length;
-    this.selectedQuestIndex = (this.selectedQuestIndex + count - 1) % count;
-    this.render();
-  }
-
-  private selectNextQuest(): void {
-    if (this.page !== "quests") return;
-    gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.selectedQuestIndex = (this.selectedQuestIndex + 1) % CHAPTER_REGISTRY[0].quests.length;
-    this.render();
-  }
-
-  private moveFocus(delta: number): void {
-    if (!this.focus.hasButtons) return;
-    gameEvents.emit(EVENT.audioCue, "menuNavigate");
-    this.focus.move(delta);
-  }
-
-  private activateFocused(): void {
-    if (!this.focus.hasButtons) return;
-    this.focus.activate();
-  }
-
   private handleInputAction(event: InputActionEvent): void {
     if (!event.pressed || !this.sys.isActive()) return;
-    switch (event.action) {
-      case "moveUp": this.moveFocus(-1); break;
-      case "moveDown": this.moveFocus(1); break;
-      case "moveLeft": this.page === "quests" ? this.selectPreviousQuest() : this.moveFocus(-1); break;
-      case "moveRight": this.page === "quests" ? this.selectNextQuest() : this.moveFocus(1); break;
-      case "tabPrevious": this.selectPreviousQuest(); break;
-      case "tabNext": this.selectNextQuest(); break;
-      case "interact": this.activateFocused(); break;
-      case "back":
-      case "menu": this.goBack(); break;
-    }
+    if (event.action === "moveUp" || event.action === "moveLeft") this.focus.move(-1);
+    else if (event.action === "moveDown" || event.action === "moveRight") this.focus.move(1);
+    else if (event.action === "interact") this.focus.activate();
+    else if ((event.action === "back" || event.action === "menu") && this.confirmation) { this.confirmation = undefined; this.render(); }
   }
 
   private launchGameplay(): void {
     this.scene.launch("ui");
     this.scene.launch("menu");
+    this.scene.launch("billy-quest-journal");
     this.scene.start(gameStore.getState().currentMap);
+    void gamePlatform.beginPlaySession();
   }
 
   private cleanup(): void {
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
+    this.unsubscribePlatformIdentity?.();
+    this.unsubscribePlatformIdentity = undefined;
   }
 }

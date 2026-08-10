@@ -1,6 +1,7 @@
 /** Compatibility facade for quest-owned dialogue modules. */
 export {
   getAndrewDialogue,
+  getBillyDialogue,
   getBlockedRouteDialogue,
   getClueDialogue,
   getControllerDialogue,
@@ -17,3 +18,7 @@ export {
   getSportsDialogue,
   type SportsStop,
 } from "./chapters/chapter-01/quests/three-player-sports/dialogue";
+export {
+  getBonfireDialogue,
+  type BonfireDialogueId,
+} from "./chapters/chapter-01/quests/attend-bonfire-at-andrews/dialogue";

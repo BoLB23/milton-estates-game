@@ -80,8 +80,8 @@ describe("chapter and quest registry", () => {
     expect(isFinaleUnlocked(chapter, completed)).toBe(true);
     expect(selectChapterProgress(chapter, completed)).toMatchObject({
       completed: 2,
-      total: 8,
-      percentage: 25,
+      total: 12,
+      percentage: 17,
       finaleUnlocked: true,
     });
   });

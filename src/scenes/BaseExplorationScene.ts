@@ -11,6 +11,7 @@ import type { DialogueLine, Interactable, MapId, GameState } from "../game/types
 import { gameStore } from "../game/GameStore";
 import { assetUrl } from "../content/assets";
 import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
+import type { MapEditorController } from "../mapEditor/MapEditorController";
 
 const REGIONAL_CAMERA_ZOOM = 1.35;
 const PLAYER_ORIGIN_X = 0.5;
@@ -18,13 +19,6 @@ const PLAYER_ORIGIN_X = 0.5;
 // The supplied 400x450 frames contain transparent padding above the shoes, so
 // the sprite origin must sit near the lower edge rather than at frame center.
 const PLAYER_ORIGIN_Y = 0.9;
-
-function snapExpansionPointToCellCenter(point: { x: number; y: number }): { x: number; y: number } {
-  return {
-    x: Math.floor(point.x / COLLISION_GRID_TILE_SIZE) * COLLISION_GRID_TILE_SIZE + COLLISION_GRID_TILE_SIZE / 2,
-    y: Math.floor(point.y / COLLISION_GRID_TILE_SIZE) * COLLISION_GRID_TILE_SIZE + COLLISION_GRID_TILE_SIZE / 2,
-  };
-}
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
@@ -49,11 +43,14 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   private playerGeometryDebug?: Phaser.GameObjects.Graphics;
   private collisionInspectionText?: Phaser.GameObjects.Text;
   private collisionInspectionEnabled = false;
+  private mapEditor?: MapEditorController;
+  private mapEditorOpening = false;
   private readonly dynamicObstacles = new Map<string, Phaser.GameObjects.Zone>();
   private lastEmittedPlayerX = Number.NaN;
   private lastEmittedPlayerY = Number.NaN;
   private lastCheckpointAt = Number.NEGATIVE_INFINITY;
   private worldPaused = false;
+  private initialSpawnCheckpointed = false;
 
   protected initializeWorld(mapId: MapId, spawn: { x: number; y: number }): void {
     // Phaser reuses Scene instances after stop/start. All references below
@@ -79,6 +76,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.collisionInspectionText?.destroy();
     this.collisionInspectionText = undefined;
     this.collisionInspectionEnabled = false;
+    this.mapEditor = undefined;
+    this.mapEditorOpening = false;
     for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
     this.dynamicObstacles.clear();
     this.mapId = mapId;
@@ -86,6 +85,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.lastEmittedPlayerY = Number.NaN;
     this.lastCheckpointAt = Number.NEGATIVE_INFINITY;
     this.worldPaused = false;
+    this.initialSpawnCheckpointed = false;
     this.mushroomHunt = new MushroomHuntController({
       world: this,
       registerInteraction: (interactable) => this.registerInteraction(interactable),
@@ -105,11 +105,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     gameEvents.emit(EVENT.hint, "");
 
     this.obstacles = this.physics.add.staticGroup();
-    // Expansion maps use a 32px orthogonal grid. Keep player starts on cell
-    // centers so a revisit never begins half a tile into a road or collision
-    // corner. Creek keeps its legacy pixel-authored spawn coordinates.
-    const alignedSpawn = mapId === "creek" ? spawn : snapExpansionPointToCellCenter(spawn);
-    this.player = this.physics.add.sprite(alignedSpawn.x, alignedSpawn.y, "billy").setName("player");
+    // Authored contact points remain pixel-precise. The collision mask is a
+    // rendering/physics detail and must not quantize NPCs, spawns, or routes.
+    this.player = this.physics.add.sprite(spawn.x, spawn.y, "player").setName("player");
     this.player
       .setDepth(50)
       .setScale(0.18)
@@ -117,11 +115,11 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       .setCollideWorldBounds(true)
       .setSize(110, 95)
       .setOffset(145, 275);
+    this.applyPlayerProfilePresentation();
     this.bicycleVisual = this.add.graphics().setDepth(49).setVisible(false);
     this.drawBicycleVisual();
     this.syncEffectiveTransport();
     this.emitPlayerLocation();
-    this.checkpointPlayerLocation(true);
     this.physics.add.collider(this.player, this.obstacles);
     // F4 is a development-only playtest hook. Playwright uses Vite's dev
     // server, so this is unavailable from production builds by design.
@@ -160,6 +158,9 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.collisionInspectionText?.destroy();
       this.collisionInspectionText = undefined;
       this.collisionInspectionEnabled = false;
+      void this.mapEditor?.close(true);
+      this.mapEditor = undefined;
+      this.mapEditorOpening = false;
       for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
       this.dynamicObstacles.clear();
     });
@@ -204,6 +205,29 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     for (const layer of definition.layers) {
       if (!this.textures.exists(layer.textureKey)) this.load.image(layer.textureKey, layer.imagePath);
     }
+  }
+
+  /** Draws calibrated TMJ artwork using MapDefinition only as the asset catalog. */
+  protected drawAuthoredArtwork(definition: MapDefinition, runtime: TiledRuntimeWorld): void {
+    definition.layers.forEach((layer, index) => {
+      const texture = this.textures.get(layer.textureKey).getSourceImage() as { width?: number; height?: number };
+      const transform = runtime.artworkTransform(layer.role, index, {
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+        cropX: 0,
+        cropY: 0,
+        cropWidth: texture.width ?? layer.width,
+        cropHeight: texture.height ?? layer.height,
+        depth: layer.depth,
+      });
+      this.add.image(transform.x, transform.y, layer.textureKey)
+        .setOrigin(0, 0)
+        .setCrop(transform.cropX, transform.cropY, transform.cropWidth, transform.cropHeight)
+        .setDisplaySize(transform.width, transform.height)
+        .setDepth(transform.depth ?? layer.depth);
+    });
   }
 
   update(_time = 0, delta = 16.67): void {
@@ -251,12 +275,19 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     return zone;
   }
 
-  /** Mounts the authored 32px collision grid and exact finite map bounds. */
+  /** Mounts the authored regional collision grid and exact finite map bounds. */
   protected mountCollisionGrid(runtime: TiledRuntimeWorld): MountedCollisionGrid {
     this.tiledRuntime = runtime;
     this.pickupController?.mount(runtime);
     const tileset = this.textures.exists("map.collision-grid")
-      ? runtime.tilemap.addTilesetImage("collision-grid", "map.collision-grid", 32, 32, 0, 0)
+      ? runtime.tilemap.addTilesetImage(
+        "collision-grid",
+        "map.collision-grid",
+        COLLISION_GRID_TILE_SIZE,
+        COLLISION_GRID_TILE_SIZE,
+        0,
+        0,
+      )
       : null;
     this.mountedCollisionGrid = runtime.mountCollisionGrid({
       physicsWorld: this.physics.world,
@@ -273,13 +304,55 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       const rectangle = this.runtimeObjectRectangle(object);
       this.dynamicObstacles.set(object.name, this.addObstacle(rectangle.x, rectangle.y, rectangle.width, rectangle.height));
     }
+    this.resolveInitialSpawn(this.mountedCollisionGrid.grid);
     return this.mountedCollisionGrid;
   }
 
-  /** Registers a Tiled world that has legacy rectangle collision instead of a 32px grid. */
+  /** Registers a Tiled world that has legacy rectangle collision instead of a tile grid. */
   protected setTiledRuntime(runtime: TiledRuntimeWorld): void {
     this.tiledRuntime = runtime;
     this.pickupController?.mount(runtime);
+    this.resolveInitialSpawn();
+  }
+
+  /**
+   * Resume coordinates are normalized and only committed after the scene's
+   * bounds/collision are live. Invalid or newly-blocked points move to the
+   * nearest safe grid cell instead of trapping the player in scenery.
+   */
+  private resolveInitialSpawn(grid?: MountedCollisionGrid["grid"]): void {
+    if (this.initialSpawnCheckpointed) return;
+    const saved = gameStore.getCanonicalState().lastKnownLocation;
+    if (gameStore.getSpawnIntent() === "resume" && saved.map === this.mapId) {
+      const definition = getMapDefinition(this.mapId);
+      let point = { x: saved.x * definition.worldWidth, y: saved.y * definition.worldHeight };
+      if (grid) point = this.nearestSafePoint(grid, point);
+      else {
+        point.x = Phaser.Math.Clamp(point.x, 1, definition.worldWidth - 1);
+        point.y = Phaser.Math.Clamp(point.y, 1, definition.worldHeight - 1);
+      }
+      this.player.setPosition(point.x, point.y).setVelocity(0, 0);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(point.x, point.y);
+    }
+    gameStore.setSpawnIntent("regional-transition");
+    this.emitPlayerLocation();
+    this.checkpointPlayerLocation(true);
+    this.initialSpawnCheckpointed = true;
+  }
+
+  private nearestSafePoint(grid: MountedCollisionGrid["grid"], requested: WorldPoint): WorldPoint {
+    if (grid.isPointWalkable(requested)) return requested;
+    const initial = grid.pointToCell(requested);
+    if (!initial) return grid.cellCenter({ x: 0, y: 0 });
+    for (let radius = 1; radius < Math.max(grid.width, grid.height); radius += 1) {
+      for (let y = initial.y - radius; y <= initial.y + radius; y += 1) {
+        for (let x = initial.x - radius; x <= initial.x + radius; x += 1) {
+          if (Math.abs(x - initial.x) !== radius && Math.abs(y - initial.y) !== radius) continue;
+          if (grid.isWalkable({ x, y })) return grid.cellCenter({ x, y });
+        }
+      }
+    }
+    return grid.cellCenter({ x: 0, y: 0 });
   }
 
   protected removeDynamicObstacle(name: string): void {
@@ -336,7 +409,12 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.inputLocked = true;
     this.player.setVelocity(0, 0);
     gameEvents.emit(EVENT.dialogue, {
-      lines,
+      // Authored dialogue uses "You" as a stable content token; show the
+      // authenticated player's nickname without storing identity in quest data.
+      lines: lines.map((line) => ({
+        ...line,
+        speaker: line.speaker === "You" ? (gameStore.getPlayerProfile()?.nickname ?? "You") : line.speaker,
+      })),
       onComplete: () => {
         this.inputLocked = false;
         // The UI closes dialogue on keydown. Block world interaction briefly so
@@ -394,7 +472,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.locomotion.setMode(mode);
     this.player.setVelocity(0, 0);
     if (mode === "bicycle") {
-      // Keep Billy's feet at the authored contact point, but tighten the
+      // Keep the player's feet at the authored contact point, but tighten the
       // display slightly so his hips sit over the bicycle saddle instead of
       // reading as a standing character floating above it.
       this.player
@@ -471,7 +549,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     // is the mirrored case. Keeping this here makes player intent and visual
     // direction share a single source of truth.
     this.player.setFlipX(this.playerFacing === "left");
-    const prefix = this.travelMode === "bicycle" ? "billy-bike" : "billy";
+    const prefix = this.travelMode === "bicycle" ? "player-bike" : "player";
     const motion = this.travelMode === "bicycle" ? "ride" : "walk";
     this.player.anims.play(
       moving ? `${prefix}-${motion}-${presentationFacing}` : `${prefix}-idle-${presentationFacing}`,
@@ -479,8 +557,20 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     );
   }
 
+  private applyPlayerProfilePresentation(): void {
+    const shirt = gameStore.getPlayerProfile()?.tshirtColor.toLowerCase();
+    const palette: Record<string, number> = {
+      blue: 0xa9cdf0, green: 0xb9e0a5, red: 0xf0b0a9, yellow: 0xf4dda0,
+      purple: 0xd0b5e8, black: 0xb0b0b0, white: 0xffffff,
+    };
+    const tint = shirt?.startsWith("#")
+      ? Phaser.Display.Color.HexStringToColor(shirt).color
+      : palette[shirt ?? ""];
+    if (tint !== undefined) this.player.setTint(tint);
+  }
+
   /**
-   * Drawn behind Billy so the bike reads as a vehicle rather than a detached
+   * Drawn behind the player so the bike reads as a vehicle rather than a detached
    * icon. The frame follows the project's illustrated 2px-detail language,
    * with enough silhouette and hardware detail to remain legible at map zoom.
    */
@@ -806,7 +896,51 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     if (event.code === "F2") this.toggleGeometryDebugOverlay();
     if (event.code === "F6") this.toggleCollisionInspection();
     if (event.code === "F4") this.debugTeleportToObjective();
+    if (event.code === "F7") void this.toggleMapEditor();
   };
+
+  /** Opens the authoring overlay against the exact running map and camera. */
+  private async toggleMapEditor(): Promise<void> {
+    if (!import.meta.env.DEV || this.mapEditorOpening) return;
+    if (this.mapEditor?.isOpen()) {
+      await this.mapEditor.close();
+      this.mapEditor = undefined;
+      return;
+    }
+    if (this.inputLocked) {
+      gameEvents.emit(EVENT.toast, "Close the current dialogue before opening the map editor.");
+      return;
+    }
+    this.mapEditorOpening = true;
+    this.inputLocked = true;
+    this.player.setVelocity(0, 0);
+    this.cameras.main.stopFollow();
+    try {
+      const { MapEditorController } = await import("../mapEditor/MapEditorController");
+      const definition = getMapDefinition(this.mapId);
+      this.mapEditor = await MapEditorController.open({
+        scene: this,
+        mapId: this.mapId,
+        onClose: () => {
+          if (!this.player?.active) return;
+          this.inputLocked = false;
+          this.cameras.main.setZoom(REGIONAL_CAMERA_ZOOM);
+          this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+        },
+        onRestart: () => {
+          this.cache.tilemap.remove(definition.tiledMapKey);
+          this.scene.restart(this.sys.getData());
+        },
+      });
+      gameEvents.emit(EVENT.toast, "Map editor open — F7 closes it.");
+    } catch (error) {
+      this.inputLocked = false;
+      this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+      gameEvents.emit(EVENT.toast, error instanceof Error ? error.message : "Unable to open map editor.");
+    } finally {
+      this.mapEditorOpening = false;
+    }
+  }
 
   private handleRequestedInteraction(): void {
     if (!this.sys.isActive() || this.sys.isPaused() || this.inputLocked || this.time.now < this.interactionBlockedUntil) return;

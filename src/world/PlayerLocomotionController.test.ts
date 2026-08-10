@@ -10,12 +10,16 @@ function runFor(controller: PlayerLocomotionController, input: { x: number; y: n
 }
 
 describe("PlayerLocomotionController", () => {
-  it("keeps walking at the existing normalized 190 px/s velocity", () => {
+  it("accelerates walking to normalized 190 px/s and decelerates smoothly", () => {
     const controller = new PlayerLocomotionController();
-    const state = controller.update({ x: 1, y: 1 }, 16.67);
-    expect(state.speed).toBe(WALKING_SPEED);
+    const starting = controller.update({ x: 1, y: 1 }, 16.67);
+    expect(starting.speed).toBeGreaterThan(0);
+    expect(starting.speed).toBeLessThan(WALKING_SPEED);
+    const state = runFor(controller, { x: 1, y: 1 }, 60, 1);
+    expect(state.speed).toBeCloseTo(WALKING_SPEED);
     expect(state.velocityX).toBeCloseTo(WALKING_SPEED / Math.SQRT2);
     expect(state.velocityY).toBeCloseTo(WALKING_SPEED / Math.SQRT2);
+    expect(controller.update({ x: 0, y: 0 }, 1000 / 60).speed).toBeLessThan(WALKING_SPEED);
   });
 
   it("accelerates a bicycle to, but never above, its top speed", () => {

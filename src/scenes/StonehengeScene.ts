@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 
 import { STONEHENGE_ROUTE } from "../content/ryanRideRoutes";
-import { getIllustratedMapLayers, STONEHENGE_MAP } from "../content/maps";
+import { STONEHENGE_MAP } from "../content/maps";
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
@@ -46,11 +46,7 @@ export class StonehengeScene extends BaseExplorationScene {
   }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("stonehenge")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0)
-        .setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(STONEHENGE_MAP, this.tiledWorld);
   }
 
   private startRide(): void {
@@ -84,14 +80,14 @@ export class StonehengeScene extends BaseExplorationScene {
     for (const [objectId, label, text] of [
       ["stonehenge_gate", "Look toward Stonehenge", "The old stone circle rises beyond the neighborhood road."],
       ["roundabout", "Inspect the roundabout", "Every branch of the roundabout points toward another part of Milton."],
-      ["stonehenge_lookout", "Pause at the lookout", "From here, Billy can trace the road back home and up toward the school."],
+      ["stonehenge_lookout", "Pause at the lookout", "From here, I can trace the road back home and up toward the school."],
     ] as const) {
       const point = this.tiledWorld.point(objectId);
       this.registerInteraction({
         id: objectId,
         ...point,
         label,
-        interact: () => this.showDialogue([{ speaker: "Billy", text }]),
+        interact: () => this.showDialogue([{ speaker: "You", text }]),
       });
     }
   }

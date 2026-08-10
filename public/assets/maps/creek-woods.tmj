@@ -4,6 +4,172 @@
   "infinite": false,
   "layers": [
     {
+      "id": 899999,
+      "name": "map-markers",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": [
+        {
+          "id": 900001,
+          "name": "marker_fallen_log",
+          "type": "map-marker",
+          "x": 559.104,
+          "y": 204.288,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "fallen_log"
+            },
+            {
+              "name": "markerKind",
+              "value": "landmark"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Fallen Log Clearing"
+            }
+          ]
+        },
+        {
+          "id": 900002,
+          "name": "marker_creek_crossing",
+          "type": "map-marker",
+          "x": 1024,
+          "y": 1099.776,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "creek_crossing"
+            },
+            {
+              "name": "markerKind",
+              "value": "landmark"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Creek Crossing"
+            },
+            {
+              "name": "initiallyVisible",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": 900003,
+          "name": "marker_wheatfield_drive",
+          "type": "map-marker",
+          "x": 1370.112,
+          "y": 1460.736,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "wheatfield_drive"
+            },
+            {
+              "name": "markerKind",
+              "value": "exit"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Back to Wheatfield Drive"
+            }
+          ]
+        },
+        {
+          "id": 900004,
+          "name": "marker_obj_controller",
+          "type": "map-marker",
+          "x": 600.064,
+          "y": 680.448,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "obj_controller"
+            },
+            {
+              "name": "markerKind",
+              "value": "objective"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Search the tall grass"
+            },
+            {
+              "name": "questId",
+              "value": "missing_controller"
+            },
+            {
+              "name": "stages",
+              "value": "search_creek"
+            }
+          ]
+        },
+        {
+          "id": 900005,
+          "name": "marker_obj_return_home",
+          "type": "map-marker",
+          "x": 1370.112,
+          "y": 1460.736,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "obj_return_home"
+            },
+            {
+              "name": "markerKind",
+              "value": "objective"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Return to Wheatfield Drive"
+            },
+            {
+              "name": "questId",
+              "value": "missing_controller"
+            },
+            {
+              "name": "stages",
+              "value": "return_to_jeremy"
+            }
+          ]
+        },
+        {
+          "id": 900006,
+          "name": "marker_obj_mushroom_creek",
+          "type": "map-marker",
+          "x": 819.2,
+          "y": 583.68,
+          "properties": [
+            {
+              "name": "markerId",
+              "value": "obj_mushroom_creek"
+            },
+            {
+              "name": "markerKind",
+              "value": "objective"
+            },
+            {
+              "name": "markerLabel",
+              "value": "Search Creek Woods for mushrooms"
+            },
+            {
+              "name": "questId",
+              "value": "andrew_mushroom_hunt"
+            },
+            {
+              "name": "stages",
+              "value": "search_mushrooms"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "draworder": "topdown",
       "id": 1,
       "image": "creek-woods-master-v1.png",
@@ -14,18 +180,112 @@
       "type": "imagelayer",
       "visible": true,
       "x": 0,
-      "y": 0
+      "y": 0,
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "master"
+        },
+        {
+          "name": "depth",
+          "type": "int",
+          "value": 10
+        },
+        {
+          "name": "displayX",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "displayY",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "displayWidth",
+          "type": "float",
+          "value": 2048
+        },
+        {
+          "name": "displayHeight",
+          "type": "float",
+          "value": 1536
+        },
+        {
+          "name": "cropX",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "cropY",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "cropWidth",
+          "type": "float",
+          "value": 1672
+        },
+        {
+          "name": "cropHeight",
+          "type": "float",
+          "value": 941
+        }
+      ]
     },
     {
       "draworder": "topdown",
       "id": 2,
       "name": "stable-gameplay-objects",
       "objects": [
-        { "id": 1, "name": "spawn_home", "type": "spawn", "x": 1370, "y": 1400 },
-        { "id": 2, "name": "return_neighborhood", "type": "transition", "x": 1370, "y": 1460 },
-        { "id": 3, "name": "creek_tracks", "type": "interaction", "x": 620, "y": 900 },
-        { "id": 4, "name": "controller", "type": "interaction", "x": 600, "y": 680 },
-        { "id": 5, "name": "secret", "type": "interaction", "x": 1530, "y": 865 }
+        {
+          "id": 1,
+          "name": "spawn_home",
+          "type": "spawn",
+          "x": 1370,
+          "y": 1400
+        },
+        {
+          "id": 2,
+          "name": "return_neighborhood",
+          "type": "transition",
+          "x": 1370,
+          "y": 1460,
+          "properties": [
+            {
+              "name": "destinationMap",
+              "type": "string",
+              "value": "neighborhood"
+            },
+            {
+              "name": "destinationSpawn",
+              "type": "string",
+              "value": "spawn_woods"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "creek_tracks",
+          "type": "interaction",
+          "x": 620,
+          "y": 900
+        },
+        {
+          "id": 4,
+          "name": "controller",
+          "type": "interaction",
+          "x": 600,
+          "y": 680
+        },
+        {
+          "id": 5,
+          "name": "secret",
+          "type": "interaction",
+          "x": 1530,
+          "y": 865
+        }
       ],
       "opacity": 1,
       "type": "objectgroup",
@@ -38,24 +298,206 @@
       "id": 3,
       "name": "collision-rects",
       "objects": [
-        { "id": 6, "name": "north_edge", "x": 0, "y": 0, "width": 2048, "height": 35 },
-        { "id": 7, "name": "south_west_edge", "x": 0, "y": 1501, "width": 850, "height": 35 },
-        { "id": 8, "name": "south_east_edge", "x": 1200, "y": 1501, "width": 848, "height": 35 },
-        { "id": 9, "name": "west_edge", "x": 0, "y": 0, "width": 35, "height": 1536 },
-        { "id": 10, "name": "east_edge", "x": 2013, "y": 0, "width": 35, "height": 1536 },
-        { "id": 11, "name": "water_north", "x": 1050, "y": 0, "width": 270, "height": 280 },
-        { "id": 12, "name": "water_upper", "x": 1000, "y": 400, "width": 310, "height": 230 },
-        { "id": 13, "name": "water_middle", "x": 960, "y": 630, "width": 300, "height": 310 },
-        { "id": 14, "name": "water_south", "x": 885, "y": 1120, "width": 300, "height": 330 }
+        {
+          "id": 6,
+          "name": "north_edge",
+          "x": 0,
+          "y": 0,
+          "width": 2048,
+          "height": 35
+        },
+        {
+          "id": 7,
+          "name": "south_west_edge",
+          "x": 0,
+          "y": 1501,
+          "width": 850,
+          "height": 35
+        },
+        {
+          "id": 8,
+          "name": "south_east_edge",
+          "x": 1200,
+          "y": 1501,
+          "width": 848,
+          "height": 35
+        },
+        {
+          "id": 9,
+          "name": "west_edge",
+          "x": 0,
+          "y": 0,
+          "width": 35,
+          "height": 1536
+        },
+        {
+          "id": 10,
+          "name": "east_edge",
+          "x": 2013,
+          "y": 0,
+          "width": 35,
+          "height": 1536
+        },
+        {
+          "id": 11,
+          "name": "water_north",
+          "x": 1050,
+          "y": 0,
+          "width": 270,
+          "height": 280
+        },
+        {
+          "id": 12,
+          "name": "water_upper",
+          "x": 1000,
+          "y": 400,
+          "width": 310,
+          "height": 230
+        },
+        {
+          "id": 13,
+          "name": "water_middle",
+          "x": 960,
+          "y": 630,
+          "width": 300,
+          "height": 310
+        },
+        {
+          "id": 14,
+          "name": "water_south",
+          "x": 885,
+          "y": 1120,
+          "width": 300,
+          "height": 330
+        }
       ],
       "opacity": 1,
       "type": "objectgroup",
       "visible": true,
       "x": 0,
       "y": 0
+    },
+    {
+      "id": 900000,
+      "name": "creek-foreground-canopy",
+      "type": "imagelayer",
+      "image": "creek-foreground-canopy-v1.png",
+      "imagewidth": 1672,
+      "imageheight": 941,
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "foreground"
+        },
+        {
+          "name": "depth",
+          "type": "int",
+          "value": 55
+        },
+        {
+          "name": "displayX",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "displayY",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "displayWidth",
+          "type": "float",
+          "value": 2048
+        },
+        {
+          "name": "displayHeight",
+          "type": "float",
+          "value": 1536
+        },
+        {
+          "name": "cropX",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "cropY",
+          "type": "float",
+          "value": 0
+        },
+        {
+          "name": "cropWidth",
+          "type": "float",
+          "value": 1672
+        },
+        {
+          "name": "cropHeight",
+          "type": "float",
+          "value": 941
+        }
+      ]
+    },
+    {
+      "id": 900001,
+      "name": "spawns",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": []
+    },
+    {
+      "id": 900002,
+      "name": "transitions",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": []
+    },
+    {
+      "id": 900003,
+      "name": "interactions",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": []
+    },
+    {
+      "id": 900004,
+      "name": "navigation",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": []
+    },
+    {
+      "id": 900005,
+      "name": "solid-footprints",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": []
     }
   ],
-  "nextlayerid": 4,
+  "nextlayerid": 900006,
   "nextobjectid": 15,
   "orientation": "orthogonal",
   "renderorder": "right-down",
@@ -65,5 +507,17 @@
   "tilewidth": 1,
   "type": "map",
   "version": "1.10",
-  "width": 2048
+  "width": 2048,
+  "properties": [
+    {
+      "name": "schemaVersion",
+      "type": "int",
+      "value": 1
+    },
+    {
+      "name": "collisionMode",
+      "type": "string",
+      "value": "rectangles"
+    }
+  ]
 }

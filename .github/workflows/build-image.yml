@@ -22,7 +22,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          registry-url: https://npm.pkg.github.com
+          scope: '@bolb23'
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: azure/setup-kubectl@v4
       - run: >-
           ./scripts/deploy.sh --dry-run
@@ -54,3 +58,5 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          secrets: |
+            npm_token=${{ secrets.GITHUB_TOKEN }}

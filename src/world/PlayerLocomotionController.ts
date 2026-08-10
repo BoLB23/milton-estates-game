@@ -27,6 +27,8 @@ export interface BicycleLocomotionTuning {
 }
 
 export const WALKING_SPEED = 190;
+export const WALKING_ACCELERATION = 1_150;
+export const WALKING_DECELERATION = 1_500;
 
 export const DEFAULT_BICYCLE_TUNING: BicycleLocomotionTuning = {
   maxSpeed: 330,
@@ -79,6 +81,8 @@ export class PlayerLocomotionController {
   private mode: PlayerTravelMode = "walking";
   private speed = 0;
   private heading = Math.PI / 2;
+  private walkingVelocityX = 0;
+  private walkingVelocityY = 0;
 
   public constructor(private readonly bicycle: BicycleLocomotionTuning = DEFAULT_BICYCLE_TUNING) {}
 
@@ -94,6 +98,8 @@ export class PlayerLocomotionController {
   public resetVelocity(heading = this.heading): void {
     this.speed = 0;
     this.heading = heading;
+    this.walkingVelocityX = 0;
+    this.walkingVelocityY = 0;
   }
 
   public update(input: MovementInput, deltaMs: number, inputLocked = false): LocomotionState {
@@ -107,8 +113,14 @@ export class PlayerLocomotionController {
     if (this.mode === "walking") {
       const moving = direction.x !== 0 || direction.y !== 0;
       if (moving) this.heading = Math.atan2(direction.y, direction.x);
-      this.speed = moving ? WALKING_SPEED : 0;
-      return this.state(direction.x * WALKING_SPEED, direction.y * WALKING_SPEED, delta);
+      const rate = moving ? WALKING_ACCELERATION : WALKING_DECELERATION;
+      const targetX = direction.x * WALKING_SPEED;
+      const targetY = direction.y * WALKING_SPEED;
+      const step = rate * delta;
+      this.walkingVelocityX = approach(this.walkingVelocityX, targetX, step);
+      this.walkingVelocityY = approach(this.walkingVelocityY, targetY, step);
+      this.speed = Math.hypot(this.walkingVelocityX, this.walkingVelocityY);
+      return this.state(this.walkingVelocityX, this.walkingVelocityY, delta);
     }
 
     const moving = direction.x !== 0 || direction.y !== 0;
@@ -149,4 +161,9 @@ export class PlayerLocomotionController {
       deltaMs: delta * 1000,
     };
   }
+}
+
+function approach(current: number, target: number, amount: number): number {
+  if (current < target) return Math.min(target, current + amount);
+  return Math.max(target, current - amount);
 }

@@ -1,14 +1,16 @@
 import Phaser from "phaser";
 
-import { getIllustratedMapLayers, REIDENBAUGH_MAP } from "../content/maps";
+import { REIDENBAUGH_MAP } from "../content/maps";
 import { REIDENBAUGH_CHASE_ROUTES } from "../content/ryanRideRoutes";
 import { RYAN_CAUGHT, RYAN_POST_RIDE } from "../content/ryanRideDialogue";
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { selectRyanLoop } from "../world/ryanRide/decisionCore";
 import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
+import { PaperAirplaneRelayController } from "../world/paperAirplaneRelay/PaperAirplaneRelayController";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BaseExplorationScene } from "./BaseExplorationScene";
+import { finishLeaderboardTimer, leaderboardLines, startLeaderboardTimer } from "../platform/leaderboards";
 
 /** Reidenbaugh Elementary campus, including the seeded destination chase. */
 export class ReidenbaughScene extends BaseExplorationScene {
@@ -18,6 +20,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
   private catchOverlap?: Phaser.Physics.Arcade.Collider;
   private caught = false;
   private campusMounted = false;
+  private paperAirplaneRelay?: PaperAirplaneRelayController;
 
   public constructor() { super("reidenbaugh"); }
 
@@ -38,6 +41,18 @@ export class ReidenbaughScene extends BaseExplorationScene {
     this.mountCampusInteractions();
     if (gameStore.isRyanRideStage("chase_reidenbaugh")) this.startChase();
     else this.mountPostQuest();
+    this.paperAirplaneRelay = new PaperAirplaneRelayController({
+      world: this,
+      registerInteraction: (interactable) => this.registerInteraction(interactable),
+      unregisterInteraction: (id) => this.unregisterInteraction(id),
+      registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
+      unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
+      showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      showChoice: (request) => this.showChoice(request),
+      addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
+      objectPoint: (name) => this.tiledWorld.point(name),
+    });
+    this.paperAirplaneRelay.mount();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.follower?.stop();
       this.follower = undefined;
@@ -45,6 +60,8 @@ export class ReidenbaughScene extends BaseExplorationScene {
       this.catchOverlap = undefined;
       this.ryan?.destroy();
       this.ryan = undefined;
+      this.paperAirplaneRelay?.dispose();
+      this.paperAirplaneRelay = undefined;
     });
   }
 
@@ -56,11 +73,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
   }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("reidenbaugh")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0)
-        .setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(REIDENBAUGH_MAP, this.tiledWorld);
   }
 
   private mountCampusInteractions(): void {
@@ -83,14 +96,17 @@ export class ReidenbaughScene extends BaseExplorationScene {
         x: point.x,
         y: point.y,
         label,
-        isAvailable: () => gameStore.isBicycleUnlocked() && !gameStore.isRyanRideStage("chase_reidenbaugh"),
-        interact: () => this.showDialogue([{ speaker: "Billy", text }]),
+        isAvailable: () => gameStore.isBicycleUnlocked()
+          && !gameStore.isRyanRideStage("chase_reidenbaugh")
+          && !this.isPaperRelayAnchorReserved(objectId),
+        interact: () => this.showDialogue([{ speaker: "You", text }]),
       });
     }
   }
 
   private startChase(): void {
     this.setScriptedTransportOverride("bicycle");
+    startLeaderboardTimer("chaseRyan");
     const seed = gameStore.getState().questProgress.ryanRide.routeSeed ?? 0;
     const selected = selectRyanLoop(REIDENBAUGH_CHASE_ROUTES.map((route) => route.id), seed, 0);
     const route = REIDENBAUGH_CHASE_ROUTES.find((candidate) => candidate.id === selected.loopId)!;
@@ -109,6 +125,25 @@ export class ReidenbaughScene extends BaseExplorationScene {
     gameEvents.emit(EVENT.toast, "Ryan cut across the school campus — catch him!");
   }
 
+  /** Quest pickups and gust prompts share a few campus anchors with flavor notes. */
+  private isPaperRelayAnchorReserved(anchor: string): boolean {
+    const state = gameStore.getState();
+    if (state.activeQuestId !== "paper_airplane_relay") return false;
+    const relay = state.questProgress.paperAirplaneRelay;
+    if (relay.stage === "find_materials") {
+      return (anchor === "school_front" && !relay.materialIds.includes("clean_sheet"))
+        || (anchor === "service_side" && !relay.materialIds.includes("card_wing"))
+        || (anchor === "athletic_field" && !relay.materialIds.includes("message_strip"));
+    }
+    if (relay.stage === "fold_plane") return anchor === "playground";
+    if (relay.stage === "chase_plane") {
+      return (relay.windHits === 0 && (anchor === "playground" || anchor === "bus_loop"))
+        || (relay.windHits === 1 && anchor === "athletic_field")
+        || (relay.windHits === 2 && anchor === "basketball_court");
+    }
+    return relay.stage === "decode_message" && anchor === "basketball_court";
+  }
+
   private catchRyan(): void {
     if (this.caught || !gameStore.isRyanRideStage("chase_reidenbaugh")) return;
     this.caught = true;
@@ -120,6 +155,13 @@ export class ReidenbaughScene extends BaseExplorationScene {
     this.showDialogue([...RYAN_CAUGHT], () => {
       gameEvents.emit(EVENT.toast, "Catch Ryan complete — new objective: Explore Bent Creek.");
       this.mountPostQuest();
+      void finishLeaderboardTimer("chaseRyan").then((entries) => {
+        const lines = leaderboardLines(entries);
+        this.showDialogue([{
+          speaker: "Leaderboard",
+          text: lines.length ? `Top riders:\n${lines.join("\n")}` : "Chase Ryan time saved. No other leaderboard times yet.",
+        }]);
+      });
     });
   }
 
@@ -134,13 +176,15 @@ export class ReidenbaughScene extends BaseExplorationScene {
     } else {
       this.ryan.setPosition(post.x, post.y).setVelocity(0, 0);
     }
-    this.registerInteraction({
-      id: "ryan_post",
-      x: post.x,
-      y: post.y,
-      label: "Talk to Ryan",
-      interact: () => this.showDialogue([...RYAN_POST_RIDE]),
-    });
+    if (gameStore.getState().activeQuestId !== "paper_airplane_relay") {
+      this.registerInteraction({
+        id: "ryan_post",
+        x: post.x,
+        y: post.y,
+        label: "Talk to Ryan",
+        interact: () => this.showDialogue([...RYAN_POST_RIDE]),
+      });
+    }
     const back = this.tiledWorld.rectangle("exit_stonehenge");
     this.registerRegionInteraction({
       id: "exit_stonehenge",
@@ -148,7 +192,9 @@ export class ReidenbaughScene extends BaseExplorationScene {
       y: back.y + back.height / 2,
       width: back.width,
       height: back.height,
-      label: "Return to Stonehenge",
+      label: gameStore.hasSecret("paper_airplane_shortcut")
+        ? "Use Ryan's wind-map shortcut to Stonehenge"
+        : "Return to Stonehenge",
       isAvailable: () => gameStore.isMapUnlocked("stonehenge"),
       interact: () => {
         gameStore.setCurrentMap("stonehenge");

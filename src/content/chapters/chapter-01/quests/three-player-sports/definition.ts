@@ -4,7 +4,7 @@ export const THREE_PLAYER_SPORTS_DEFINITION = {
   id: "three_player_sports",
   chapterId: "chapter_1",
   title: "Three-Player Sports Day",
-  description: "Meet Jeremy to skateboard, Billy to play baseball, and Andrew to play basketball together.",
+  description: "Meet Jeremy to skateboard, play baseball at Billy's house, and meet Andrew for basketball.",
   kind: "side",
   required: false,
   optional: true,

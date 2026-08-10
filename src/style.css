@@ -76,6 +76,14 @@ canvas {
   .touch-actions { display: flex; align-items: flex-end; gap: 12px; }
   .touch-actions button { min-width: 94px; height: 50px; padding: 0 12px; }
   .touch-actions .touch-act { width: 76px; min-width: 76px; height: 76px; border-radius: 50%; }
+
+  body.backpack-open .touch-controls {
+    align-items: flex-start;
+    justify-content: flex-end;
+  }
+
+  body.backpack-open .touch-joystick,
+  body.backpack-open .touch-act { display: none; }
 }
 
 @media (orientation: portrait) and (max-width: 900px) {

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getIllustratedMapLayers, NEIGHBORHOOD_MAP } from "../content/maps";
+import { NEIGHBORHOOD_MAP } from "../content/maps";
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { BaseExplorationScene } from "./BaseExplorationScene";
@@ -23,7 +23,9 @@ export class NeighborhoodScene extends BaseExplorationScene {
     this.preloadMapAssets(NEIGHBORHOOD_MAP);
   }
 
-  public create(data?: { spawn?: "home" | "woods" | "stonehenge" | "fruitville" }): void {
+  public create(data?: { spawn?: "home" | "woods" | "stonehenge" | "fruitville"; playIntro?: boolean }): void {
+    const shouldPlayMoveIn = data?.playIntro === true
+      || (gameStore.getSpawnIntent() === "new-home" && !gameStore.hasSeenIntro());
     gameStore.setCurrentMap("neighborhood");
     this.tiledWorld = new TiledRuntimeWorld(this.make.tilemap({ key: NEIGHBORHOOD_MAP.tiledMapKey }));
     const spawnId = {
@@ -77,6 +79,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
       this.questController?.dispose();
       this.questController = undefined;
     });
+    if (shouldPlayMoveIn) this.startMoveInIntro();
   }
 
   public override objectPoint(name: string) { return this.tiledWorld.point(name); }
@@ -87,10 +90,43 @@ export class NeighborhoodScene extends BaseExplorationScene {
   }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("neighborhood")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0).setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(NEIGHBORHOOD_MAP, this.tiledWorld);
+  }
+
+  /** A save-specific, skippable welcome that ends on the first clear objective. */
+  private startMoveInIntro(): void {
+    const start = this.tiledWorld.point("move_in_start");
+    const end = this.tiledWorld.point("move_in_end");
+    const profile = gameStore.getPlayerProfile();
+    this.inputLocked = true;
+    this.getPlayerSprite().setPosition(start.x, start.y).setVelocity(0, 0);
+    (this.getPlayerSprite().body as Phaser.Physics.Arcade.Body).reset(start.x, start.y);
+    const finish = (): void => {
+      this.getPlayerSprite().setPosition(end.x, end.y).setVelocity(0, 0);
+      (this.getPlayerSprite().body as Phaser.Physics.Arcade.Body).reset(end.x, end.y);
+      this.cameras.main.startFollow(this.getPlayerSprite(), true, 0.12, 0.12);
+      this.inputLocked = false;
+      gameStore.markIntroSeen();
+      gameEvents.emit(EVENT.toast, "First stop: Talk to Billy outside his house.");
+    };
+    const revealAndArrive = (): void => {
+      if (gameStore.getState().settings.reducedMotion) { finish(); return; }
+      this.cameras.main.stopFollow();
+      this.cameras.main.pan(720, 500, 950, "Sine.easeInOut", true, (_camera, progress) => {
+        if (progress < 1) return;
+        this.tweens.add({
+          targets: this.getPlayerSprite(), x: end.x, y: end.y, duration: 800, ease: "Sine.easeInOut",
+          onComplete: finish,
+        });
+      });
+    };
+    this.cameras.main.fadeIn(280, 0, 0, 0);
+    this.showDialogue([
+      { speaker: "Milton Estates", text: `Welcome to Milton Estates, ${profile?.nickname ?? "neighbor"}.` },
+      { speaker: "Moving day", text: "Your home is the second house on Wheatfield Drive. You can keep extra things in the storage spot there." },
+      { speaker: "Milton Estates", text: "Andrew lives toward the west end, Billy is near the middle, and Jeremy lives farther east." },
+      { speaker: "Moving day", text: "Start by talking to Billy outside his house. He always knows what the neighborhood needs." },
+    ], revealAndArrive);
   }
 
   private enterWoods(): void {
@@ -188,9 +224,11 @@ export class NeighborhoodScene extends BaseExplorationScene {
       return { x: exit.x + exit.width / 2, y: exit.y + exit.height / 2 };
     }
     switch (state.questStage) {
+      case "talk_to_billy": return this.tiledWorld.point("billy");
       case "talk_to_jeremy":
       case "return_to_jeremy":
-      case "complete": return this.tiledWorld.point("jeremy");
+        return this.tiledWorld.point("jeremy");
+      case "complete": return this.tiledWorld.point("billy");
       case "talk_to_andrew": return this.tiledWorld.point("andrew");
       case "search_creek": return this.tiledWorld.point("woods_gate");
       default: return this.tiledWorld.point("jeremy");

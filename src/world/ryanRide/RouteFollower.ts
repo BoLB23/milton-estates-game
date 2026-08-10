@@ -42,7 +42,7 @@ export class RyanRouteFollower {
       this.actor.setVelocity(0, 0);
       return;
     }
-    // Ryan should lead without vanishing. These values bracket Billy's 220px/s
+    // Ryan should lead without vanishing. These values bracket the player's 220px/s
     // regional top speed and let the authored catch-up waits feel occasional.
     const speed = waypoint.mode === "sprint" ? 250 : waypoint.mode === "tease" ? 225 : 205;
     const angle = Phaser.Math.Angle.Between(this.actor.x, this.actor.y, target.x, target.y);

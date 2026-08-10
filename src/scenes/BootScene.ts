@@ -1,9 +1,10 @@
 import Phaser from "phaser";
 import { assetUrl } from "../content/assets";
 import { CONTENT_MODULES, validateRegisteredContent } from "../content/registry";
-import { MAP_DEFINITIONS, validateMapDefinitions } from "../content/maps";
-import { gameStore } from "../game/GameStore";
+import { initializeTiledMapMarkerCatalog, MAP_DEFINITIONS, type TiledMarkerSource, validateMapDefinitions } from "../content/maps";
 import type { MapId } from "../game/types";
+import { gamePlatform } from "../platform/integration";
+import { COLLISION_GRID_TILE_SIZE } from "../world/tiledRuntime";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -17,13 +18,22 @@ export class BootScene extends Phaser.Scene {
         this.load.image(asset.key, assetUrl(asset.path));
       }
     }
-    // Creek remains warm so its long-standing quest handoff is unchanged;
-    // Milton is the first playable region. Other expansion plates load only
-    // when their scene is entered.
-    for (const map of [MAP_DEFINITIONS.creek, MAP_DEFINITIONS.neighborhood]) {
+    // TMJs are small and contain the editable marker catalog. Keep images lazy
+    // so entering a regional scene still loads only its artwork plate.
+    for (const map of Object.values(MAP_DEFINITIONS)) {
       this.load.tilemapTiledJSON(map.tiledMapKey, assetUrl(map.tiledMapPath));
+    }
+    // Creek remains warm so its long-standing quest handoff is unchanged;
+    // Milton is the first playable region.
+    for (const map of [MAP_DEFINITIONS.creek, MAP_DEFINITIONS.neighborhood]) {
       for (const layer of map.layers) this.load.image(layer.textureKey, layer.imagePath);
     }
+    this.load.spritesheet("player", assetUrl("assets/characters/billy-hd-movement.png"), {
+      frameWidth: 400,
+      frameHeight: 450,
+    });
+    // Billy remains an ambient NPC with his existing art; the playable
+    // character uses the neutral `player-*` animation namespace.
     this.load.spritesheet("billy", assetUrl("assets/characters/billy-hd-movement.png"), {
       frameWidth: 400,
       frameHeight: 450,
@@ -31,22 +41,27 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    initializeTiledMapMarkerCatalog(Object.fromEntries(Object.values(MAP_DEFINITIONS).map((map) => [
+      map.id,
+      (this.cache.tilemap.get(map.tiledMapKey) as unknown as { data?: TiledMarkerSource } | undefined)?.data,
+    ])) as Partial<Record<MapId, TiledMarkerSource>>);
     validateRegisteredContent(new Set(Object.keys(MAP_DEFINITIONS) as MapId[]));
     validateMapDefinitions();
     this.makeTextures();
-    this.makeBillyAnimations();
+    this.makeCharacterAnimations("player");
+    this.makeCharacterAnimations("billy");
     this.makeBikeAnimations();
     this.scene.launch("input-router");
-    const firstVisit = gameStore.isFirstVisit();
-    // Persist migrations and establish an initial autosave before play begins.
-    gameStore.saveNow();
-    this.scene.start(firstVisit ? "welcome" : "front-end");
+    // Login and cloud-slot selection happen in FrontEndScene. Never stamp a
+    // browser-default save before that authenticated choice is complete.
+    void gamePlatform.initializeIdentity();
+    this.scene.start("front-end");
   }
 
   private makeTextures(): void {
     const collisionGrid = this.make.graphics({ x: 0, y: 0 });
-    collisionGrid.fillStyle(0xffffff, 1).fillRect(0, 0, 32, 32);
-    collisionGrid.generateTexture("map.collision-grid", 32, 32).destroy();
+    collisionGrid.fillStyle(0xffffff, 1).fillRect(0, 0, COLLISION_GRID_TILE_SIZE, COLLISION_GRID_TILE_SIZE);
+    collisionGrid.generateTexture("map.collision-grid", COLLISION_GRID_TILE_SIZE, COLLISION_GRID_TILE_SIZE).destroy();
 
     this.makePerson("andrew", 0xf29f3d, 0xe5b887);
     this.makePerson("jeremy", 0xd85b63, 0xd7a36d);
@@ -78,44 +93,44 @@ export class BootScene extends Phaser.Scene {
     mushroom.generateTexture("mushroom", 28, 32).destroy();
   }
 
-  private makeBillyAnimations(): void {
+  private makeCharacterAnimations(character: "player" | "billy"): void {
     const makeWalk = (key: string, frames: number[]) => {
       this.anims.create({
         key,
-        frames: frames.map((frame) => ({ key: "billy", frame })),
+        frames: frames.map((frame) => ({ key: character, frame })),
         frameRate: 7,
         repeat: -1,
       });
     };
     const makeIdle = (key: string, frame: number) => {
-      this.anims.create({ key, frames: [{ key: "billy", frame }] });
+      this.anims.create({ key, frames: [{ key: character, frame }] });
     };
 
-    makeIdle("billy-idle-down", 0);
-    makeWalk("billy-walk-down", [0, 1]);
-    makeIdle("billy-idle-side", 4);
-    makeWalk("billy-walk-side", [4, 5]);
-    makeIdle("billy-idle-up", 6);
-    makeWalk("billy-walk-up", [6, 7]);
+    makeIdle(`${character}-idle-down`, 0);
+    makeWalk(`${character}-walk-down`, [0, 1]);
+    makeIdle(`${character}-idle-side`, 4);
+    makeWalk(`${character}-walk-side`, [4, 5]);
+    makeIdle(`${character}-idle-up`, 6);
+    makeWalk(`${character}-walk-up`, [6, 7]);
   }
 
-  /** First-release bike presentation reuses the authored four-direction Billy sheet. */
+  /** Bike presentation reuses the playable character's four-direction sheet. */
   private makeBikeAnimations(): void {
     const make = (key: string, frames: number[], moving: boolean) => {
       if (this.anims.exists(key)) return;
       this.anims.create({
         key,
-        frames: frames.map((frame) => ({ key: "billy", frame })),
+        frames: frames.map((frame) => ({ key: "player", frame })),
         frameRate: moving ? 10 : 1,
         repeat: moving ? -1 : 0,
       });
     };
-    make("billy-bike-idle-down", [0], false);
-    make("billy-bike-ride-down", [0, 1], true);
-    make("billy-bike-idle-side", [4], false);
-    make("billy-bike-ride-side", [4, 5], true);
-    make("billy-bike-idle-up", [6], false);
-    make("billy-bike-ride-up", [6, 7], true);
+    make("player-bike-idle-down", [0], false);
+    make("player-bike-ride-down", [0, 1], true);
+    make("player-bike-idle-side", [4], false);
+    make("player-bike-ride-side", [4, 5], true);
+    make("player-bike-idle-up", [6], false);
+    make("player-bike-ride-up", [6, 7], true);
     for (const facing of ["down", "side", "up"] as const) {
       for (const state of ["idle", "ride"] as const) {
         const key = `ryan-bike-${state}-${facing}`;

@@ -22,6 +22,7 @@ function state(options: {
       sports: { stage: "meet_jeremy_to_skateboard" as const },
       ryanRide: { stage: "invite" as const, selectedDestination: null, routeSeed: null },
       exploreBentCreek: { stage: "open_gate" as const },
+      bonfire: { stage: "talk_to_schwartz" as const },
     },
   };
 }

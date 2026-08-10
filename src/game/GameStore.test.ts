@@ -31,7 +31,7 @@ function completeCatchRyan(store: GameStore): void {
 
 afterEach(() => gameEvents.removeAllListeners());
 
-describe("GameStore save v8", () => {
+describe("GameStore save v9", () => {
   it("identifies whether this browser had a save before the initial autosave", () => {
     const freshStorage = new MemoryStorage();
     const returningStorage = new MemoryStorage();
@@ -43,12 +43,12 @@ describe("GameStore save v8", () => {
 
   it("starts with trustworthy mission and menu defaults", () => {
     expect(makeStore().getState()).toMatchObject({
-      version: 8,
+      version: 9,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
       completedQuestIds: [],
-      questStage: "talk_to_jeremy",
+      questStage: "talk_to_billy",
       questHistory: [],
       inventory: [],
       secrets: [],
@@ -60,20 +60,133 @@ describe("GameStore save v8", () => {
     });
   });
 
+  it("persists the three new quest records and advances the paper relay atomically", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+
+    store.setActiveQuest("chapter_1", "paper_airplane_relay");
+    expect(store.advancePaperAirplaneRelay({ type: "material_found", material: "clean_sheet" })).toBe(false);
+    store.advancePaperAirplaneRelay({ type: "advisor_consulted", advisor: "ryan" });
+    store.advancePaperAirplaneRelay({ type: "advisor_consulted", advisor: "billy" });
+    store.advancePaperAirplaneRelay({ type: "advisor_consulted", advisor: "andrew" });
+    store.advancePaperAirplaneRelay({ type: "material_found", material: "clean_sheet" });
+    store.advancePaperAirplaneRelay({ type: "material_found", material: "card_wing" });
+    store.advancePaperAirplaneRelay({ type: "material_found", material: "message_strip" });
+    store.advancePaperAirplaneRelay({ type: "plane_folded" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "message_decoded" });
+    store.advancePaperAirplaneRelay({ type: "message_delivered", friend: "andrew" });
+    expect(store.getState()).toMatchObject({
+      questStage: "complete",
+      completedQuestIds: ["paper_airplane_relay"],
+      questProgress: {
+        paperAirplaneRelay: {
+          stage: "complete",
+          adviceIds: ["ryan", "billy", "andrew"],
+          materialIds: ["clean_sheet", "card_wing", "message_strip"],
+          windHits: 3,
+          decoded: true,
+          deliveredTo: "andrew",
+        },
+      },
+    });
+
+    store.setActiveQuest("chapter_1", "creek_clubhouse");
+    store.setQuestStage("choose_design");
+    expect(store.setCreekClubhouseRecord({
+      stage: "choose_design", design: "fort", supplies: [], constructionStep: 0, knockBeats: [],
+    })).toBe(true);
+    expect(store.getCreekClubhouseRecord().design).toBe("fort");
+
+    store.setActiveQuest("chapter_1", "bent_creek_caddy_caper");
+    expect(store.setBentCreekCaddyCaperRecord({
+      stage: "complete", clueIndex: 3, puttGates: 3, sprinklerIndex: 3, bestRematchScore: 4_200,
+    })).toBe(true);
+    expect(makeStore(storage).getState()).toMatchObject({
+      completedQuestIds: ["paper_airplane_relay", "bent_creek_caddy_caper"],
+      questProgress: {
+        creekClubhouse: { design: "fort" },
+        bentCreekCaddyCaper: { stage: "complete", bestRematchScore: 4_200 },
+      },
+    });
+  });
+
+  it("keeps new-quest completion rewards atomic and repairs interrupted reward writes", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+
+    store.setActiveQuest("chapter_1", "creek_clubhouse");
+    expect(store.setCreekClubhouseRecord({
+      stage: "complete", design: "lookout", supplies: ["rope", "blanket", "branches"], constructionStep: 3, knockBeats: [1, 1, 3, 1],
+    })).toBe(true);
+    expect(store.hasItem("clubhouse_journal_page")).toBe(true);
+    expect(store.getState().secrets).toEqual(expect.arrayContaining(["creek_clubhouse_landmark", "creek_clubhouse_shortcut"]));
+
+    store.setActiveQuest("chapter_1", "paper_airplane_relay");
+    ["ryan", "billy", "andrew"].forEach((advisor) => store.advancePaperAirplaneRelay({ type: "advisor_consulted", advisor: advisor as "ryan" | "billy" | "andrew" }));
+    ["clean_sheet", "card_wing", "message_strip"].forEach((material) => store.advancePaperAirplaneRelay({ type: "material_found", material: material as "clean_sheet" | "card_wing" | "message_strip" }));
+    store.advancePaperAirplaneRelay({ type: "plane_folded" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "wind_gust_caught" });
+    store.advancePaperAirplaneRelay({ type: "message_decoded" });
+    store.advancePaperAirplaneRelay({ type: "message_delivered", friend: "andrew" });
+    expect(store.hasItem("paper_airplane")).toBe(true);
+    expect(store.getState().secrets).toContain("paper_airplane_shortcut");
+
+    store.setActiveQuest("chapter_1", "bent_creek_caddy_caper");
+    expect(store.setBentCreekCaddyCaperRecord({
+      stage: "complete", clueIndex: 3, puttGates: 3, sprinklerIndex: 3, bestRematchScore: null,
+    })).toBe(true);
+    expect(store.hasItem("bent_creek_visitor_badge")).toBe(true);
+
+    const interrupted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
+    interrupted.inventory = interrupted.inventory.filter((stack: { itemId: string }) => ![
+      "clubhouse_journal_page", "paper_airplane", "bent_creek_visitor_badge",
+    ].includes(stack.itemId));
+    interrupted.secrets = interrupted.secrets.filter((secret: string) => ![
+      "creek_clubhouse_landmark", "creek_clubhouse_shortcut", "paper_airplane_shortcut",
+    ].includes(secret));
+    storage.setItem("milton-estates-save", JSON.stringify(interrupted));
+
+    const recovered = makeStore(storage).getState();
+    expect(recovered.inventory.map((stack) => stack.itemId)).toEqual(expect.arrayContaining([
+      "clubhouse_journal_page", "paper_airplane", "bent_creek_visitor_badge",
+    ]));
+    expect(recovered.secrets).toEqual(expect.arrayContaining([
+      "creek_clubhouse_landmark", "creek_clubhouse_shortcut", "paper_airplane_shortcut",
+    ]));
+    expect(validateSaveInvariants(recovered)).toEqual([]);
+  });
+
+  it("requires Billy to assign the first quest before Jeremy becomes the objective", () => {
+    const store = makeStore();
+    expect(store.getState()).toMatchObject({ questStage: "talk_to_billy", questHistory: [] });
+
+    expect(store.beginMissingControllerQuest()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      questStage: "talk_to_jeremy",
+      questHistory: ["missing_controller.started"],
+    });
+    expect(store.beginMissingControllerQuest()).toBe(false);
+  });
+
   it("migrates a realistic v6 playthrough without losing player or quest state", () => {
     const storage = new MemoryStorage();
     storage.setItem("milton-estates-save", JSON.stringify(realisticV6Save));
 
     const state = makeStore(storage).getState();
     expect(state).toMatchObject({
-      version: 8,
+      version: 9,
       activeQuestId: "catch_ryan",
       completedQuestIds: ["missing_controller", "andrew_mushroom_hunt", "three_player_sports"],
       currentMap: "stonehenge",
       discoveredMaps: ["neighborhood", "stonehenge", "creek"],
       unlockedMaps: ["neighborhood", "creek", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"],
       questStage: "ride_stonehenge",
-      inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
+      inventory: [],
       secrets: ["creek_token", "andrew_note"],
       settings: { masterVolume: 0.35, muted: true, textSize: "large", reducedMotion: true },
       lastSavedAt: "2026-07-31T22:14:09.000Z",
@@ -94,7 +207,7 @@ describe("GameStore save v8", () => {
     expect(validateSaveInvariants(state)).toEqual([]);
 
     const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-    expect(persisted).toMatchObject({ version: 8, currentMap: "stonehenge" });
+    expect(persisted).toMatchObject({ version: 9, currentMap: "stonehenge" });
     expect(JSON.stringify(persisted)).not.toContain("reidenbaugh_road");
     expect(persisted.questProgress.mushrooms.spawns).toEqual(state.questProgress.mushrooms.spawns);
   });
@@ -104,7 +217,7 @@ describe("GameStore save v8", () => {
     const writer = makeStore(storage);
     writer.setCurrentMap("creek");
     const valid = makeStore(storage).getState();
-    expect(valid.version).toBe(8);
+    expect(valid.version).toBe(9);
     expect(validateSaveInvariants(valid)).toEqual([]);
 
     const invalid = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
@@ -114,7 +227,7 @@ describe("GameStore save v8", () => {
     storage.setItem("milton-estates-save", JSON.stringify(invalid));
 
     expect(makeStore(storage).getState()).toMatchObject({
-      version: 8,
+      version: 9,
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
       unlockedMaps: ["neighborhood", "creek"],
@@ -129,7 +242,7 @@ describe("GameStore save v8", () => {
   ])("ignores a corrupt or invalid save: %s", (savedValue) => {
     const storage = new MemoryStorage();
     storage.setItem("milton-estates-save", savedValue);
-    expect(makeStore(storage).getState().questStage).toBe("talk_to_jeremy");
+    expect(makeStore(storage).getState().questStage).toBe("talk_to_billy");
   });
 
   it("records semantic history, map discovery, settings, and a successful-save timestamp", () => {
@@ -146,7 +259,7 @@ describe("GameStore save v8", () => {
     store.updateSettings({ textSize: "large", reducedMotion: true });
 
     expect(store.getState()).toMatchObject({
-      version: 8,
+      version: 9,
       activeChapterId: "chapter_1",
       activeQuestId: "missing_controller",
       completedChapterIds: [],
@@ -180,7 +293,7 @@ describe("GameStore save v8", () => {
 
       const state = makeStore(storage).getState();
       expect(state).toMatchObject({
-      version: 8,
+      version: 9,
         questStage: "return_to_jeremy",
         questHistory: ["missing_controller.started", "missing_controller.andrew_consulted", "missing_controller.creek_clue_found", "missing_controller.controller_recovered"],
         inventory: [{ itemId: CONTROLLER_ITEM, quantity: 1 }],
@@ -188,7 +301,7 @@ describe("GameStore save v8", () => {
         lastSavedAt: null,
       });
       const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-      expect(persisted.version).toBe(8);
+      expect(persisted.version).toBe(9);
       expect(persisted).not.toHaveProperty("questStage");
     },
   );
@@ -208,11 +321,11 @@ describe("GameStore save v8", () => {
     }));
 
     const state = makeStore(storage).getState();
-    expect(state.inventory).toEqual([{ itemId: CONTROLLER_ITEM, quantity: 1 }]);
+    expect(state.inventory).toEqual([]);
     expect(state.questHistory).toEqual(["missing_controller.controller_returned"]);
     expect(state.discoveredMaps).toEqual(["neighborhood", "creek"]);
     expect(state.completedQuestIds).toEqual(["missing_controller"]);
-    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(8);
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(9);
   });
 
   it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
@@ -228,7 +341,7 @@ describe("GameStore save v8", () => {
     store.startQuestReplay("missing_controller");
     expect(store.isReplaying()).toBe(true);
     expect(store.getState()).toMatchObject({
-      questStage: "talk_to_jeremy",
+      questStage: "talk_to_billy",
       questHistory: [],
       inventory: [],
       secrets: [],
@@ -289,7 +402,7 @@ describe("GameStore save v8", () => {
   it("offers cheap gameplay selectors without exposing mutable save state", () => {
     const store = makeStore();
     expect(store.isQuestActive("missing_controller")).toBe(true);
-    expect(store.isQuestAt("missing_controller", "talk_to_jeremy")).toBe(true);
+    expect(store.isQuestAt("missing_controller", "talk_to_billy")).toBe(true);
     expect(store.isAtStage("search_creek")).toBe(false);
 
     store.setQuestStage("search_creek");
@@ -317,10 +430,72 @@ describe("GameStore save v8", () => {
 
     expect(store.getState()).toMatchObject({
       activeQuestId: "missing_controller",
-      questStage: "talk_to_jeremy",
+      questStage: "talk_to_billy",
       inventory: [],
       currentMap: "neighborhood",
       settings: { masterVolume: 0.2, muted: true, textSize: "large", reducedMotion: true },
+    });
+  });
+
+  it("resets only the canonical active quest and removes its temporary items", () => {
+    const store = makeStore();
+    store.beginMissingControllerQuest();
+    store.setQuestStage("search_creek");
+    store.addInventoryItem(CONTROLLER_ITEM);
+    store.addInventoryItem("field_token");
+    store.addSecret("creek_token");
+    store.setCurrentMap("creek");
+
+    expect(store.resetActiveQuest()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "missing_controller",
+      questStage: "talk_to_billy",
+      questHistory: [],
+      inventory: [{ itemId: "field_token", quantity: 1 }],
+      secrets: ["creek_token"],
+      currentMap: "neighborhood",
+    });
+  });
+
+  it("preserves unrelated completed progress when resetting a later quest", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    store.setActiveQuest("chapter_1", "andrew_mushroom_hunt");
+    store.setQuestStage("search_mushrooms");
+    expect(store.collectMushroom(store.getMushroomSpawns()[0]!.id)).toBe(true);
+
+    expect(store.resetActiveQuest()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "andrew_mushroom_hunt",
+      questStage: "talk_to_andrew_for_mushrooms",
+      completedQuestIds: ["missing_controller"],
+      questProgress: { missingControllerStage: "complete", mushrooms: { collectedIds: [] } },
+    });
+    expect(store.getState().questHistory).toContain("missing_controller.controller_returned");
+  });
+
+  it("returns false when an isolated replay is active", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    store.startQuestReplay("missing_controller");
+    expect(store.resetActiveQuest()).toBe(false);
+  });
+
+  it("returns the controller and completes its quest in one state update", () => {
+    const storage = new MemoryStorage();
+    const listener = vi.fn();
+    const store = makeStore(storage);
+    store.setQuestStage("return_to_jeremy");
+    store.addInventoryItem(CONTROLLER_ITEM);
+    gameEvents.on(EVENT.stateChanged, listener);
+
+    store.setQuestStage("complete");
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getState()).toMatchObject({ questStage: "complete", inventory: [] });
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null")).toMatchObject({
+      inventory: [],
+      questProgress: { missingControllerStage: "complete" },
     });
   });
 
@@ -437,8 +612,8 @@ describe("GameStore save v8", () => {
     store.openBentCreekGate();
     expect(store.getState()).toMatchObject({
       activeQuestId: "explore_bent_creek",
-      questStage: "complete",
-      completedQuestIds: ["catch_ryan", "explore_bent_creek"],
+      questStage: "meet_schwartz",
+      completedQuestIds: ["catch_ryan"],
       questHistory: [
         "catch_ryan.started",
         "catch_ryan.destination_selected",
@@ -448,6 +623,22 @@ describe("GameStore save v8", () => {
         "explore_bent_creek.started",
         "explore_bent_creek.gate_opened",
       ],
+    });
+  });
+
+  it("completes Bent Creek and starts the bonfire quest after Mickey and Schwartz", () => {
+    const store = makeStore();
+    completeCatchRyan(store);
+    store.openBentCreekGate();
+    store.markMickeyDragRaceIntroSeen();
+    store.recordMickeyDragRace(24_000, true);
+
+    expect(store.canAcceptBonfireInvitation()).toBe(true);
+    expect(store.acceptBonfireInvitation()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "attend_bonfire_at_andrews",
+      questStage: "attend_bonfire",
+      completedQuestIds: ["catch_ryan", "explore_bent_creek"],
     });
   });
 
@@ -496,6 +687,43 @@ describe("GameStore save v8", () => {
     expect(makeStore(storage).getMickeyDragRaceRecord()).toEqual({ unlocked: true, introSeen: true, beaten: true, bestTimeMs: 23_120 });
   });
 
+  it("persists Schwartz's invitation, bonfire arrival, and successful initiation", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    completeCatchRyan(store);
+    store.openBentCreekGate();
+
+    expect(store.canAcceptBonfireInvitation()).toBe(false);
+    expect(store.acceptBonfireInvitation()).toBe(false);
+
+    store.recordMickeyDragRace(23_120, true);
+    expect(store.canAcceptBonfireInvitation()).toBe(true);
+    expect(store.acceptBonfireInvitation()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "attend_bonfire_at_andrews",
+      questStage: "attend_bonfire",
+      questHistory: [
+        "catch_ryan.started",
+        "catch_ryan.destination_selected",
+        "catch_ryan.neighborhood_departed",
+        "catch_ryan.reidenbaugh_reached",
+        "catch_ryan.ryan_caught",
+        "explore_bent_creek.started",
+        "explore_bent_creek.gate_opened",
+        "attend_bonfire_at_andrews.started",
+        "attend_bonfire_at_andrews.invitation_accepted",
+      ],
+    });
+    expect(store.arriveAtAndrewsBonfire()).toBe(true);
+    expect(store.completeBonfireInitiation()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      questStage: "complete",
+      completedQuestIds: ["catch_ryan", "explore_bent_creek", "attend_bonfire_at_andrews"],
+      questProgress: { bonfire: { stage: "complete" } },
+    });
+    expect(makeStore(storage).getState().questProgress.bonfire.stage).toBe("complete");
+  });
+
   it("repairs a saved Sports completion that predates the Catch Ryan handoff", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
@@ -535,11 +763,8 @@ describe("GameStore save v8", () => {
     storage.setItem("milton-estates-save", JSON.stringify(legacy));
 
     const migrated = makeStore(storage).getState();
-    expect(migrated.version).toBe(8);
-    expect(migrated.inventory).toEqual([
-      { itemId: CONTROLLER_ITEM, quantity: 1 },
-      { itemId: "bicycle", quantity: 1 },
-    ]);
+    expect(migrated.version).toBe(9);
+    expect(migrated.inventory).toEqual([{ itemId: "bicycle", quantity: 1 }]);
     expect(migrated.equipment).toEqual({ transport: null });
     expect(migrated.collectedPickupIds).toEqual([]);
   });
@@ -630,7 +855,7 @@ describe("GameStore save v8", () => {
   it("rejects incompatible quest stages instead of silently accepting them", () => {
     const store = makeStore();
     expect(() => store.setQuestStage("search_mushrooms")).toThrow(RangeError);
-    expect(store.getState().questStage).toBe("talk_to_jeremy");
+    expect(store.getState().questStage).toBe("talk_to_billy");
     expect(() => store.setActiveQuest("chapter_1", "storm_drain_detectives")).toThrow(RangeError);
   });
 
@@ -673,7 +898,7 @@ describe("GameStore save v8", () => {
     expect(state.questStage).toBe("search_mushrooms");
     expect(state.questProgress.missingControllerStage).toBe("search_creek");
     const persisted = JSON.parse(storage.getItem("milton-estates-save") ?? "null");
-    expect(persisted.version).toBe(8);
+    expect(persisted.version).toBe(9);
     expect(persisted).not.toHaveProperty("questStage");
   });
 
@@ -697,7 +922,7 @@ describe("GameStore save v8", () => {
     storage.setItem("milton-estates-save", JSON.stringify(save));
     expect(makeStore(storage).getState()).toMatchObject({
       activeQuestId: "missing_controller",
-      questStage: "talk_to_jeremy",
+      questStage: "talk_to_billy",
       completedQuestIds: [],
       questHistory: [],
     });

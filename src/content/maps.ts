@@ -31,6 +31,27 @@ export interface MapMarker {
   stages?: readonly QuestStage[];
 }
 
+/** Minimal Tiled JSON shape used to read editable map markers without Phaser. */
+export interface TiledMarkerSource {
+  width?: number;
+  height?: number;
+  tilewidth?: number;
+  tileheight?: number;
+  layers?: readonly {
+    name?: string;
+    type?: string;
+    objects?: readonly {
+      name?: string;
+      type?: string;
+      class?: string;
+      x?: number;
+      y?: number;
+      properties?: readonly { name?: string; value?: unknown }[] | Readonly<Record<string, unknown>>;
+    }[];
+  }[];
+}
+type TiledMarkerProperties = readonly { name?: string; value?: unknown }[] | Readonly<Record<string, unknown>> | undefined;
+
 export interface MapDefinition {
   id: MapId;
   label: string;
@@ -56,7 +77,7 @@ export interface MapSelection {
 }
 
 const EXPANSION_WORLD = { width: 1440, height: 1056 };
-const neighborhood = EXPANSION_WORLD;
+const neighborhood = { width: 1440, height: 1088 };
 const creek = { width: 2048, height: 1536 };
 
 const REGIONAL_FOLDOUT_DESIGN_SIZE = { width: 960, height: 540 };
@@ -78,22 +99,23 @@ export const MAP_DEFINITIONS: Readonly<Record<MapId, MapDefinition>> = {
     worldWidth: neighborhood.width, worldHeight: neighborhood.height,
     layers: [{
       id: "neighborhood_illustrated_master", role: "master", textureKey: "ch01.map.neighborhood.master",
-      imagePath: assetUrl("assets/maps/expansion/neighborhood-master-v2.png"), x: 0, y: 0,
+      imagePath: assetUrl("assets/maps/milton-estates-new.png"), x: 0, y: 0,
       width: neighborhood.width, height: neighborhood.height, depth: 10,
     }],
     tiledMapKey: "neighborhood-expansion-tmj", tiledMapPath: "assets/maps/expansion/neighborhood.tmj",
     authoredObjectIds: [
       "spawn_home", "spawn_woods", "spawn_stonehenge", "spawn_fruitville", "woods_gate", "exit_stonehenge", "exit_fruitville",
-      "andrew", "billy", "jeremy", "jeremy_driveway", "side_yard_gap",
+      "andrew", "player_house", "player_home", "home_storage", "billy", "jeremy", "ryan", "jeremy_driveway", "side_yard_gap",
       "blocked_bent_creek", "blocked_stonehenge", "blocked_reidenbaugh", "blocked_fruitville",
       "ryan_invite", "bike_mount_milton",
       "ryan_depart_00", "ryan_depart_01", "ryan_depart_02", "ryan_depart_03", "ryan_depart_04", "ryan_depart_05",
       "ryan_depart_06", "ryan_depart_07", "ryan_depart_08", "ryan_depart_09", "ryan_depart_10", "ryan_depart_11",
-      "andrew_house", "billy_house", "jeremy_house", "qa_home_route", "qa_stonehenge_route", "qa_fruitville_route",
+      "andrew_house", "player_house_footprint", "billy_house", "jeremy_house", "move_in_start", "move_in_end", "qa_home_route", "qa_stonehenge_route", "qa_fruitville_route",
       "pickup_milton_field_token_01",
     ],
     markers: [
-      { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.567, y: 0.864, initiallyVisible: true },
+      { id: "player_home", kind: "landmark", label: "Home", x: 0.333, y: 0.588, initiallyVisible: true },
+      { id: "billy_home", kind: "landmark", label: "Billy's House", x: 0.567, y: 0.544 },
       { id: "jeremy_home", kind: "landmark", label: "Jeremy's House", x: 0.856, y: 0.833 },
       { id: "andrew_home", kind: "landmark", label: "Andrew's House", x: 0.189, y: 0.742 },
       { id: "creek_woods", kind: "exit", label: "Creek Woods", x: 0.078, y: 0.015 },
@@ -270,9 +292,89 @@ export function normalizeWorldMapPoint(map: Pick<MapDefinition, "worldWidth" | "
   };
 }
 
+function tiledProperty(properties: TiledMarkerProperties, name: string): unknown {
+  if (Array.isArray(properties)) return properties.find((property) => property.name === name)?.value;
+  return (properties as Readonly<Record<string, unknown>> | undefined)?.[name];
+}
+
+function asMarkerKind(value: unknown): MapMarkerKind | undefined {
+  return value === "landmark" || value === "exit" || value === "objective" ? value : undefined;
+}
+
+/**
+ * Reads editable map markers from Tiled object data. Marker objects can live in
+ * the dedicated `map-markers` layer or in another object layer when the editor
+ * has created a POI carrying `markerKind` metadata.
+ */
+export function parseTiledMapMarkers(map: Pick<MapDefinition, "worldWidth" | "worldHeight">, source: TiledMarkerSource): readonly MapMarker[] {
+  const width = typeof source.width === "number" && typeof source.tilewidth === "number"
+    ? source.width * source.tilewidth : map.worldWidth;
+  const height = typeof source.height === "number" && typeof source.tileheight === "number"
+    ? source.height * source.tileheight : map.worldHeight;
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return [];
+
+  const markers: MapMarker[] = [];
+  for (const layer of source.layers ?? []) {
+    if (layer.type !== "objectgroup") continue;
+    for (const object of layer.objects ?? []) {
+      const kind = asMarkerKind(tiledProperty(object.properties, "markerKind"));
+      if (!kind || typeof object.x !== "number" || typeof object.y !== "number") continue;
+      const id = tiledProperty(object.properties, "markerId");
+      const label = tiledProperty(object.properties, "markerLabel");
+      const markerId = typeof id === "string" ? id : object.name;
+      if (!markerId || typeof label !== "string") continue;
+      const point = { x: object.x / width, y: object.y / height };
+      if (point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) continue;
+      const questId = tiledProperty(object.properties, "questId");
+      const stageValue = tiledProperty(object.properties, "stages");
+      const stages = typeof stageValue === "string"
+        ? stageValue.split(",").map((stage) => stage.trim()).filter(Boolean) as QuestStage[]
+        : undefined;
+      markers.push({
+        id: markerId,
+        kind,
+        label,
+        x: point.x,
+        y: point.y,
+        ...(tiledProperty(object.properties, "initiallyVisible") === true ? { initiallyVisible: true } : {}),
+        ...(typeof questId === "string" ? { questId: questId as QuestId } : {}),
+        ...(stages?.length ? { stages } : {}),
+      });
+    }
+  }
+  return markers;
+}
+
+let tiledMarkerCatalog: Readonly<Partial<Record<MapId, readonly MapMarker[]>>> = {};
+
+/** Installs the map-editor authored catalog after BootScene has loaded TMJs. */
+export function initializeTiledMapMarkerCatalog(sources: Readonly<Partial<Record<MapId, TiledMarkerSource>>>): void {
+  const next: Partial<Record<MapId, readonly MapMarker[]>> = {};
+  for (const map of Object.values(MAP_DEFINITIONS)) {
+    const source = sources[map.id];
+    if (!source) continue;
+    const markers = parseTiledMapMarkers(map, source);
+    // An incomplete or externally-edited document must never blank the menu.
+    if (markers.length > 0) next[map.id] = markers;
+  }
+  tiledMarkerCatalog = next;
+}
+
+/** Refreshes one edited map without discarding the already-loaded regional catalog. */
+export function updateTiledMapMarkerCatalog(mapId: MapId, source: TiledMarkerSource): void {
+  const markers = parseTiledMapMarkers(MAP_DEFINITIONS[mapId], source);
+  tiledMarkerCatalog = { ...tiledMarkerCatalog, [mapId]: markers.length > 0 ? markers : MAP_DEFINITIONS[mapId].markers };
+}
+
+export function resetTiledMapMarkerCatalog(): void { tiledMarkerCatalog = {}; }
+
+function markersFor(mapId: MapId): readonly MapMarker[] {
+  return tiledMarkerCatalog[mapId] ?? MAP_DEFINITIONS[mapId].markers;
+}
+
 export function selectVisibleMapMarkers(selection: MapSelection): readonly MapMarker[] {
   const discovered = selection.discoveredIds instanceof Set ? selection.discoveredIds : new Set(selection.discoveredIds);
-  return MAP_DEFINITIONS[selection.currentMap].markers.filter((marker) => {
+  return markersFor(selection.currentMap).filter((marker) => {
     if (marker.kind === "exit") return true;
     if (marker.kind === "objective") {
       return marker.questId === selection.questId && (marker.stages?.includes(selection.stage) ?? false);

@@ -129,7 +129,7 @@ describe("static 32px map validation", () => {
     })).not.toThrow();
   });
 
-  it("reports actionable finite/grid/alignment/walkability errors", () => {
+  it("reports actionable finite/grid errors while allowing pixel-precise points", () => {
     const invalid = copy(authoredMap("broken"));
     invalid.orientation = "isometric";
     invalid.infinite = true;
@@ -145,8 +145,8 @@ describe("static 32px map validation", () => {
       "orientation",
       "finite-map",
       "tile-size",
-      "point-alignment",
     ]));
+    expect(issues.some((issue) => issue.code === "point-alignment")).toBe(false);
     expect(() => validateMapData(invalid)).toThrow(/orthogonal/);
   });
 

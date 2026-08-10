@@ -10,4 +10,4 @@ kubectl --namespace "${namespace}" get deployment,pods,service,ingress \
   --selector "app.kubernetes.io/name=${deployment}"
 kubectl --namespace "${namespace}" get "deployment/${deployment}" \
   --output "custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
-echo "URL: https://games.bolblab.org"
+echo "URL: https://games.bolblab.org/games/milton-estates/"

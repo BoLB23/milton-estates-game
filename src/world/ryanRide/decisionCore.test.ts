@@ -35,7 +35,7 @@ describe("Ryan ride decision core", () => {
     expect(resumed.shouldMove).toBe(true);
   });
 
-  it("throttles wait callouts and blocks exit until Billy catches up", () => {
+  it("throttles wait callouts and blocks exit until the player catches up", () => {
     const waiting = decideRyanRide(createRyanRideDecisionState(), {
       distanceToPlayer: 700, atWaitSafeWaypoint: true, attemptingExit: true, nowMs: 1_000, routeMode: "cruise",
     });

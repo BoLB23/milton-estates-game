@@ -1,10 +1,12 @@
 import Phaser from "phaser";
 
-import { BENT_CREEK_MAP, getIllustratedMapLayers } from "../content/maps";
+import { getBonfireDialogue } from "../content/chapters/chapter-01/quests/attend-bonfire-at-andrews/dialogue";
+import { BENT_CREEK_MAP } from "../content/maps";
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { normalizeTextEntryForComparison } from "../ui/textEntry";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
+import { BentCreekCaddyCaperController } from "../world/BentCreekCaddyCaperController";
 import { BaseExplorationScene } from "./BaseExplorationScene";
 
 const GATE_ANSWER_PROMPT = "Who are you here to visit?";
@@ -17,6 +19,8 @@ export class BentCreekScene extends BaseExplorationScene {
   private gateBarrierVisual?: Phaser.GameObjects.Graphics;
   private gateStatusLabel?: Phaser.GameObjects.Text;
   private mickeyVisual?: Phaser.GameObjects.Container;
+  private schwartzVisual?: Phaser.GameObjects.Container;
+  private caddyCaper?: BentCreekCaddyCaperController;
 
   public constructor() { super("bent_creek"); }
 
@@ -34,26 +38,40 @@ export class BentCreekScene extends BaseExplorationScene {
     const spawn = "spawn_gate_exterior";
     this.initializeWorld("bent_creek", this.tiledWorld.point(spawn));
     this.mountCollisionGrid(this.tiledWorld);
+    if (this.gateOpen) this.removeDynamicObstacle("gate_barrier");
     this.drawWorld();
     this.renderGateBarrier(this.gateOpen);
     this.mountInteractions();
+    this.caddyCaper = new BentCreekCaddyCaperController({
+      world: this,
+      registerInteraction: (interactable) => this.registerInteraction(interactable),
+      unregisterInteraction: (id) => this.unregisterInteraction(id),
+      registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
+      unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
+      showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      showChoice: (request) => this.showChoice(request),
+      addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
+      objectPoint: (name) => this.objectPoint(name),
+      settings: gameStore.getState().settings,
+    });
+    this.caddyCaper.mount();
     if (this.gateOpen && !gameStore.getMickeyDragRaceRecord().beaten) this.mountMickey(false);
+    if (this.shouldMountSchwartz()) this.mountSchwartz();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.gateOpen = false;
       this.gateBarrierVisual = undefined;
       this.gateStatusLabel = undefined;
       this.mickeyVisual = undefined;
+      this.schwartzVisual = undefined;
+      this.caddyCaper?.dispose();
+      this.caddyCaper = undefined;
     });
   }
 
   public override objectPoint(name: string) { return this.tiledWorld.point(name); }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("bent_creek")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0)
-        .setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(BENT_CREEK_MAP, this.tiledWorld);
   }
 
   private mountInteractions(): void {
@@ -77,6 +95,16 @@ export class BentCreekScene extends BaseExplorationScene {
         interact: () => this.beginMickeyChallenge(),
       });
     }
+    if (raceRecord.beaten && gameStore.getState().questProgress.bonfire.stage === "talk_to_schwartz") {
+      const schwartz = this.tiledWorld.point("golf_cart_path_10");
+      this.registerInteraction({
+        id: "schwartz_bonfire_invitation",
+        x: schwartz.x,
+        y: schwartz.y,
+        label: "Talk to Schwartz",
+        interact: () => this.beginSchwartzInvitation(),
+      });
+    }
     const gatehouse = this.tiledWorld.point("gatehouse");
     this.registerInteraction({
       id: "gatehouse",
@@ -84,8 +112,8 @@ export class BentCreekScene extends BaseExplorationScene {
       y: gatehouse.y,
       label: "Look at the gatehouse",
       interact: () => this.showDialogue([
-        { speaker: "Billy", text: "The Bent Creek gatehouse has someone posted beside the entry lane." },
-        { speaker: "Billy", text: "A brass visitor board lists two family names: Schwartz and Votilla." },
+        { speaker: "You", text: "The Bent Creek gatehouse has someone posted beside the entry lane." },
+        { speaker: "You", text: "A brass visitor board lists two family names: Schwartz and Votilla." },
       ]),
     });
     const clubhouse = this.tiledWorld.point("clubhouse");
@@ -94,7 +122,7 @@ export class BentCreekScene extends BaseExplorationScene {
       x: clubhouse.x,
       y: clubhouse.y,
       label: "Look toward the clubhouse",
-      interact: () => this.showDialogue([{ speaker: "Billy", text: "The clubhouse sits beyond the guarded road and the cart paths." }]),
+      interact: () => this.showDialogue([{ speaker: "You", text: "The clubhouse sits beyond the guarded road and the cart paths." }]),
     });
     const cartPath = this.tiledWorld.point("golf_cart_path_00");
     this.registerInteraction({
@@ -102,7 +130,13 @@ export class BentCreekScene extends BaseExplorationScene {
       x: cartPath.x,
       y: cartPath.y,
       label: "Inspect the cart path",
-      interact: () => this.showDialogue([{ speaker: "Billy", text: "Golf carts hum along the pale path beyond the gate." }]),
+      isAvailable: () => {
+        const state = gameStore.getState();
+        return state.activeQuestId !== "bent_creek_caddy_caper"
+          || state.questProgress.bentCreekCaddyCaper.stage !== "follow_clues"
+          || state.questProgress.bentCreekCaddyCaper.clueIndex !== 0;
+      },
+      interact: () => this.showDialogue([{ speaker: "You", text: "Golf carts hum along the pale path beyond the gate." }]),
     });
     const exit = this.tiledWorld.rectangle("exit_fruitville");
     this.registerRegionInteraction({
@@ -114,10 +148,68 @@ export class BentCreekScene extends BaseExplorationScene {
       label: "Return to Fruitville Pike",
       isAvailable: () => gameStore.isMapUnlocked("fruitville_pike"),
       interact: () => {
+        if (gameStore.isQuestAt("attend_bonfire_at_andrews", "attend_bonfire")) {
+          this.departForBonfire();
+          return;
+        }
         gameStore.setCurrentMap("fruitville_pike");
         this.scene.start("fruitville_pike", { spawn: "bent_creek" });
       },
     });
+  }
+
+  private shouldMountSchwartz(): boolean {
+    return gameStore.getMickeyDragRaceRecord().beaten
+      && gameStore.getState().questProgress.bonfire.stage === "talk_to_schwartz";
+  }
+
+  private beginSchwartzInvitation(): void {
+    this.showDialogue([
+      { speaker: "Schwartz", text: "Welcome to Bent Creek. Its social topography is surprisingly welcoming once you acclimate." },
+      { speaker: "Schwartz", text: "Might you be proceeding to Andrew's for the bonfire this evening?" },
+    ], () => this.showChoice({
+      speaker: "Schwartz",
+      prompt: "Are you going to Andrew's bonfire?",
+      options: [{ id: "yes", label: "Yes, I'll be there" }, { id: "no", label: "Not tonight" }],
+      onSelect: (optionId) => {
+        if (optionId === "yes" && gameStore.acceptBonfireInvitation()) {
+          this.unregisterInteraction("schwartz_bonfire_invitation");
+          this.showDialogue(getBonfireDialogue("schwartz_welcome").slice(2));
+          gameEvents.emit(EVENT.toast, "New quest — Attend the bonfire at Andrew's.");
+          return;
+        }
+        this.showDialogue(getBonfireDialogue("schwartz_decline"));
+      },
+      onCancel: () => gameEvents.emit(EVENT.toast, "Schwartz's invitation remains open."),
+    }));
+  }
+
+  private departForBonfire(): void {
+    if (!gameStore.arriveAtAndrewsBonfire()) return;
+    this.inputLocked = true;
+    this.player.setVelocity(0, 0);
+    const start = (): void => { this.scene.start("andrews_bonfire"); };
+    if (gameStore.getState().settings.reducedMotion) { start(); return; }
+    this.cameras.main.fadeOut(850, 18, 14, 32);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, start);
+  }
+
+  private mountSchwartz(): void {
+    if (this.schwartzVisual) return;
+    const point = this.tiledWorld.point("golf_cart_path_10");
+    const body = this.add.graphics();
+    body.fillStyle(0xe1af89, 1).fillCircle(0, -30, 12);
+    body.fillStyle(0x302c42, 1).fillRoundedRect(-14, -18, 28, 36, 6);
+    body.lineStyle(3, 0xc7a35c, 1).lineBetween(-9, 18, -10, 39).lineBetween(9, 18, 10, 39);
+    body.lineStyle(2, 0x201f2b, 1).strokeCircle(-5, -31, 5).strokeCircle(5, -31, 5).lineBetween(0, -31, 0, -31);
+    const name = this.add.text(0, 49, "SCHWARTZ", {
+      fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#fff5d6",
+      backgroundColor: "#302c42dd", padding: { x: 5, y: 2 },
+    }).setOrigin(0.5);
+    this.schwartzVisual = this.add.container(point.x, point.y, [body, name]).setDepth(53);
+    if (!gameStore.getState().settings.reducedMotion) {
+      this.tweens.add({ targets: this.schwartzVisual, y: point.y - 3, duration: 900, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+    }
   }
 
   private openGatePrompt(): void {
@@ -141,8 +233,11 @@ export class BentCreekScene extends BaseExplorationScene {
     this.renderGateBarrier(true);
     gameStore.openBentCreekGate();
     gameEvents.emit(EVENT.toast, "The gate attendant lifts the barrier.");
-    this.mountMickey(true);
-    this.beginMickeyChallenge(true);
+    this.inputLocked = true;
+    this.mountMickey(true, () => {
+      this.inputLocked = false;
+      this.beginMickeyChallenge(true);
+    });
   }
 
   private beginMickeyChallenge(includeAttendant = false): void {
@@ -162,7 +257,7 @@ export class BentCreekScene extends BaseExplorationScene {
   }
 
   /** A simple silver early-2000s four-door sedan and its orange-haired driver. */
-  private mountMickey(arriving: boolean): void {
+  private mountMickey(arriving: boolean, onArrive?: () => void): void {
     if (this.mickeyVisual) return;
     const entry = this.tiledWorld.point("gate_entry");
     const car = this.add.graphics();
@@ -186,8 +281,21 @@ export class BentCreekScene extends BaseExplorationScene {
     }).setOrigin(0.5);
     this.mickeyVisual = this.add.container(entry.x + 135, entry.y + 119, [car, mickey, name]).setDepth(53);
     if (arriving) {
-      this.mickeyVisual.x += 160;
-      this.tweens.add({ targets: this.mickeyVisual, x: entry.x + 135, duration: 700, ease: "Quad.easeOut" });
+      this.mickeyVisual.x += 420;
+      if (gameStore.getState().settings.reducedMotion) {
+        this.mickeyVisual.x = entry.x + 135;
+        onArrive?.();
+      } else {
+        this.tweens.add({
+          targets: this.mickeyVisual,
+          x: entry.x + 135,
+          duration: 1_600,
+          ease: "Sine.easeInOut",
+          onComplete: onArrive,
+        });
+      }
+    } else {
+      onArrive?.();
     }
   }
 
@@ -235,6 +343,11 @@ export class BentCreekScene extends BaseExplorationScene {
   }
 
   protected override getDebugObjectivePosition(): { x: number; y: number } {
+    if (this.shouldMountSchwartz()) return this.tiledWorld.point("golf_cart_path_10");
+    if (gameStore.isQuestAt("attend_bonfire_at_andrews", "attend_bonfire")) {
+      const exit = this.tiledWorld.rectangle("exit_fruitville");
+      return { x: exit.x + exit.width / 2, y: exit.y + exit.height / 2 };
+    }
     return this.tiledWorld.point(this.gateOpen ? "clubhouse" : "gate_attendant");
   }
 }

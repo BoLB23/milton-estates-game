@@ -1,4 +1,4 @@
-import { FRUITVILLE_PIKE_MAP, getIllustratedMapLayers } from "../content/maps";
+import { FRUITVILLE_PIKE_MAP } from "../content/maps";
 import { gameStore } from "../game/GameStore";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BaseExplorationScene } from "./BaseExplorationScene";
@@ -26,11 +26,7 @@ export class FruitvillePikeScene extends BaseExplorationScene {
   public override objectPoint(name: string) { return this.tiledWorld.point(name); }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("fruitville_pike")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0)
-        .setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(FRUITVILLE_PIKE_MAP, this.tiledWorld);
   }
 
   private mountTravel(): void {
@@ -51,7 +47,7 @@ export class FruitvillePikeScene extends BaseExplorationScene {
         x: point.x,
         y: point.y,
         label,
-        interact: () => this.showDialogue([{ speaker: "Billy", text }]),
+        interact: () => this.showDialogue([{ speaker: "You", text }]),
       });
     }
   }

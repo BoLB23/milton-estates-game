@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: "subpath",
       testMatch: "**/subpath-assets.spec.ts",
-      use: { baseURL: "http://127.0.0.1:4184/milton/" },
+      use: { baseURL: "http://127.0.0.1:4184/games/milton-estates/" },
     },
     {
       name: "webgl-smoke",
@@ -34,8 +34,8 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
-      command: "VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4184 --base=/milton/",
-      url: "http://127.0.0.1:4184/milton/",
+      command: "VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4184 --base=/games/milton-estates/",
+      url: "http://127.0.0.1:4184/games/milton-estates/",
       reuseExistingServer: false,
     },
     {

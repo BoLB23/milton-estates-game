@@ -1,15 +1,20 @@
 import { createMushroomSpawns, repairMushroomSpawnLayout } from "../content/mushrooms";
 import { getItemDefinition, isItemId } from "../content/items";
 import {
+  advanceMissingControllerStage,
   advanceMushroomStage,
   advanceExploreBentCreekStage,
+  advanceBonfireQuestStage,
+  advancePaperAirplaneRelayStage,
   advanceRyanRideStage,
   IMPLEMENTED_QUEST_IDS,
   MUSHROOM_COUNT,
   QUEST_MILESTONES,
   isStageForQuest,
   milestonesForQuestStage,
+  type PaperAirplaneRelayEvent,
 } from "./quests/specs";
+import { QUEST_COMPLETION_REWARDS } from "./quests/completionRewards";
 import {
   migrateLegacyMissingControllerStage,
   progressAtStage,
@@ -19,6 +24,7 @@ import {
 } from "./persistence/questState";
 import { decodePersistedJson, isValidTimestamp } from "./persistence/decoder";
 import { EVENT, gameEvents } from "./events";
+import type { CloudSaveRepository, CloudSaveState } from "../platform/CloudSaveRepository";
 import { MAP_IDS } from "./types";
 import type {
   ChapterId,
@@ -29,6 +35,9 @@ import type {
   EquipmentState,
   MissingControllerStage,
   ExploreBentCreekStage,
+  BonfireQuestStage,
+  BentCreekCaddyCaperQuestState,
+  CreekClubhouseQuestState,
   MushroomQuestStage,
   MushroomSpawn,
   PlayerSettings,
@@ -38,9 +47,12 @@ import type {
   QuestStage,
   SaveData,
   PlayerMapLocation,
+  PlayerProfile,
+  PaperAirplaneRelayQuestState,
   SportsQuestStage,
   RyanRideStage,
   RideDestination,
+  SpawnIntent,
 } from "./types";
 
 const STORAGE_KEY = "milton-estates-save";
@@ -75,13 +87,13 @@ const DEFAULT_SETTINGS: PlayerSettings = {
 const DEFAULT_EQUIPMENT: EquipmentState = { transport: null };
 const DEFAULT_LAST_KNOWN_LOCATION: PlayerMapLocation = {
   map: "neighborhood",
-  x: 816 / 1440,
-  y: 976 / 1056,
+  x: 560 / 1440,
+  y: 656 / 1088,
 };
 
 function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
   return {
-    missingControllerStage: "talk_to_jeremy",
+    missingControllerStage: "talk_to_billy",
     mushrooms: {
       stage: "talk_to_andrew_for_mushrooms",
       spawns: createMushroomSpawns(seed),
@@ -90,12 +102,35 @@ function createQuestProgress(seed = DEFAULT_MUSHROOM_SEED): QuestProgress {
     sports: { stage: "meet_jeremy_to_skateboard" },
     ryanRide: { stage: "invite", selectedDestination: null, routeSeed: null },
     exploreBentCreek: { stage: "open_gate" },
+    bonfire: { stage: "talk_to_schwartz" },
+    creekClubhouse: {
+      stage: "talk_to_andrew",
+      design: null,
+      supplies: [],
+      constructionStep: 0,
+      knockBeats: [],
+    },
+    paperAirplaneRelay: {
+      stage: "ask_for_advice",
+      adviceIds: [],
+      materialIds: [],
+      windHits: 0,
+      decoded: false,
+      deliveredTo: null,
+    },
+    bentCreekCaddyCaper: {
+      stage: "inspect_display",
+      clueIndex: 0,
+      puttGates: 0,
+      sprinklerIndex: 0,
+      bestRematchScore: null,
+    },
   };
 }
 
 function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
   return {
-    version: 8,
+    version: 9,
     activeChapterId: "chapter_1",
     activeQuestId: "missing_controller",
     completedChapterIds: [],
@@ -113,6 +148,17 @@ function createDefaultSave(seed = DEFAULT_MUSHROOM_SEED): SaveData {
     settings: { ...DEFAULT_SETTINGS },
     lastSavedAt: null,
   };
+}
+
+/**
+ * A deliberately clean schema for Game Lab slots. Browser v1-v8 payloads are
+ * never fed into this decoder or uploaded to the service.
+ */
+export interface MiltonCloudSave extends Omit<SaveData, "version" | "lastSavedAt"> {
+  schema: "milton-estates";
+  schemaVersion: 1;
+  introSeen: boolean;
+  houseStorage: InventoryStack[];
 }
 
 const DEFAULT_SAVE = createDefaultSave();
@@ -175,12 +221,23 @@ type SaveDataV7 = Omit<SaveData, "version" | "inventory" | "equipment" | "collec
   inventory: string[];
 };
 
-type NormalizableSave = Omit<SaveData, "version" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation"> & {
-  version: 7 | 8;
+type SaveDataV8 = Omit<SaveData, "version" | "questProgress"> & {
+  version: 8;
+  questProgress: Omit<QuestProgress, "bonfire"> & { bonfire?: QuestProgress["bonfire"] };
+};
+
+type NormalizableSave = Omit<SaveData, "version" | "inventory" | "equipment" | "collectedPickupIds" | "lastKnownLocation" | "questProgress"> & {
+  version: 7 | 8 | 9;
   inventory: readonly (InventoryStack | string)[];
   equipment?: EquipmentState;
   collectedPickupIds?: string[];
   lastKnownLocation?: PlayerMapLocation;
+  questProgress: Omit<QuestProgress, "bonfire" | "creekClubhouse" | "paperAirplaneRelay" | "bentCreekCaddyCaper"> & {
+    bonfire?: QuestProgress["bonfire"];
+    creekClubhouse?: QuestProgress["creekClubhouse"];
+    paperAirplaneRelay?: QuestProgress["paperAirplaneRelay"];
+    bentCreekCaddyCaper?: QuestProgress["bentCreekCaddyCaper"];
+  };
 };
 
 type LegacySaveData = Omit<SaveDataV2, "version" | "questHistory" | "discoveredMaps" | "settings" | "lastSavedAt"> & {
@@ -198,6 +255,18 @@ function copyQuestProgress(progress: QuestProgress): QuestProgress {
     sports: { stage: progress.sports.stage },
     ryanRide: { ...progress.ryanRide },
     exploreBentCreek: { ...progress.exploreBentCreek },
+    bonfire: { ...progress.bonfire },
+    creekClubhouse: {
+      ...progress.creekClubhouse,
+      supplies: [...progress.creekClubhouse.supplies],
+      knockBeats: [...progress.creekClubhouse.knockBeats],
+    },
+    paperAirplaneRelay: {
+      ...progress.paperAirplaneRelay,
+      adviceIds: [...progress.paperAirplaneRelay.adviceIds],
+      materialIds: [...progress.paperAirplaneRelay.materialIds],
+    },
+    bentCreekCaddyCaper: { ...progress.bentCreekCaddyCaper },
   };
 }
 
@@ -217,6 +286,25 @@ function copySave(save: SaveData): SaveData {
     unlockedMaps: [...save.unlockedMaps],
     settings: { ...save.settings },
   };
+}
+
+function toCloudSave(save: SaveData, introSeen: boolean, houseStorage: readonly InventoryStack[]): MiltonCloudSave {
+  const { version: _version, lastSavedAt: _lastSavedAt, ...state } = copySave(save);
+  return {
+    ...state,
+    schema: "milton-estates",
+    schemaVersion: 1,
+    introSeen,
+    houseStorage: houseStorage.map((stack) => ({ ...stack })),
+  };
+}
+
+function isMiltonCloudSave(value: unknown): value is MiltonCloudSave {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<MiltonCloudSave>;
+  if (candidate.schema !== "milton-estates" || candidate.schemaVersion !== 1
+    || typeof candidate.introSeen !== "boolean" || !isInventoryStackArray(candidate.houseStorage)) return false;
+  return isSaveData({ ...candidate, version: 9, lastSavedAt: null });
 }
 
 function toGameState(save: SaveData): GameState {
@@ -266,6 +354,59 @@ function addToInventory(inventory: readonly InventoryStack[], itemId: ItemId, qu
     remaining = 0;
   }
   return remaining === 0 ? next : undefined;
+}
+
+/** Adds the durable rewards for a completed quest without duplicating stacks. */
+function grantQuestCompletionRewards(
+  inventory: readonly InventoryStack[],
+  secrets: readonly string[],
+  questId: QuestId,
+): Pick<SaveData, "inventory" | "secrets"> {
+  const reward = QUEST_COMPLETION_REWARDS[questId as keyof typeof QUEST_COMPLETION_REWARDS];
+  if (!reward) return { inventory: [...inventory], secrets: [...secrets] };
+  let nextInventory = inventory.map((stack) => ({ ...stack }));
+  for (const itemId of reward.items) {
+    if (nextInventory.some((stack) => stack.itemId === itemId)) continue;
+    nextInventory = addToInventory(nextInventory, itemId, 1) ?? nextInventory;
+  }
+  return { inventory: nextInventory, secrets: unique([...secrets, ...reward.secrets]) };
+}
+
+function removeFromInventory(inventory: readonly InventoryStack[], itemId: ItemId, quantity: number): InventoryStack[] | undefined {
+  if (!isItemId(itemId) || !Number.isInteger(quantity) || quantity <= 0) return undefined;
+  const next = inventory.map((stack) => ({ ...stack }));
+  const stack = next.find((entry) => entry.itemId === itemId);
+  if (!stack || stack.quantity < quantity) return undefined;
+  stack.quantity -= quantity;
+  return stack.quantity === 0 ? next.filter((entry) => entry !== stack) : next;
+}
+
+/** Quest-critical items remain carried so storage cannot strand a save. */
+export function isStorageRestrictedItem(itemId: ItemId): boolean {
+  return itemId === "xbox_controller" || itemId === "field_token";
+}
+
+export interface StorageTransferResult {
+  inventory: InventoryStack[];
+  houseStorage: InventoryStack[];
+}
+
+/** Pure, bounded inventory transfer used by home storage and tests. */
+export function transferInventoryToStorage(
+  inventory: readonly InventoryStack[], houseStorage: readonly InventoryStack[], itemId: ItemId, quantity: number,
+): StorageTransferResult | undefined {
+  if (isStorageRestrictedItem(itemId)) return undefined;
+  const nextInventory = removeFromInventory(inventory, itemId, quantity);
+  const nextStorage = addToInventory(houseStorage, itemId, quantity);
+  return nextInventory && nextStorage ? { inventory: nextInventory, houseStorage: nextStorage } : undefined;
+}
+
+export function transferStorageToInventory(
+  inventory: readonly InventoryStack[], houseStorage: readonly InventoryStack[], itemId: ItemId, quantity: number,
+): StorageTransferResult | undefined {
+  const nextStorage = removeFromInventory(houseStorage, itemId, quantity);
+  const nextInventory = addToInventory(inventory, itemId, quantity);
+  return nextStorage && nextInventory ? { inventory: nextInventory, houseStorage: nextStorage } : undefined;
 }
 
 function historyForQuestStage(questId: QuestId, stage: QuestStage): QuestMilestone[] {
@@ -329,6 +470,46 @@ function isRyanRideStage(value: unknown): value is RyanRideStage { return isStag
 function isExploreBentCreekStage(value: unknown): value is ExploreBentCreekStage {
   return isStageForQuest("explore_bent_creek", value);
 }
+function isBonfireQuestStage(value: unknown): value is BonfireQuestStage {
+  return isStageForQuest("attend_bonfire_at_andrews", value);
+}
+function isCreekClubhouseQuestState(value: unknown): value is CreekClubhouseQuestState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<CreekClubhouseQuestState>;
+  return isStageForQuest("creek_clubhouse", state.stage)
+    && (state.design === null || state.design === "lookout" || state.design === "fort" || state.design === "hidden_den")
+    && Array.isArray(state.supplies)
+    && state.supplies.every((supply) => supply === "rope" || supply === "blanket" || supply === "branches")
+    && new Set(state.supplies).size === state.supplies.length
+    && typeof state.constructionStep === "number" && Number.isInteger(state.constructionStep)
+    && state.constructionStep >= 0 && state.constructionStep <= 3
+    && Array.isArray(state.knockBeats)
+    && state.knockBeats.every((beat) => typeof beat === "number" && Number.isInteger(beat) && beat >= 0 && beat <= 9);
+}
+function isPaperAirplaneRelayQuestState(value: unknown): value is PaperAirplaneRelayQuestState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<PaperAirplaneRelayQuestState>;
+  const advisors = ["ryan", "billy", "andrew"] as const;
+  const materials = ["clean_sheet", "card_wing", "message_strip"] as const;
+  return isStageForQuest("paper_airplane_relay", state.stage)
+    && Array.isArray(state.adviceIds) && state.adviceIds.every((id) => advisors.includes(id as typeof advisors[number]))
+    && new Set(state.adviceIds).size === state.adviceIds.length
+    && Array.isArray(state.materialIds) && state.materialIds.every((id) => materials.includes(id as typeof materials[number]))
+    && new Set(state.materialIds).size === state.materialIds.length
+    && typeof state.windHits === "number" && Number.isInteger(state.windHits) && state.windHits >= 0 && state.windHits <= 3
+    && typeof state.decoded === "boolean"
+    && (state.deliveredTo === null || state.deliveredTo === "andrew");
+}
+function isBentCreekCaddyCaperQuestState(value: unknown): value is BentCreekCaddyCaperQuestState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<BentCreekCaddyCaperQuestState>;
+  const isCounter = (candidate: unknown): candidate is 0 | 1 | 2 | 3 =>
+    candidate === 0 || candidate === 1 || candidate === 2 || candidate === 3;
+  return isStageForQuest("bent_creek_caddy_caper", state.stage)
+    && isCounter(state.clueIndex) && isCounter(state.puttGates) && isCounter(state.sprinklerIndex)
+    && (state.bestRematchScore === null || (typeof state.bestRematchScore === "number"
+      && Number.isInteger(state.bestRematchScore) && state.bestRematchScore > 0));
+}
 function isSaveDataV6RyanRideStage(value: unknown): value is SaveDataV6RyanRideStage {
   return value === "invite" || value === "choose_destination" || value === "depart_neighborhood"
     || value === "ride_reidenbaugh_road" || value === "chase_reidenbaugh" || value === "complete";
@@ -357,6 +538,10 @@ function isQuestId(value: unknown): value is QuestId {
     || value === "three_player_sports" || value === "storm_drain_detectives"
     || value === "catch_ryan"
     || value === "explore_bent_creek"
+    || value === "attend_bonfire_at_andrews"
+    || value === "creek_clubhouse"
+    || value === "paper_airplane_relay"
+    || value === "bent_creek_caddy_caper"
     || value === "creek_token_hunt" || value === "last_day_of_summer";
 }
 
@@ -394,6 +579,10 @@ function isQuestProgress(value: unknown): value is QuestProgress {
   const sports = progress.sports as Partial<QuestProgress["sports"]> | undefined;
   const ryanRide = progress.ryanRide as Partial<QuestProgress["ryanRide"]> | undefined;
   const exploreBentCreek = progress.exploreBentCreek as Partial<QuestProgress["exploreBentCreek"]> | undefined;
+  const bonfire = progress.bonfire as Partial<QuestProgress["bonfire"]> | undefined;
+  const creekClubhouse = progress.creekClubhouse as Partial<QuestProgress["creekClubhouse"]> | undefined;
+  const paperAirplaneRelay = progress.paperAirplaneRelay as Partial<QuestProgress["paperAirplaneRelay"]> | undefined;
+  const bentCreekCaddyCaper = progress.bentCreekCaddyCaper as Partial<QuestProgress["bentCreekCaddyCaper"]> | undefined;
   return isMissingControllerStage(progress.missingControllerStage)
     && typeof mushrooms === "object" && mushrooms !== null
     && isMushroomQuestStage(mushrooms.stage)
@@ -408,7 +597,16 @@ function isQuestProgress(value: unknown): value is QuestProgress {
     // V7 saves predate this additive quest state; normalizeQuestProgress fills
     // that field before any invariants are evaluated.
     && (exploreBentCreek === undefined
-      || (typeof exploreBentCreek === "object" && exploreBentCreek !== null && isExploreBentCreekStage(exploreBentCreek.stage)));
+      || (typeof exploreBentCreek === "object" && exploreBentCreek !== null && isExploreBentCreekStage(exploreBentCreek.stage)))
+    // V8 saves predate this additive quest state; normalizeQuestProgress fills
+    // it before any invariants are evaluated.
+    && (bonfire === undefined
+      || (typeof bonfire === "object" && bonfire !== null && isBonfireQuestStage(bonfire.stage)))
+    // V9 saves predate the three additive side-quest records. Missing records
+    // are repaired by normalizeQuestProgress before invariants are evaluated.
+    && (creekClubhouse === undefined || isCreekClubhouseQuestState(creekClubhouse))
+    && (paperAirplaneRelay === undefined || isPaperAirplaneRelayQuestState(paperAirplaneRelay))
+    && (bentCreekCaddyCaper === undefined || isBentCreekCaddyCaperQuestState(bentCreekCaddyCaper));
 }
 
 function isSaveDataV6QuestProgress(value: unknown): value is SaveDataV6QuestProgress {
@@ -542,9 +740,9 @@ function isSaveDataV7(value: unknown): value is SaveDataV7 {
     && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
 }
 
-function isSaveData(value: unknown): value is SaveData {
+function isSaveDataV8(value: unknown): value is SaveDataV8 {
   if (typeof value !== "object" || value === null) return false;
-  const save = value as Partial<SaveData>;
+  const save = value as Partial<SaveDataV8>;
   return save.version === 8 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
     && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
     && isEnumArray(save.completedQuestIds, ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek", "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer"] as const)
@@ -558,7 +756,27 @@ function isSaveData(value: unknown): value is SaveData {
     && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
 }
 
-function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
+function isSaveData(value: unknown): value is SaveData {
+  if (typeof value !== "object" || value === null) return false;
+  const save = value as Partial<SaveData>;
+  return save.version === 9 && isChapterId(save.activeChapterId) && isQuestId(save.activeQuestId)
+    && isEnumArray(save.completedChapterIds, ["chapter_1"] as const)
+    && isEnumArray(save.completedQuestIds, [
+      "missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek",
+      "attend_bonfire_at_andrews", "creek_clubhouse", "paper_airplane_relay", "bent_creek_caddy_caper",
+      "storm_drain_detectives", "creek_token_hunt", "last_day_of_summer",
+    ] as const)
+    && isQuestProgress(save.questProgress)
+    && isEnumArray(save.questHistory, QUEST_MILESTONES)
+    && isInventoryStackArray(save.inventory) && isEquipmentState(save.equipment)
+    && isStringArray(save.collectedPickupIds) && isPlayerMapLocation(save.lastKnownLocation)
+    && isStringArray(save.secrets)
+    && isMapId(save.currentMap) && isEnumArray(save.discoveredMaps, MAP_IDS)
+    && isEnumArray(save.unlockedMaps, MAP_IDS)
+    && isSettings(save.settings) && (save.lastSavedAt === null || isValidTimestamp(save.lastSavedAt));
+}
+
+function normalizeQuestProgress(progress: NormalizableSave["questProgress"]): QuestProgress {
   const spawns = repairMushroomSpawnLayout(progress.mushrooms.spawns)
     ?? createMushroomSpawns(DEFAULT_MUSHROOM_SEED);
   const validIds = new Set(spawns.map((spawn) => spawn.id));
@@ -572,11 +790,36 @@ function normalizeQuestProgress(progress: QuestProgress): QuestProgress {
     sports: { stage: progress.sports.stage },
     ryanRide: { ...progress.ryanRide },
     exploreBentCreek: { stage: progress.exploreBentCreek?.stage ?? "open_gate" },
+    bonfire: { stage: progress.bonfire?.stage ?? "talk_to_schwartz" },
+    creekClubhouse: progress.creekClubhouse
+      ? {
+        ...progress.creekClubhouse,
+        supplies: unique(progress.creekClubhouse.supplies),
+        knockBeats: [...progress.creekClubhouse.knockBeats],
+      }
+      : { stage: "talk_to_andrew", design: null, supplies: [], constructionStep: 0, knockBeats: [] },
+    paperAirplaneRelay: progress.paperAirplaneRelay
+      ? {
+        ...progress.paperAirplaneRelay,
+        adviceIds: unique(progress.paperAirplaneRelay.adviceIds),
+        materialIds: unique(progress.paperAirplaneRelay.materialIds),
+      }
+      : { stage: "ask_for_advice", adviceIds: [], materialIds: [], windHits: 0, decoded: false, deliveredTo: null },
+    bentCreekCaddyCaper: progress.bentCreekCaddyCaper
+      ? { ...progress.bentCreekCaddyCaper }
+      : { stage: "inspect_display", clueIndex: 0, puttGates: 0, sprinklerIndex: 0, bestRematchScore: null },
   };
 }
 
 function normalizeSave(save: NormalizableSave): SaveData | undefined {
   const questProgress = normalizeQuestProgress(save.questProgress);
+  // Older builds completed Bent Creek as soon as the gate opened. Reopen that
+  // handoff for saves that have not started the bonfire quest yet.
+  if (questProgress.exploreBentCreek.stage === "complete"
+    && questProgress.bonfire.stage === "talk_to_schwartz"
+    && !save.completedQuestIds.includes("attend_bonfire_at_andrews")) {
+    questProgress.exploreBentCreek.stage = "meet_schwartz";
+  }
   if (!IMPLEMENTED_QUEST_IDS.includes(save.activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) return undefined;
   // Saves created while the Sports-to-Ryan handoff was being introduced can
   // legitimately record Sports as complete while still pointing at it as the
@@ -595,6 +838,11 @@ function normalizeSave(save: NormalizableSave): SaveData | undefined {
   // missing completion flag when authoritative progress is already complete.
   const completedFromProgress = IMPLEMENTED_QUEST_IDS.filter((questId) =>
     stageFromProgress(questProgress, questId) === "complete");
+  const completedQuestIds = unique<QuestId>([
+    ...save.completedQuestIds.filter((questId) =>
+      !(questId === "explore_bent_creek" && questProgress.exploreBentCreek.stage !== "complete")),
+    ...completedFromProgress,
+  ]);
   const discoveredMaps = unique<MapId>(["neighborhood", save.currentMap, ...save.discoveredMaps]);
   const regionalAccessGranted = questProgress.ryanRide.selectedDestination === "reidenbaugh"
     || questProgress.ryanRide.stage === "complete"
@@ -605,20 +853,28 @@ function normalizeSave(save: NormalizableSave): SaveData | undefined {
     ...(regionalAccessGranted ? RYAN_UNLOCKED_MAPS : []),
   ]);
   if (!unlockedMaps.includes(save.currentMap) || discoveredMaps.some((map) => !unlockedMaps.includes(map))) return undefined;
-  const inventory = normalizeInventory(save.inventory);
+  let inventory = normalizeInventory(save.inventory);
+  if (questProgress.missingControllerStage !== "search_creek"
+    && questProgress.missingControllerStage !== "return_to_jeremy") {
+    inventory = inventory.filter((stack) => stack.itemId !== CONTROLLER_ITEM);
+  }
   const catchRyanComplete = save.completedQuestIds.includes("catch_ryan")
     || questProgress.ryanRide.stage === "complete";
   if (catchRyanComplete && !inventory.some((stack) => stack.itemId === "bicycle")) {
     inventory.push({ itemId: "bicycle", quantity: 1 });
   }
+  let secrets = unique(save.secrets);
+  for (const questId of completedQuestIds) {
+    ({ inventory, secrets } = grantQuestCompletionRewards(inventory, secrets, questId));
+  }
   const normalized: SaveData = {
     ...save,
-    version: 8,
+    version: 9,
     activeQuestId: shouldActivateBentCreek
       ? "explore_bent_creek"
       : shouldActivateRyan ? "catch_ryan" : save.activeQuestId,
     completedChapterIds: unique(save.completedChapterIds),
-    completedQuestIds: unique([...save.completedQuestIds, ...completedFromProgress]),
+    completedQuestIds,
     questProgress,
     questHistory: unique(save.questHistory),
     inventory,
@@ -627,7 +883,7 @@ function normalizeSave(save: NormalizableSave): SaveData | undefined {
     lastKnownLocation: {
       ...(save.lastKnownLocation ?? { ...DEFAULT_LAST_KNOWN_LOCATION, map: save.currentMap }),
     },
-    secrets: unique(save.secrets),
+    secrets,
     discoveredMaps,
     unlockedMaps,
     settings: { ...save.settings },
@@ -724,6 +980,10 @@ function migrateV6Save(save: SaveDataV6): SaveData {
       stage: migrateV6RyanRideStage(save.questProgress.ryanRide.stage),
     },
     exploreBentCreek: { stage: "open_gate" },
+    bonfire: { stage: "talk_to_schwartz" },
+    creekClubhouse: { stage: "talk_to_andrew", design: null, supplies: [], constructionStep: 0, knockBeats: [] },
+    paperAirplaneRelay: { stage: "ask_for_advice", adviceIds: [], materialIds: [], windHits: 0, decoded: false, deliveredTo: null },
+    bentCreekCaddyCaper: { stage: "inspect_display", clueIndex: 0, puttGates: 0, sprinklerIndex: 0, bestRematchScore: null },
   };
   return normalizeSave({
     ...save,
@@ -798,13 +1058,27 @@ export class GameStore {
   private replayState: SaveData | null = null;
   private replayQuestId: QuestId | null = null;
   private readonly firstVisit: boolean;
+  private readonly legacyBrowserSaveDetected: boolean;
+  private readonly useLegacyLocalStorage: boolean;
+  private cloudRepository?: CloudSaveRepository<MiltonCloudSave>;
+  private cloudSaveState: CloudSaveState<MiltonCloudSave> = { status: "idle" };
+  private stopCloudSubscription?: () => void;
+  private introSeen = false;
+  private houseStorage: InventoryStack[] = [];
+  private playerProfile?: PlayerProfile;
+  private spawnIntent: SpawnIntent = "new-home";
 
   public constructor(
     private readonly storage: Storage | undefined = browserStorage(),
     private readonly now: () => Date = () => new Date(),
   ) {
-    this.firstVisit = this.hasStoredSave() === false;
-    this.state = this.load();
+    // Injected stores retain the old persistence behavior for focused legacy
+    // tests and recovery tooling. The real browser singleton never reads or
+    // writes its former local save as gameplay state.
+    this.useLegacyLocalStorage = storage !== browserStorage();
+    this.legacyBrowserSaveDetected = !this.useLegacyLocalStorage && this.hasStoredSave() === true;
+    this.firstVisit = this.useLegacyLocalStorage && this.hasStoredSave() === false;
+    this.state = this.useLegacyLocalStorage ? this.load() : copySave(DEFAULT_SAVE);
   }
 
   public getState(): GameState { return toGameState(this.replayState ?? this.state); }
@@ -812,6 +1086,115 @@ export class GameStore {
   public isReplaying(): boolean { return this.replayState !== null; }
   /** Captured before Boot creates its initial autosave, so the welcome scene runs once. */
   public isFirstVisit(): boolean { return this.firstVisit; }
+  public hasLegacyBrowserSave(): boolean { return this.legacyBrowserSaveDetected; }
+  public getCloudSaveState(): CloudSaveState<MiltonCloudSave> { return this.cloudSaveState; }
+  public getHouseStorage(): InventoryStack[] { return this.houseStorage.map((stack) => ({ ...stack })); }
+  public hasSeenIntro(): boolean { return this.introSeen; }
+  public getSpawnIntent(): SpawnIntent { return this.spawnIntent; }
+  public setSpawnIntent(intent: SpawnIntent): void { this.spawnIntent = intent; }
+  public getPlayerProfile(): PlayerProfile | undefined { return this.playerProfile ? { ...this.playerProfile } : undefined; }
+  public setPlayerProfile(profile: PlayerProfile): void {
+    this.playerProfile = { ...profile };
+    gameEvents.emit(EVENT.stateChanged, this.getState());
+  }
+
+  /** Connects the async authoritative store after required login succeeds. */
+  public connectCloudSave(repository: CloudSaveRepository<MiltonCloudSave>): void {
+    this.stopCloudSubscription?.();
+    this.cloudRepository = repository;
+    this.stopCloudSubscription = repository.subscribe((state) => {
+      this.cloudSaveState = state;
+      if (state.status === "saved") {
+        this.state = { ...this.state, lastSavedAt: state.savedAt };
+      }
+      gameEvents.emit(EVENT.stateChanged, this.getState());
+    });
+  }
+
+  /** Hydrates only an already-selected server slot; it never touches LocalStorage. */
+  public hydrateCloudSave(save: MiltonCloudSave): boolean {
+    if (!isMiltonCloudSave(save)) return false;
+    const normalized = normalizeSave({ ...save, version: 9, lastSavedAt: null });
+    if (!normalized) return false;
+    this.replayState = null;
+    this.replayQuestId = null;
+    this.state = normalized;
+    this.spawnIntent = "resume";
+    this.introSeen = save.introSeen;
+    this.houseStorage = normalizeInventory(save.houseStorage).filter((stack) =>
+      normalized.questProgress.missingControllerStage !== "complete" || stack.itemId !== CONTROLLER_ITEM);
+    gameEvents.emit(EVENT.stateChanged, this.getState());
+    return true;
+  }
+
+  public createFreshCloudSave(seed = Math.floor(Math.random() * 0xffffffff)): MiltonCloudSave {
+    const settings = { ...this.state.settings };
+    this.replayState = null;
+    this.replayQuestId = null;
+    this.state = { ...createDefaultSave(seed), settings };
+    this.spawnIntent = "new-home";
+    this.introSeen = false;
+    this.houseStorage = [];
+    gameEvents.emit(EVENT.stateChanged, this.getState());
+    return this.getCloudSnapshot();
+  }
+
+  public getCloudSnapshot(): MiltonCloudSave {
+    return toCloudSave(this.state, this.introSeen, this.houseStorage);
+  }
+
+  /** User-selected recovery path after the server rejects an autosave revision. */
+  public async useRemoteCloudConflict(): Promise<boolean> {
+    if (!this.cloudRepository) return false;
+    const remote = await this.cloudRepository.useRemoteConflict();
+    return this.hydrateCloudSave(remote.data);
+  }
+
+  /** User-selected recovery path after the server rejects an autosave revision. */
+  public async keepLocalCloudConflict(): Promise<void> {
+    if (!this.cloudRepository) return;
+    await this.cloudRepository.keepLocalConflict();
+  }
+
+  public markIntroSeen(): void {
+    if (this.introSeen) return;
+    this.introSeen = true;
+    this.persistCloudOnly();
+  }
+
+  public depositToHouseStorage(itemId: ItemId, quantity: number): boolean {
+    if (this.replayState) return false;
+    const result = transferInventoryToStorage(this.state.inventory, this.houseStorage, itemId, quantity);
+    if (!result) return false;
+    this.houseStorage = result.houseStorage;
+    this.update({ ...this.state, inventory: result.inventory });
+    return true;
+  }
+
+  public withdrawFromHouseStorage(itemId: ItemId, quantity: number): boolean {
+    if (this.replayState) return false;
+    const result = transferStorageToInventory(this.state.inventory, this.houseStorage, itemId, quantity);
+    if (!result) return false;
+    this.houseStorage = result.houseStorage;
+    this.update({ ...this.state, inventory: result.inventory });
+    return true;
+  }
+
+  public depositAllToHouseStorage(): number {
+    let moved = 0;
+    for (const stack of [...this.state.inventory]) {
+      if (this.depositToHouseStorage(stack.itemId, stack.quantity)) moved += stack.quantity;
+    }
+    return moved;
+  }
+
+  public withdrawAllFromHouseStorage(): number {
+    let moved = 0;
+    for (const stack of [...this.houseStorage]) {
+      if (this.withdrawFromHouseStorage(stack.itemId, stack.quantity)) moved += stack.quantity;
+    }
+    return moved;
+  }
 
   private hasStoredSave(): boolean | undefined {
     if (!this.storage) return undefined;
@@ -855,14 +1238,118 @@ export class GameStore {
       : current.completedQuestIds;
     const activatesRyanRide = !this.replayState && current.activeQuestId === "three_player_sports" && questStage === "complete";
     const activatesBentCreek = !this.replayState && current.activeQuestId === "catch_ryan" && questStage === "complete";
+    let inventory = current.activeQuestId === "missing_controller" && questStage === "complete"
+      ? current.inventory.filter((stack) => stack.itemId !== CONTROLLER_ITEM)
+      : current.inventory;
+    let secrets = current.secrets;
+    if (!this.replayState && questStage === "complete") {
+      ({ inventory, secrets } = grantQuestCompletionRewards(inventory, secrets, current.activeQuestId));
+    }
     this.update({
       ...current,
       activeQuestId: activatesBentCreek
         ? "explore_bent_creek"
         : activatesRyanRide ? "catch_ryan" : current.activeQuestId,
       completedQuestIds,
+      inventory,
+      secrets,
       questProgress,
       questHistory: unique([...current.questHistory, ...historyForQuestStage(current.activeQuestId, questStage)]),
+    });
+  }
+
+  /** Returns a defensive copy of the Creek Clubhouse's durable mini-game state. */
+  public getCreekClubhouseRecord(): CreekClubhouseQuestState {
+    const record = (this.replayState ?? this.state).questProgress.creekClubhouse;
+    return { ...record, supplies: [...record.supplies], knockBeats: [...record.knockBeats] };
+  }
+
+  /** Persists a validated Creek Clubhouse record and synchronizes its journal stage. */
+  public setCreekClubhouseRecord(record: CreekClubhouseQuestState): boolean {
+    const current = this.replayState ?? this.state;
+    if (current.activeQuestId !== "creek_clubhouse" || !isCreekClubhouseQuestState(record)) return false;
+    const questProgress = copyQuestProgress(current.questProgress);
+    questProgress.creekClubhouse = {
+      ...record,
+      supplies: [...record.supplies],
+      knockBeats: [...record.knockBeats],
+    };
+    this.persistQuestProgressRecord(current, "creek_clubhouse", questProgress);
+    return true;
+  }
+
+  /** Advances the relay atomically, so individual advice and pickups survive scene changes. */
+  public advancePaperAirplaneRelay(event: PaperAirplaneRelayEvent): boolean {
+    const current = this.replayState ?? this.state;
+    if (current.activeQuestId !== "paper_airplane_relay") return false;
+    const record = current.questProgress.paperAirplaneRelay;
+    if (record.stage === "complete") return false;
+    const next: PaperAirplaneRelayQuestState = {
+      ...record,
+      adviceIds: [...record.adviceIds],
+      materialIds: [...record.materialIds],
+    };
+    if (event.type === "advisor_consulted" && record.stage === "ask_for_advice") {
+      next.adviceIds = unique([...next.adviceIds, event.advisor]);
+    } else if (event.type === "material_found" && record.stage === "find_materials") {
+      next.materialIds = unique([...next.materialIds, event.material]);
+    } else if (event.type === "wind_gust_caught" && record.stage === "chase_plane") {
+      next.windHits = Math.min(3, next.windHits + 1);
+    } else if (event.type === "message_decoded" && record.stage === "decode_message") {
+      next.decoded = true;
+    } else if (event.type === "message_delivered" && record.stage === "deliver_message") {
+      next.deliveredTo = event.friend;
+    }
+    next.stage = advancePaperAirplaneRelayStage(record.stage, event, record);
+    const changed = next.stage !== record.stage
+      || next.windHits !== record.windHits
+      || next.decoded !== record.decoded
+      || next.deliveredTo !== record.deliveredTo
+      || next.adviceIds.length !== record.adviceIds.length
+      || next.materialIds.length !== record.materialIds.length;
+    if (!changed || !isPaperAirplaneRelayQuestState(next)) return false;
+    const questProgress = copyQuestProgress(current.questProgress);
+    questProgress.paperAirplaneRelay = next;
+    this.persistQuestProgressRecord(current, "paper_airplane_relay", questProgress);
+    return true;
+  }
+
+  /** Returns the Caddy Caper record; rematch scores are part of the same save-safe slice. */
+  public getBentCreekCaddyCaperRecord(): BentCreekCaddyCaperQuestState {
+    return { ...(this.replayState ?? this.state).questProgress.bentCreekCaddyCaper };
+  }
+
+  public setBentCreekCaddyCaperRecord(record: BentCreekCaddyCaperQuestState): boolean {
+    const current = this.replayState ?? this.state;
+    const previous = current.questProgress.bentCreekCaddyCaper;
+    const canUpdateRematch = previous.stage === "complete" && record.stage === "complete";
+    if ((!this.replayState && current.activeQuestId !== "bent_creek_caddy_caper" && !canUpdateRematch)
+      || !isBentCreekCaddyCaperQuestState(record)) return false;
+    const questProgress = copyQuestProgress(current.questProgress);
+    questProgress.bentCreekCaddyCaper = { ...record };
+    this.persistQuestProgressRecord(current, "bent_creek_caddy_caper", questProgress);
+    return true;
+  }
+
+  private persistQuestProgressRecord(
+    current: SaveData,
+    questId: "creek_clubhouse" | "paper_airplane_relay" | "bent_creek_caddy_caper",
+    questProgress: QuestProgress,
+  ): void {
+    const stage = stageFromProgress(questProgress, questId);
+    if (!stage) throw new RangeError(`Quest ${questId} has no runtime stage`);
+    const completedQuestIds = !this.replayState && stage === "complete"
+      ? unique([...current.completedQuestIds, questId])
+      : current.completedQuestIds;
+    const rewards = !this.replayState && stage === "complete"
+      ? grantQuestCompletionRewards(current.inventory, current.secrets, questId)
+      : { inventory: current.inventory, secrets: current.secrets };
+    this.update({
+      ...current,
+      questProgress,
+      completedQuestIds,
+      ...rewards,
+      questHistory: unique([...current.questHistory, ...historyForQuestStage(questId, stage)]),
     });
   }
 
@@ -896,6 +1383,10 @@ export class GameStore {
     const normalized = LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item;
     if (!isItemId(normalized)) return;
     const current = this.replayState ?? this.state;
+    if (normalized === CONTROLLER_ITEM
+      && (current.activeQuestId !== "missing_controller"
+        || (current.questProgress.missingControllerStage !== "search_creek"
+          && current.questProgress.missingControllerStage !== "return_to_jeremy"))) return;
     if (this.hasItem(normalized)) return;
     const inventory = addToInventory(current.inventory, normalized, 1);
     if (!inventory) return;
@@ -976,6 +1467,72 @@ export class GameStore {
     });
   }
 
+  /** Billy assigns the first controller quest after the new neighbor meets him. */
+  public beginMissingControllerQuest(): boolean {
+    const current = this.replayState ?? this.state;
+    if (current.activeQuestId !== "missing_controller"
+      || current.questProgress.missingControllerStage !== "talk_to_billy") return false;
+    const next = advanceMissingControllerStage("talk_to_billy", { type: "talked_to_billy" });
+    this.setQuestStage(next);
+    return true;
+  }
+
+  /**
+   * Restarts the canonical in-progress quest while preserving every unrelated
+   * quest's progress, rewards, and completion record.
+   */
+  public resetActiveQuest(): boolean {
+    if (this.replayState) return false;
+    const questId = this.state.activeQuestId;
+    if (!IMPLEMENTED_QUEST_IDS.includes(questId as typeof IMPLEMENTED_QUEST_IDS[number])
+      || this.state.completedQuestIds.includes(questId)
+      || activeStage(this.state) === "complete") return false;
+
+    const questProgress = copyQuestProgress(this.state.questProgress);
+    let inventory = this.state.inventory.map((stack) => ({ ...stack }));
+    let unlockedMaps = [...this.state.unlockedMaps];
+    let discoveredMaps = [...this.state.discoveredMaps];
+    if (questId === "missing_controller") {
+      questProgress.missingControllerStage = "talk_to_billy";
+      inventory = inventory.filter((stack) => stack.itemId !== CONTROLLER_ITEM);
+    } else if (questId === "andrew_mushroom_hunt") {
+      questProgress.mushrooms = {
+        ...questProgress.mushrooms,
+        stage: "talk_to_andrew_for_mushrooms",
+        collectedIds: [],
+      };
+    } else if (questId === "three_player_sports") {
+      questProgress.sports = { stage: "meet_jeremy_to_skateboard" };
+    } else if (questId === "catch_ryan") {
+      questProgress.ryanRide = { stage: "invite", selectedDestination: null, routeSeed: null };
+      unlockedMaps = unlockedMaps.filter((map) => !RYAN_UNLOCKED_MAPS.includes(map as typeof RYAN_UNLOCKED_MAPS[number]));
+      discoveredMaps = discoveredMaps.filter((map) => unlockedMaps.includes(map));
+    } else if (questId === "explore_bent_creek") {
+      questProgress.exploreBentCreek = { stage: "open_gate" };
+    } else if (questId === "attend_bonfire_at_andrews") {
+      questProgress.bonfire = { stage: "talk_to_schwartz" };
+    } else if (questId === "creek_clubhouse") {
+      questProgress.creekClubhouse = { stage: "talk_to_andrew", design: null, supplies: [], constructionStep: 0, knockBeats: [] };
+    } else if (questId === "paper_airplane_relay") {
+      questProgress.paperAirplaneRelay = { stage: "ask_for_advice", adviceIds: [], materialIds: [], windHits: 0, decoded: false, deliveredTo: null };
+    } else {
+      questProgress.bentCreekCaddyCaper = { stage: "inspect_display", clueIndex: 0, puttGates: 0, sprinklerIndex: 0, bestRematchScore: null };
+    }
+
+    this.spawnIntent = "new-home";
+    this.update({
+      ...this.state,
+      questProgress,
+      questHistory: this.state.questHistory.filter((milestone) => !milestone.startsWith(`${questId}.`)),
+      inventory,
+      currentMap: "neighborhood",
+      discoveredMaps: unique<MapId>(["neighborhood", ...discoveredMaps]),
+      unlockedMaps: unique<MapId>([...BASE_UNLOCKED_MAPS, ...unlockedMaps]),
+      lastKnownLocation: { ...DEFAULT_LAST_KNOWN_LOCATION },
+    });
+    return true;
+  }
+
   public isMapUnlocked(mapId: SaveData["currentMap"]): boolean { return (this.replayState ?? this.state).unlockedMaps.includes(mapId); }
   public isBicycleUnlocked(): boolean { return this.hasItem("bicycle"); }
   public isRyanRideStage(stage: RyanRideStage): boolean { return this.isQuestAt("catch_ryan", stage); }
@@ -1017,6 +1574,64 @@ export class GameStore {
     this.setQuestStage(next);
   }
 
+  /** Schwartz's invitation only appears after the gate and Mickey's race are both complete. */
+  public canAcceptBonfireInvitation(): boolean {
+    const current = this.replayState ?? this.state;
+    return current.activeQuestId === "attend_bonfire_at_andrews"
+      || (current.activeQuestId === "explore_bent_creek"
+        && current.questProgress.exploreBentCreek.stage === "meet_schwartz"
+        && current.secrets.includes(MICKEY_DRAG_RACE_BEATEN));
+  }
+
+  /** Accepts Schwartz's Bent Creek invitation and starts the bonfire handoff. */
+  public acceptBonfireInvitation(): boolean {
+    const current = this.replayState ?? this.state;
+    if (!this.canAcceptBonfireInvitation()) return false;
+    const stage = current.questProgress.bonfire.stage;
+    if (stage !== "talk_to_schwartz") return false;
+    const next = advanceBonfireQuestStage(stage, { type: "accepted_schwartz_invitation" });
+    const exploreNext = advanceExploreBentCreekStage(
+      current.questProgress.exploreBentCreek.stage,
+      { type: "met_schwartz" },
+    );
+    this.update({
+      ...current,
+      activeQuestId: "attend_bonfire_at_andrews",
+      completedQuestIds: this.replayState
+        ? current.completedQuestIds
+        : unique([...current.completedQuestIds, "explore_bent_creek"]),
+      questProgress: {
+        ...copyQuestProgress(current.questProgress),
+        exploreBentCreek: { stage: exploreNext },
+        bonfire: { stage: next },
+      },
+      questHistory: unique([
+        ...current.questHistory,
+        ...historyForQuestStage("explore_bent_creek", exploreNext),
+        ...historyForQuestStage("attend_bonfire_at_andrews", next),
+      ]),
+    });
+    return true;
+  }
+
+  /** Called after the Bent Creek departure transition has placed the player at Andrew's fire. */
+  public arriveAtAndrewsBonfire(): boolean {
+    const current = this.replayState ?? this.state;
+    if (!this.isQuestAt("attend_bonfire_at_andrews", "attend_bonfire")) return false;
+    const next = advanceBonfireQuestStage(current.questProgress.bonfire.stage, { type: "arrived_at_andrews" });
+    this.setQuestStage(next);
+    return true;
+  }
+
+  /** Records a successful 45-second bad-trip run and completes the initiation. */
+  public completeBonfireInitiation(): boolean {
+    const current = this.replayState ?? this.state;
+    if (!this.isQuestAt("attend_bonfire_at_andrews", "survive_bad_trip")) return false;
+    const next = advanceBonfireQuestStage(current.questProgress.bonfire.stage, { type: "survived_bad_trip" });
+    this.setQuestStage(next);
+    return true;
+  }
+
   private advanceRyanRide(event: import("./quests/specs").RyanRideQuestEvent, currentMap?: SaveData["currentMap"]): void {
     const current = this.replayState ?? this.state;
     if (!this.isQuestAt("catch_ryan", current.questProgress.ryanRide.stage)) return;
@@ -1049,22 +1664,33 @@ export class GameStore {
 
   /** Starts a temporary replay of any implemented quest. Nothing in this state is persisted. */
   public startQuestReplay(questId: QuestId): void {
-    if (!["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek"].includes(questId)) {
+    if (![
+      "missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek",
+      "attend_bonfire_at_andrews", "creek_clubhouse", "paper_airplane_relay", "bent_creek_caddy_caper",
+    ].includes(questId)) {
       throw new RangeError(`Quest ${questId} cannot be replayed yet`);
     }
     if (!this.state.completedQuestIds.includes(questId)) throw new RangeError("Only completed quests can be replayed");
 
     const questProgress = copyQuestProgress(this.state.questProgress);
     if (questId === "missing_controller") {
-      questProgress.missingControllerStage = "talk_to_jeremy";
+      questProgress.missingControllerStage = "talk_to_billy";
     } else if (questId === "andrew_mushroom_hunt") {
       questProgress.mushrooms = { ...questProgress.mushrooms, stage: "talk_to_andrew_for_mushrooms", collectedIds: [] };
     } else if (questId === "three_player_sports") {
       questProgress.sports.stage = "meet_jeremy_to_skateboard";
     } else if (questId === "catch_ryan") {
       questProgress.ryanRide = { stage: "invite", selectedDestination: null, routeSeed: null };
-    } else {
+    } else if (questId === "explore_bent_creek") {
       questProgress.exploreBentCreek = { stage: "open_gate" };
+    } else if (questId === "attend_bonfire_at_andrews") {
+      questProgress.bonfire = { stage: "talk_to_schwartz" };
+    } else if (questId === "creek_clubhouse") {
+      questProgress.creekClubhouse = { stage: "talk_to_andrew", design: null, supplies: [], constructionStep: 0, knockBeats: [] };
+    } else if (questId === "paper_airplane_relay") {
+      questProgress.paperAirplaneRelay = { stage: "ask_for_advice", adviceIds: [], materialIds: [], windHits: 0, decoded: false, deliveredTo: null };
+    } else {
+      questProgress.bentCreekCaddyCaper = { stage: "inspect_display", clueIndex: 0, puttGates: 0, sprinklerIndex: 0, bestRematchScore: null };
     }
 
     this.replayQuestId = questId;
@@ -1081,7 +1707,8 @@ export class GameStore {
       secrets: [],
       currentMap: "neighborhood",
       discoveredMaps: ["neighborhood"],
-      unlockedMaps: questId === "explore_bent_creek"
+      unlockedMaps: questId === "explore_bent_creek" || questId === "attend_bonfire_at_andrews"
+        || questId === "paper_airplane_relay" || questId === "bent_creek_caddy_caper"
         ? unique<MapId>([...BASE_UNLOCKED_MAPS, ...RYAN_UNLOCKED_MAPS])
         : ["neighborhood", "creek"],
     };
@@ -1106,7 +1733,7 @@ export class GameStore {
 
   /**
    * Mini-game records are stored in the existing save's extensible secrets
-   * list. This deliberately keeps every v8 save readable without a schema
+ * list. This keeps the mini-game record lightweight and self-contained.
    * migration while still resetting records with a new game or mission reset.
    */
   public getMickeyDragRaceRecord(): { unlocked: boolean; introSeen: boolean; beaten: boolean; bestTimeMs?: number } {
@@ -1117,7 +1744,7 @@ export class GameStore {
       .filter((value) => Number.isInteger(value) && value > 0)
       .reduce<number | undefined>((fastest, value) => fastest === undefined ? value : Math.min(fastest, value), undefined);
     return {
-      unlocked: current.questProgress.exploreBentCreek.stage === "complete",
+      unlocked: current.questProgress.exploreBentCreek.stage !== "open_gate",
       introSeen: current.secrets.includes(MICKEY_DRAG_RACE_INTRO),
       beaten: current.secrets.includes(MICKEY_DRAG_RACE_BEATEN),
       bestTimeMs: best,
@@ -1146,6 +1773,9 @@ export class GameStore {
     const settings = { ...this.state.settings };
     this.replayState = null;
     this.replayQuestId = null;
+    this.introSeen = false;
+    this.houseStorage = [];
+    this.spawnIntent = "new-home";
     this.update({ ...createDefaultSave(Math.floor(Math.random() * 0xffffffff)), settings });
   }
 
@@ -1158,6 +1788,9 @@ export class GameStore {
       return;
     }
     const settings = { ...this.state.settings };
+    this.introSeen = false;
+    this.houseStorage = [];
+    this.spawnIntent = "new-home";
     this.update({ ...createDefaultSave(Math.floor(Math.random() * 0xffffffff)), settings });
   }
 
@@ -1181,6 +1814,13 @@ export class GameStore {
         const migrated = migrateV7Save(parsed);
         try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
         catch { /* The in-memory migration remains usable if storage is read-only. */ }
+        return migrated;
+      }
+      if (isSaveDataV8(parsed)) {
+        const migrated = normalizeSave(parsed);
+        if (!migrated) return copySave(DEFAULT_SAVE);
+        try { this.storage.setItem(STORAGE_KEY, JSON.stringify(migrated)); }
+        catch { /* migration remains in memory */ }
         return migrated;
       }
       if (isSaveDataV6(parsed)) {
@@ -1237,7 +1877,7 @@ export class GameStore {
       return;
     }
     let persisted = copySave(nextState);
-    if (this.storage) {
+    if (this.storage && this.useLegacyLocalStorage) {
       const stamped = { ...persisted, lastSavedAt: this.now().toISOString() };
       try {
         this.storage.setItem(STORAGE_KEY, JSON.stringify(stamped));
@@ -1246,6 +1886,14 @@ export class GameStore {
     }
     this.state = persisted;
     gameEvents.emit(EVENT.stateChanged, this.getState());
+    this.persistCloudOnly();
+  }
+
+  private persistCloudOnly(): void {
+    if (!this.cloudRepository || this.replayState) return;
+    // Gameplay mutations are synchronous; persistence is queued and coalesced
+    // by the repository so mutations never produce overlapping PUT requests.
+    void this.cloudRepository.requestSave(this.getCloudSnapshot()).catch(() => undefined);
   }
 }
 

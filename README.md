@@ -30,11 +30,21 @@ The game requires a browser with WebGL or WebGL2 support. Canvas is retained onl
 
 Merges (and direct pushes) to `main` run the unit, map, build, deployment-manifest, and browser regression checks before publishing a container image to GitHub Container Registry. Images are tagged with both `latest` and `sha-<full 40-character commit SHA>`.
 
-The Kubernetes manifests expose the game at [https://games.bolblab.org](https://games.bolblab.org) through the existing in-cluster Cloudflare Tunnel. The deployment script structurally preserves the shared `cloudflare/cloudflared` ConfigMap, adds or refreshes this game's complete route before its terminal 404 rule, validates the result with `cloudflared`, and rolls the two connector pods so the local configuration takes effect. ExternalDNS publishes the hostname as a proxied CNAME to that tunnel. Cloudflare terminates public TLS and tunnels plain HTTP to the game's ClusterIP Service; cert-manager separately provisions the certificate declared by the NGINX Ingress.
+The Kubernetes manifests expose the game at [https://games.bolblab.org/games/milton-estates/](https://games.bolblab.org/games/milton-estates/) through the existing in-cluster Cloudflare Tunnel. The deployment script structurally preserves the shared `cloudflare/cloudflared` ConfigMap, adds or refreshes this game's path-specific route before the catalog host route and terminal 404 rule, validates the result with `cloudflared`, and rolls the two connector pods so the local configuration takes effect. ExternalDNS publishes the hostname as a proxied CNAME to that tunnel. Cloudflare terminates public TLS and tunnels plain HTTP to the game's ClusterIP Service; NGINX strips the public game prefix before resolving the static bundle, and cert-manager separately provisions the certificate declared by the NGINX Ingress.
 
 The deploy command requires Bash, `kubectl`, `curl`, `jq`, Ruby with its standard Psych YAML library, `cloudflared`, a current Kubernetes context that can apply the four resources in `k8s/`, update the shared Cloudflare ConfigMap, and restart the `cloudflare/cloudflared` Deployment, plus a GHCR package the cluster can read. It does not require a Cloudflare API token because this connector is locally configured in Kubernetes.
 
-After making the GHCR package readable by the cluster (public, or via an image-pull secret), deploy the image for the exact commit. Mutable tags such as `latest` are intentionally rejected:
+Before the first release, complete the Game Lab side of the integration: publish
+`@bolb23/game-client-sdk@0.1.0` (the SDK workflow uses the `sdk-v0.1.0` tag), set
+`MILTON_ESTATES_ORIGIN=https://games.bolblab.org`,
+`MILTON_ESTATES_LAUNCH_URL=https://games.bolblab.org/games/milton-estates/`,
+`MILTON_ESTATES_ENABLED=true`, and
+`MILTON_ESTATES_CLOUD_SAVES_ENABLED=true`, then seed the four leaderboard
+definitions documented in [the integration contract](docs/game-lab-integration-contract.md)
+with leaderboard support enabled. The origin must remain host-only for
+credentialed SDK cookies; only the launch URL includes the game path.
+
+After making both the GHCR image and the released `@bolb23/game-client-sdk` package readable to their consumers, deploy the image for the exact commit. Mutable tags such as `latest` are intentionally rejected:
 
 ```sh
 ./scripts/deploy.sh ghcr.io/bolb23/milton-estates-game:sha-0123456789abcdef0123456789abcdef01234567
@@ -48,7 +58,7 @@ Validate the exact local rendering without Cloudflare credentials or cluster acc
 ./scripts/deploy.sh --dry-run ghcr.io/bolb23/milton-estates-game:sha-0123456789abcdef0123456789abcdef01234567
 ```
 
-The script preflights manifests, the existing local tunnel structure, the exact tunnel update and connector restart, cluster authorization/admission, and connectivity before writes. It applies the requested image and a unique rollout annotation together, so a deploy produces one game Deployment revision and rerunning the same immutable image still restarts the pod. The shared ConfigMap update carries the resource version read during preflight, so a concurrent route edit causes a safe conflict instead of being overwritten. If connector activation or the public health check fails after that update, the script conditionally restores the prior ConfigMap and reloads the connectors; if safe automatic recovery is blocked by another concurrent edit, it preserves and prints the mode-600 recovery-file paths. Success requires the public `/healthz` endpoint to return exactly HTTP 200 with body `ok`; redirects are rejected and every attempt has a connection and transfer timeout. Check the workload, image, Service, and labeled Ingress with:
+The script preflights manifests, the existing local tunnel structure, the exact tunnel update and connector restart, cluster authorization/admission, and connectivity before writes. It applies the requested image and a unique rollout annotation together, so a deploy produces one game Deployment revision and rerunning the same immutable image still restarts the pod. The shared ConfigMap update carries the resource version read during preflight, so a concurrent route edit causes a safe conflict instead of being overwritten. If connector activation or the public health check fails after that update, the script conditionally restores the prior ConfigMap and reloads the connectors; if safe automatic recovery is blocked by another concurrent edit, it preserves and prints the mode-600 recovery-file paths. Success requires `https://games.bolblab.org/games/milton-estates/healthz` to return exactly HTTP 200 with body `ok`; redirects are rejected and every attempt has a connection and transfer timeout. Check the workload, image, Service, and labeled Ingress with:
 
 ```sh
 ./scripts/deploy-status.sh

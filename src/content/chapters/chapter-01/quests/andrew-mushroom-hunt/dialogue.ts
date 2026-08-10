@@ -13,27 +13,27 @@ const copy = (lines: readonly DialogueLine[]): DialogueLine[] =>
 
 const MUSHROOM_DIALOGUE: Readonly<Record<MushroomDialogueId, readonly DialogueLine[]>> = {
   ask_andrew: [
-    line("Billy", "Andrew, why do you need ten mushrooms?"),
+    line("You", "Andrew, why do you need ten mushrooms?"),
     line("Andrew", "I want to make a tiny mushroom garden for the creek critters."),
     line("Andrew", "Find ten in the Milton backyards and Creek Woods, then share them around."),
-    line("Billy", "All right. Ten mushrooms, three stops, no mushroom left behind."),
+    line("You", "All right. Ten mushrooms, three stops, no mushroom left behind."),
   ],
   found_mushroom: [
-    line("Billy", "A mushroom! Andrew is going to love this little forest treasure."),
+    line("You", "A mushroom! Andrew is going to love this little forest treasure."),
   ],
   feed_jeremy: [
-    line("Billy", "Jeremy, Andrew said you should try this mushroom."),
+    line("You", "Jeremy, Andrew said you should try this mushroom."),
     line("Jeremy", "A snack from the backyard? I trust you, but I have questions."),
-    line("Billy", "One mushroom for Jeremy. Eight left for Andrew."),
+    line("You", "One mushroom for Jeremy. Eight left for Andrew."),
   ],
   place_billy: [
-    line("Billy", "This mushroom needs a home at my house."),
-    line("Billy", "There. A tiny garden for the windowsill, just like Andrew asked."),
+    line("You", "This mushroom needs a home at Billy's house."),
+    line("You", "There. A tiny garden for the windowsill, just like Andrew asked."),
   ],
   give_andrew: [
-    line("Billy", "Here are the last eight mushrooms."),
+    line("You", "Here are the last eight mushrooms."),
     line("Andrew", "Perfect! Jeremy got one, Billy got one, and I get the rest."),
-    line("Billy", "Ten mushrooms delivered exactly as promised."),
+    line("You", "Ten mushrooms delivered exactly as promised."),
   ],
 };
 

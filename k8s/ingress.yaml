@@ -21,7 +21,9 @@ spec:
     - host: games.bolblab.org
       http:
         paths:
-          - path: /
+          # This resource is deliberately narrowed to the Game Lab-owned
+          # public mount; the catalog/API Ingress owns the host root.
+          - path: /games/milton-estates
             pathType: Prefix
             backend:
               service:

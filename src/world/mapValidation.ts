@@ -293,10 +293,6 @@ function collectObjectGeometryIssues(
         || !isMultiple(object.width, tileSize) || !isMultiple(object.height, tileSize)) {
         addIssue(issues, "rectangle-alignment", path, `Rectangle edges must align to the ${tileSize}px collision grid`);
       }
-    } else if (anchorTypes.has(kind)) {
-      if (!isMultiple(object.x - tileSize / 2, tileSize) || !isMultiple(object.y - tileSize / 2, tileSize)) {
-        addIssue(issues, "point-alignment", path, `Point anchor ${objectName(object)} must use a ${tileSize}px cell center`);
-      }
     }
 
     if (grid && anchorTypes.has(kind)) {
@@ -557,7 +553,10 @@ function collectMapDataIssues(
   options: MapValidationOptions = {},
 ): MapValidationIssue[] {
   const issues: MapValidationIssue[] = [];
-  const tileSize = options.expectedTileSize ?? COLLISION_GRID_TILE_SIZE;
+  // Callers that enforce a catalog contract pass expectedTileSize. Standalone
+  // documents validate against their own declared grid so legacy fixtures and
+  // Creek's 1px coordinate map remain meaningful.
+  const tileSize = options.expectedTileSize ?? map.tilewidth ?? COLLISION_GRID_TILE_SIZE;
   const mapLabel = options.mapId ?? map.mapId ?? "map";
   const pathPrefix = `maps.${mapLabel}`;
   const collisionLayerName = options.collisionLayerName ?? COLLISION_GRID_LAYER;

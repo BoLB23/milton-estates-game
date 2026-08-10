@@ -7,6 +7,7 @@ import type { DialogueRequest, GameState, QuestId, QuestStage } from "../game/ty
 import { selectHudInventory } from "../presentation/hudInventory";
 import { createPresentationPolicy } from "../presentation/presentationPolicy";
 import { TextEntryModal } from "../ui/TextEntryModal";
+import { formatLeaderboardTime, getLeaderboardElapsedMs } from "../platform/leaderboards";
 
 const UI_DEPTH = 1_000;
 const UI_FONT = '"Courier New", monospace';
@@ -22,6 +23,7 @@ export class UIScene extends Phaser.Scene {
   private inventoryIcon!: Phaser.GameObjects.Image;
   private inventoryText!: Phaser.GameObjects.Text;
   private saveStatusText!: Phaser.GameObjects.Text;
+  private mushroomTimerText!: Phaser.GameObjects.Text;
   private debugText?: Phaser.GameObjects.Text;
   private dialoguePanel!: Phaser.GameObjects.Container;
   private dialogueSpeaker!: Phaser.GameObjects.Text;
@@ -64,6 +66,7 @@ export class UIScene extends Phaser.Scene {
     this.buildToast();
     this.buildHint();
     this.buildSaveStatus();
+    this.buildMushroomTimer();
     this.buildInventoryIndicator();
     if (import.meta.env.DEV) this.buildDebugPanel();
 
@@ -82,6 +85,16 @@ export class UIScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.cleanup, this);
+  }
+
+  update(): void {
+    const state = gameStore.getState();
+    const running = state.activeQuestId === "andrew_mushroom_hunt"
+      && state.questProgress.mushrooms.stage !== "talk_to_andrew_for_mushrooms"
+      && state.questProgress.mushrooms.stage !== "complete";
+    const elapsed = getLeaderboardElapsedMs("mushroomHunt");
+    this.mushroomTimerText.setVisible(running && elapsed !== undefined);
+    if (running && elapsed !== undefined) this.mushroomTimerText.setText(`MUSHROOM HUNT  ${formatLeaderboardTime(elapsed)}`);
   }
 
   private buildObjectivePanel(): void {
@@ -160,6 +173,17 @@ export class UIScene extends Phaser.Scene {
       backgroundColor: "#172735e8",
       padding: { x: 9, y: 6 },
     }).setOrigin(1, 0).setDepth(UI_DEPTH + 2);
+  }
+
+  private buildMushroomTimer(): void {
+    this.mushroomTimerText = this.add.text(938, 92, "", {
+      fontFamily: UI_FONT,
+      fontSize: "11px",
+      color: "#fff5d6",
+      fontStyle: "bold",
+      backgroundColor: "#7d461be8",
+      padding: { x: 9, y: 6 },
+    }).setOrigin(1, 0).setDepth(UI_DEPTH + 2).setVisible(false);
   }
 
   private buildInventoryIndicator(): void {

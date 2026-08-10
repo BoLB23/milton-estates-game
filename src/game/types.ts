@@ -15,12 +15,31 @@ export const MAP_IDS = [
   "bent_creek",
 ] as const satisfies readonly MapId[];
 
-export type ItemId = "xbox_controller" | "bicycle" | "field_token";
+export type ItemId =
+  | "xbox_controller"
+  | "bicycle"
+  | "field_token"
+  | "clubhouse_journal_page"
+  | "paper_airplane"
+  | "bent_creek_visitor_badge";
 
 export interface InventoryStack {
   itemId: ItemId;
   quantity: number;
 }
+
+/** Appearance supplied by the authenticated Game Lab profile. */
+export interface PlayerProfile {
+  id: string;
+  nickname: string;
+  haircut: string;
+  hairColor: string;
+  tshirtColor: string;
+  pantsColor: string;
+  shoeColor: string;
+}
+
+export type SpawnIntent = "new-home" | "resume" | "regional-transition" | "move-in";
 
 export interface EquipmentState {
   transport: "bicycle" | null;
@@ -40,6 +59,10 @@ export type QuestId =
   | "three_player_sports"
   | "catch_ryan"
   | "explore_bent_creek"
+  | "attend_bonfire_at_andrews"
+  | "creek_clubhouse"
+  | "paper_airplane_relay"
+  | "bent_creek_caddy_caper"
   | "storm_drain_detectives"
   | "creek_token_hunt"
   | "last_day_of_summer";
@@ -50,9 +73,14 @@ export type ImplementedQuestId =
   | "andrew_mushroom_hunt"
   | "three_player_sports"
   | "catch_ryan"
-  | "explore_bent_creek";
+  | "explore_bent_creek"
+  | "attend_bonfire_at_andrews"
+  | "creek_clubhouse"
+  | "paper_airplane_relay"
+  | "bent_creek_caddy_caper";
 
 export type MissingControllerStage =
+  | "talk_to_billy"
   | "talk_to_jeremy"
   | "talk_to_andrew"
   | "search_creek"
@@ -82,18 +110,59 @@ export type RyanRideStage =
   | "chase_reidenbaugh"
   | "complete";
 
-export type ExploreBentCreekStage = "open_gate" | "complete";
+export type ExploreBentCreekStage = "open_gate" | "meet_schwartz" | "complete";
+export type BonfireQuestStage = "talk_to_schwartz" | "attend_bonfire" | "survive_bad_trip" | "complete";
+export type CreekClubhouseStage =
+  | "talk_to_andrew"
+  | "choose_design"
+  | "collect_supplies"
+  | "build_clubhouse"
+  | "secret_knock"
+  | "complete";
+export type ClubhouseDesign = "lookout" | "fort" | "hidden_den";
+export type ClubhouseSupply = "rope" | "blanket" | "branches";
+export type PaperAirplaneRelayStage =
+  | "ask_for_advice"
+  | "find_materials"
+  | "fold_plane"
+  | "chase_plane"
+  | "decode_message"
+  | "deliver_message"
+  | "complete";
+export type PaperAirplaneAdvisor = "ryan" | "billy" | "andrew";
+export type PaperAirplaneMaterial = "clean_sheet" | "card_wing" | "message_strip";
+export type BentCreekCaddyCaperStage =
+  | "inspect_display"
+  | "follow_clues"
+  | "putt_gates"
+  | "sprinklers"
+  | "chase_trophy"
+  | "return_trophy"
+  | "complete";
 
 /** The stage belonging to the currently selected quest. */
-export type QuestStage = MissingControllerStage | MushroomQuestStage | SportsQuestStage | RyanRideStage | ExploreBentCreekStage;
+export type QuestStage =
+  | MissingControllerStage
+  | MushroomQuestStage
+  | SportsQuestStage
+  | RyanRideStage
+  | ExploreBentCreekStage
+  | BonfireQuestStage
+  | CreekClubhouseStage
+  | PaperAirplaneRelayStage
+  | BentCreekCaddyCaperStage;
 
 /** Associates a persisted quest ID with the only stages it may own. */
 export type StageForQuest<Q extends ImplementedQuestId> =
   Q extends "missing_controller" ? MissingControllerStage
     : Q extends "andrew_mushroom_hunt" ? MushroomQuestStage
       : Q extends "three_player_sports" ? SportsQuestStage
-        : Q extends "catch_ryan" ? RyanRideStage
-          : ExploreBentCreekStage;
+          : Q extends "catch_ryan" ? RyanRideStage
+          : Q extends "explore_bent_creek" ? ExploreBentCreekStage
+            : Q extends "attend_bonfire_at_andrews" ? BonfireQuestStage
+              : Q extends "creek_clubhouse" ? CreekClubhouseStage
+                : Q extends "paper_airplane_relay" ? PaperAirplaneRelayStage
+                  : BentCreekCaddyCaperStage;
 
 /** Stable, non-presentational IDs used to build the quest checklist/history. */
 export type QuestMilestone =
@@ -117,7 +186,28 @@ export type QuestMilestone =
   | "catch_ryan.reidenbaugh_reached"
   | "catch_ryan.ryan_caught"
   | "explore_bent_creek.started"
-  | "explore_bent_creek.gate_opened";
+  | "explore_bent_creek.gate_opened"
+  | "attend_bonfire_at_andrews.started"
+  | "attend_bonfire_at_andrews.invitation_accepted"
+  | "attend_bonfire_at_andrews.arrived_at_andrews"
+  | "attend_bonfire_at_andrews.bad_trip_survived"
+  | "creek_clubhouse.started"
+  | "creek_clubhouse.design_chosen"
+  | "creek_clubhouse.supplies_collected"
+  | "creek_clubhouse.built"
+  | "creek_clubhouse.secret_knock"
+  | "paper_airplane_relay.started"
+  | "paper_airplane_relay.advice_gathered"
+  | "paper_airplane_relay.materials_found"
+  | "paper_airplane_relay.plane_folded"
+  | "paper_airplane_relay.flight_chased"
+  | "paper_airplane_relay.message_decoded"
+  | "paper_airplane_relay.message_delivered"
+  | "bent_creek_caddy_caper.started"
+  | "bent_creek_caddy_caper.clues_followed"
+  | "bent_creek_caddy_caper.gates_putted"
+  | "bent_creek_caddy_caper.trophy_found"
+  | "bent_creek_caddy_caper.complete";
 
 export interface MushroomSpawn {
   id: string;
@@ -147,12 +237,45 @@ export interface ExploreBentCreekQuestState {
   stage: ExploreBentCreekStage;
 }
 
+export interface BonfireQuestState {
+  stage: BonfireQuestStage;
+}
+
+export interface CreekClubhouseQuestState {
+  stage: CreekClubhouseStage;
+  design: ClubhouseDesign | null;
+  supplies: ClubhouseSupply[];
+  constructionStep: number;
+  knockBeats: number[];
+}
+
+export interface PaperAirplaneRelayQuestState {
+  stage: PaperAirplaneRelayStage;
+  adviceIds: PaperAirplaneAdvisor[];
+  materialIds: PaperAirplaneMaterial[];
+  windHits: number;
+  decoded: boolean;
+  deliveredTo: "andrew" | null;
+}
+
+export interface BentCreekCaddyCaperQuestState {
+  stage: BentCreekCaddyCaperStage;
+  clueIndex: 0 | 1 | 2 | 3;
+  puttGates: 0 | 1 | 2 | 3;
+  sprinklerIndex: 0 | 1 | 2 | 3;
+  bestRematchScore: number | null;
+}
+
 export interface QuestProgress {
   missingControllerStage: MissingControllerStage;
   mushrooms: MushroomQuestState;
   sports: SportsQuestState;
   ryanRide: RyanRideQuestState;
   exploreBentCreek: ExploreBentCreekQuestState;
+  bonfire: BonfireQuestState;
+  creekClubhouse: CreekClubhouseQuestState;
+  paperAirplaneRelay: PaperAirplaneRelayQuestState;
+  bentCreekCaddyCaper: BentCreekCaddyCaperQuestState;
 }
 
 export interface PlayerSettings {
@@ -163,7 +286,7 @@ export interface PlayerSettings {
 }
 
 export interface SaveData {
-  version: 8;
+  version: 9;
   activeChapterId: ChapterId;
   activeQuestId: QuestId;
   completedChapterIds: ChapterId[];

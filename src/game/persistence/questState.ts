@@ -4,6 +4,7 @@ import {
   isStageForQuest,
   milestonesForQuestStage,
 } from "../quests/specs";
+import { QUEST_COMPLETION_REWARDS } from "../quests/completionRewards";
 import { MAP_IDS } from "../types";
 import type { ImplementedQuestId, QuestId, QuestProgress, QuestStage, SaveData } from "../types";
 
@@ -28,6 +29,10 @@ export function stageFromProgress(progress: QuestProgress, questId: QuestId): Qu
     case "three_player_sports": return progress.sports.stage;
     case "catch_ryan": return progress.ryanRide.stage;
     case "explore_bent_creek": return progress.exploreBentCreek.stage;
+    case "attend_bonfire_at_andrews": return progress.bonfire.stage;
+    case "creek_clubhouse": return progress.creekClubhouse.stage;
+    case "paper_airplane_relay": return progress.paperAirplaneRelay.stage;
+    case "bent_creek_caddy_caper": return progress.bentCreekCaddyCaper.stage;
     default: return undefined;
   }
 }
@@ -51,7 +56,19 @@ export function progressAtStage(
   if (questId === "catch_ryan") {
     return { ...progress, ryanRide: { ...progress.ryanRide, stage: stage as QuestProgress["ryanRide"]["stage"] } };
   }
-  return { ...progress, exploreBentCreek: { ...progress.exploreBentCreek, stage: stage as QuestProgress["exploreBentCreek"]["stage"] } };
+  if (questId === "explore_bent_creek") {
+    return { ...progress, exploreBentCreek: { ...progress.exploreBentCreek, stage: stage as QuestProgress["exploreBentCreek"]["stage"] } };
+  }
+  if (questId === "attend_bonfire_at_andrews") {
+    return { ...progress, bonfire: { ...progress.bonfire, stage: stage as QuestProgress["bonfire"]["stage"] } };
+  }
+  if (questId === "creek_clubhouse") {
+    return { ...progress, creekClubhouse: { ...progress.creekClubhouse, stage: stage as QuestProgress["creekClubhouse"]["stage"] } };
+  }
+  if (questId === "paper_airplane_relay") {
+    return { ...progress, paperAirplaneRelay: { ...progress.paperAirplaneRelay, stage: stage as QuestProgress["paperAirplaneRelay"]["stage"] } };
+  }
+  return { ...progress, bentCreekCaddyCaper: { ...progress.bentCreekCaddyCaper, stage: stage as QuestProgress["bentCreekCaddyCaper"]["stage"] } };
 }
 
 export interface QuestProgressInvariantViolation {
@@ -79,6 +96,18 @@ export function validateQuestProgress(progress: QuestProgress): QuestProgressInv
   }
   if (!isStageForQuest("explore_bent_creek", progress.exploreBentCreek.stage)) {
     violations.push({ path: "questProgress.exploreBentCreek.stage", message: "Unknown Explore Bent Creek stage" });
+  }
+  if (!isStageForQuest("attend_bonfire_at_andrews", progress.bonfire.stage)) {
+    violations.push({ path: "questProgress.bonfire.stage", message: "Unknown bonfire quest stage" });
+  }
+  if (!isStageForQuest("creek_clubhouse", progress.creekClubhouse.stage)) {
+    violations.push({ path: "questProgress.creekClubhouse.stage", message: "Unknown Creek Clubhouse stage" });
+  }
+  if (!isStageForQuest("paper_airplane_relay", progress.paperAirplaneRelay.stage)) {
+    violations.push({ path: "questProgress.paperAirplaneRelay.stage", message: "Unknown Paper Airplane Relay stage" });
+  }
+  if (!isStageForQuest("bent_creek_caddy_caper", progress.bentCreekCaddyCaper.stage)) {
+    violations.push({ path: "questProgress.bentCreekCaddyCaper.stage", message: "Unknown Bent Creek Caddy Caper stage" });
   }
   const ride = progress.ryanRide;
   const selected = ride.selectedDestination === "reidenbaugh";
@@ -119,10 +148,26 @@ export function validateSaveInvariants(save: SaveData): QuestProgressInvariantVi
     violations.push({ path: "activeQuestId", message: "Active quest must have runtime rules" });
     return violations;
   }
-  for (const questId of ["missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek"] as const) {
+  for (const questId of [
+    "missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek",
+    "attend_bonfire_at_andrews", "creek_clubhouse", "paper_airplane_relay", "bent_creek_caddy_caper",
+  ] as const) {
     const stage = stageFromProgress(save.questProgress, questId);
     if (save.completedQuestIds.includes(questId) && stage !== "complete") {
       violations.push({ path: "completedQuestIds", message: `Quest ${questId} is recorded complete but its progress is not complete` });
+    }
+    if (stage === "complete") {
+      const reward = QUEST_COMPLETION_REWARDS[questId];
+      for (const itemId of reward?.items ?? []) {
+        if (!save.inventory.some((stack) => stack.itemId === itemId && stack.quantity > 0)) {
+          violations.push({ path: "inventory", message: `Completed quest ${questId} is missing ${itemId}` });
+        }
+      }
+      for (const secret of reward?.secrets ?? []) {
+        if (!save.secrets.includes(secret)) {
+          violations.push({ path: "secrets", message: `Completed quest ${questId} is missing ${secret}` });
+        }
+      }
     }
     const allowedMilestones = new Set(milestonesForQuestStage(questId, stage!));
     if (save.questHistory.some((milestone) => milestone.startsWith(`${questId}.`) && !allowedMilestones.has(milestone))) {

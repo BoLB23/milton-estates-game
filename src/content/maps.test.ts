@@ -2,12 +2,68 @@ import { describe, expect, it } from "vitest";
 import {
   MAP_DEFINITIONS,
   getMapDefinition,
+  initializeTiledMapMarkerCatalog,
   normalizeWorldMapPoint,
+  parseTiledMapMarkers,
+  resetTiledMapMarkerCatalog,
+  updateTiledMapMarkerCatalog,
   selectActiveObjectiveMarker,
   selectVisibleMapMarkers,
 } from "./maps";
 
 describe("map content", () => {
+  it("reads editable marker objects and uses their authored coordinates", () => {
+    const map = MAP_DEFINITIONS.neighborhood;
+    const markers = parseTiledMapMarkers(map, {
+      width: 90, height: 68, tilewidth: 16, tileheight: 16,
+      layers: [{ name: "map-markers", type: "objectgroup", objects: [{
+        name: "marker_test", x: 720, y: 544,
+        properties: [
+          { name: "markerId", value: "test_marker" },
+          { name: "markerKind", value: "objective" },
+          { name: "markerLabel", value: "Test objective" },
+          { name: "questId", value: "missing_controller" },
+          { name: "stages", value: "talk_to_jeremy, return_to_jeremy" },
+        ],
+      }] }],
+    });
+    expect(markers).toEqual([expect.objectContaining({
+      id: "test_marker", kind: "objective", x: 0.5, y: 0.5,
+      stages: ["talk_to_jeremy", "return_to_jeremy"],
+    })]);
+  });
+
+  it("uses the initialized TMJ marker catalog while retaining a fallback", () => {
+    initializeTiledMapMarkerCatalog({ creek: {
+      width: 2048, height: 1536, tilewidth: 1, tileheight: 1,
+      layers: [{ name: "map-markers", type: "objectgroup", objects: [{
+        name: "marker_runtime", x: 1024, y: 768,
+        properties: [
+          { name: "markerKind", value: "objective" },
+          { name: "markerLabel", value: "Runtime marker" },
+          { name: "questId", value: "missing_controller" },
+          { name: "stages", value: "search_creek" },
+        ],
+      }] }],
+    } });
+    expect(selectActiveObjectiveMarker({ currentMap: "creek", questId: "missing_controller", stage: "search_creek", discoveredIds: [] })?.id).toBe("marker_runtime");
+    resetTiledMapMarkerCatalog();
+    expect(selectActiveObjectiveMarker({ currentMap: "creek", questId: "missing_controller", stage: "search_creek", discoveredIds: [] })?.id).toBe("obj_controller");
+  });
+
+  it("refreshes one playtested map without discarding other loaded marker catalogs", () => {
+    const source = (label: string) => ({ width: 100, height: 100, tilewidth: 1, tileheight: 1, layers: [{
+      name: "map-markers", type: "objectgroup", objects: [{ name: `marker_${label}`, x: 50, y: 50, properties: [
+        { name: "markerKind", value: "landmark" }, { name: "markerLabel", value: label }, { name: "initiallyVisible", value: true },
+      ] }],
+    }] });
+    initializeTiledMapMarkerCatalog({ neighborhood: source("before"), creek: source("creek") });
+    updateTiledMapMarkerCatalog("neighborhood", source("after"));
+    expect(selectVisibleMapMarkers({ currentMap: "neighborhood", questId: "missing_controller", stage: "complete", discoveredIds: [] })[0]?.label).toBe("after");
+    expect(selectVisibleMapMarkers({ currentMap: "creek", questId: "missing_controller", stage: "complete", discoveredIds: [] })[0]?.label).toBe("creek");
+    resetTiledMapMarkerCatalog();
+  });
+
   it("keeps every configured marker inside normalized map bounds", () => {
     for (const map of Object.values(MAP_DEFINITIONS)) {
       expect(map.worldWidth).toBeGreaterThan(0);
@@ -30,7 +86,7 @@ describe("map content", () => {
     });
 
     expect(markers.map(({ id }) => id)).toEqual([
-      "billy_home",
+      "player_home",
       "creek_woods",
       "stonehenge_exit",
       "fruitville_exit",

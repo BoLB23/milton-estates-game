@@ -19,7 +19,7 @@ export const CATCH_RYAN_MODULE = legacyQuestModule({
   id: "catch_ryan",
   chapterId: "chapter_1",
   title: "Catch Ryan",
-  description: "Ryan challenges Billy to a bicycle ride out to Reidenbaugh.",
+  description: "Ryan challenges you to a bicycle ride out to Reidenbaugh.",
   kind: "side",
   required: false,
   optional: true,

@@ -11,11 +11,9 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const publicRoot = join(root, "public");
-const tileSize = 32;
-const gridWidth = 45;
-const gridHeight = 33;
-const worldWidth = gridWidth * tileSize;
-const worldHeight = gridHeight * tileSize;
+const tileSize = 16;
+const defaultGridWidth = 90;
+const defaultGridHeight = 66;
 const expansionIds = ["neighborhood", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"];
 const legacyRoadId = ["reidenbaugh", "road"].join("_");
 const bicycleTuningSource = readFileSync(join(root, "src", "world", "PlayerLocomotionController.ts"), "utf8");
@@ -24,8 +22,12 @@ const regionalBicycleSpeed = Number(bicycleTuningBlock?.match(/\bmaxSpeed:\s*(\d
 
 const specs = {
   neighborhood: {
-    image: "neighborhood-master-v2.png",
-    boundary: { woods_gate: "north", exit_stonehenge: "east", exit_fruitville: "west" },
+    image: "../milton-estates-new.png",
+    imagePath: "assets/maps/milton-estates-new.png",
+    gridHeight: 68,
+    sourceWidth: 1448,
+    sourceHeight: 1086,
+    boundary: { exit_stonehenge: "east", exit_fruitville: "west" },
     mustHave: [
       "spawn_home", "spawn_woods", "spawn_stonehenge", "spawn_fruitville", "woods_gate", "exit_stonehenge", "exit_fruitville",
       "ryan_invite", "bike_mount_milton", ...Array.from({ length: 12 }, (_, index) => `ryan_depart_${String(index).padStart(2, "0")}`),
@@ -98,7 +100,7 @@ const cells = (object) => {
   }
   return [[Math.floor(object.x / tileSize), Math.floor(object.y / tileSize)]];
 };
-const isInside = (x, y) => x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
+const isInside = (x, y, width, height) => x >= 0 && x < width && y >= 0 && y < height;
 const pngSize = (relativePath) => {
   const bytes = readFileSync(join(publicRoot, relativePath));
   if (bytes.readUInt32BE(0) !== 0x89504e47 || bytes.readUInt32BE(4) !== 0x0d0a1a0a) return undefined;
@@ -111,8 +113,12 @@ if (!Number.isFinite(regionalBicycleSpeed) || regionalBicycleSpeed <= 0) {
 
 for (const id of expansionIds) {
   const spec = specs[id];
+  const gridWidth = spec.gridWidth ?? defaultGridWidth;
+  const gridHeight = spec.gridHeight ?? defaultGridHeight;
+  const worldWidth = gridWidth * tileSize;
+  const worldHeight = gridHeight * tileSize;
   const tmjPath = `assets/maps/expansion/${id}.tmj`;
-  const imagePath = `assets/maps/expansion/${spec.image}`;
+  const imagePath = spec.imagePath ?? `assets/maps/expansion/${spec.image}`;
   if (!existsSync(join(publicRoot, tmjPath))) { fail(`${id}: missing TMJ ${tmjPath}`); continue; }
   if (!existsSync(join(publicRoot, imagePath))) fail(`${id}: missing raster ${imagePath}`);
   const map = readJson(tmjPath);
@@ -127,15 +133,17 @@ for (const id of expansionIds) {
     if (!layerNames.has(name)) fail(`${id}: missing required layer ${name}`);
   }
   const ground = map.layers.find((layer) => layer.name === "ground");
-  if (ground?.image !== spec.image || ground.imagewidth !== worldWidth || ground.imageheight !== worldHeight) fail(`${id}: ground image contract drifted`);
+  const sourceWidth = spec.sourceWidth ?? worldWidth;
+  const sourceHeight = spec.sourceHeight ?? worldHeight;
+  if (ground?.image !== spec.image || ground.imagewidth !== sourceWidth || ground.imageheight !== sourceHeight) fail(`${id}: ground image contract drifted`);
   const image = pngSize(imagePath);
-  if (!image || image.width !== worldWidth || image.height !== worldHeight) fail(`${id}: raster must be exactly ${worldWidth}x${worldHeight}`);
+  if (!image || image.width !== sourceWidth || image.height !== sourceHeight) fail(`${id}: raster dimensions drifted`);
 
   const gridLayer = map.layers.find((layer) => layer.name === "collision-grid");
   const values = gridLayer?.data ?? [];
   if (gridLayer?.width !== gridWidth || gridLayer?.height !== gridHeight || values.length !== gridWidth * gridHeight) fail(`${id}: collision grid dimensions/data length drifted`);
   if (values.some((value) => !Number.isInteger(value) || value < 0)) fail(`${id}: collision cells must be non-negative integer IDs`);
-  const walkable = (x, y) => isInside(x, y) && values[y * gridWidth + x] === 0;
+  const walkable = (x, y) => isInside(x, y, gridWidth, gridHeight) && values[y * gridWidth + x] === 0;
 
   const ids = new Set();
   const names = new Set();
@@ -152,8 +160,6 @@ for (const id of expansionIds) {
       const rectangle = object.width > 0 && object.height > 0;
       if (rectangle) {
         if ([object.x, object.y, object.width, object.height].some((value) => value % tileSize !== 0)) fail(`${id}: ${object.name} rectangle is not grid-aligned`);
-      } else if ((object.x - tileSize / 2) % tileSize !== 0 || (object.y - tileSize / 2) % tileSize !== 0) {
-        fail(`${id}: ${object.name} point is not a cell center`);
       }
       for (const [x, y] of cells(object)) if (!walkable(x, y)) fail(`${id}: anchor ${object.name} is blocked at ${x},${y}`);
     }

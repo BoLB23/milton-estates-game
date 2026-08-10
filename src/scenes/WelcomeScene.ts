@@ -116,17 +116,18 @@ export class WelcomeScene extends Phaser.Scene {
     yard.fillStyle(0x9c563e).fillTriangle(-314, -31, -231, -88, -148, -31);
     yard.fillStyle(0x315948).fillCircle(222, -32, 48).fillCircle(278, 3, 57);
     yard.fillStyle(0xf3c95f, 0.75).fillCircle(85, -39, 19);
-    const billy = this.add.sprite(-276, 67, "billy", 0).setScale(0.28);
-    const label = this.add.text(-345, 155, "This is Billy. School is out—and adventure is already calling.", {
+    const player = this.add.sprite(-276, 67, "player", 0).setScale(0.28);
+    const nickname = gameStore.getPlayerProfile()?.nickname ?? "You";
+    const label = this.add.text(-345, 155, `This is ${nickname}. School is out—and adventure is already calling.`, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "17px", color: INK,
     });
-    page.add([yard, billy, heading, note, label]);
+    page.add([yard, player, heading, note, label]);
 
     if (this.policy.reducedMotion) {
-      billy.setX(70).anims.play("billy-idle-side");
+      player.setX(70).anims.play("player-idle-side");
     } else {
-      billy.anims.play("billy-walk-side");
-      this.tweens.add({ targets: billy, x: 124, duration: 2_600, ease: "Sine.easeInOut", yoyo: true, repeat: -1 });
+      player.anims.play("player-walk-side");
+      this.tweens.add({ targets: player, x: 124, duration: 2_600, ease: "Sine.easeInOut", yoyo: true, repeat: -1 });
       heading.setAlpha(0).setX(-375);
       this.tweens.add({ targets: heading, x: -352, alpha: 1, duration: 420, ease: "Cubic.easeOut" });
     }

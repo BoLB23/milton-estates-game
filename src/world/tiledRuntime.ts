@@ -3,7 +3,8 @@ import { isItemId } from "../content/items";
 import type { ItemId } from "../game/types";
 
 export const COLLISION_GRID_LAYER = "collision-grid";
-export const COLLISION_GRID_TILE_SIZE = 32;
+/** Regional authoring uses a fine collision mask; Creek retains rectangle collision. */
+export const COLLISION_GRID_TILE_SIZE = 16;
 
 export interface WorldPoint { x: number; y: number; }
 export interface WorldRect extends WorldPoint { width: number; height: number; }
@@ -36,6 +37,18 @@ export interface TiledPickup {
   y: number;
   width?: number;
   height?: number;
+}
+
+export interface AuthoredArtworkTransform {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+  depth?: number;
 }
 
 interface TiledObjectLayer { objects: TiledRuntimeObject[]; }
@@ -135,7 +148,7 @@ export class CollisionGrid {
     return cell !== undefined && this.isWalkable(cell);
   }
 
-  /** The exact 32px-aligned edges of a cell. */
+  /** The exact tile-aligned edges of a cell. */
   public cellBounds(cell: GridCell): WorldRect {
     if (!this.isInsideCell(cell)) throw new Error(`Cell outside collision grid: ${cell.x},${cell.y}`);
     return {
@@ -364,9 +377,7 @@ export class TiledRuntimeWorld {
     objectLayer = "stable-gameplay-objects",
     colliderLayer = "collision-rects",
   ) {
-    const objects = this.hasObjectLayer(objectLayer)
-      ? this.objectsInLayer(objectLayer)
-      : this.objectsInLayers(["spawns", "transitions", "interactions", "navigation", "qa-probes", "solid-footprints"]);
+    const objects = this.objectsInLayers([objectLayer, "spawns", "transitions", "interactions", "navigation", "qa-probes", "solid-footprints"]);
     this.objects = new Map(objects.map((object) => [object.name, object]));
     if (this.objects.size !== objects.length) throw new Error(`Duplicate Tiled object names in ${objectLayer} or the expansion gameplay layers`);
     this.colliderLayer = colliderLayer;
@@ -377,6 +388,34 @@ export class TiledRuntimeWorld {
   public get worldBounds(): WorldRect { return getExactWorldBounds(this.tilemap); }
 
   public getWorldBounds(): WorldRect { return this.worldBounds; }
+
+  /** Resolves editor-authored image calibration while retaining safe fallbacks. */
+  public artworkTransform(role: "master" | "foreground", index: number, fallback: AuthoredArtworkTransform): AuthoredArtworkTransform {
+    const imageLayers = (this.tilemap as unknown as { imageLayers?: Array<{ x?: number; y?: number; properties?: TiledRuntimeObject["properties"] }> }).imageLayers;
+    const roleOf = (candidate: { properties?: TiledRuntimeObject["properties"] }): unknown => Array.isArray(candidate.properties)
+      ? (candidate.properties as readonly TiledProperty[]).find((property) => property.name === "role")?.value
+      : (candidate.properties as Readonly<Record<string, unknown>> | undefined)?.role;
+    const layer = imageLayers?.find((candidate) => roleOf(candidate) === role) ?? imageLayers?.[index];
+    if (!layer) return fallback;
+    const numberProperty = (name: string, defaultValue: number): number => {
+      const properties = layer.properties;
+      const value = Array.isArray(properties)
+        ? (properties as readonly TiledProperty[]).find((property) => property.name === name)?.value
+        : (properties as Readonly<Record<string, unknown>> | undefined)?.[name];
+      return typeof value === "number" && Number.isFinite(value) ? value : defaultValue;
+    };
+    return {
+      x: numberProperty("displayX", layer.x ?? fallback.x),
+      y: numberProperty("displayY", layer.y ?? fallback.y),
+      width: numberProperty("displayWidth", fallback.width),
+      height: numberProperty("displayHeight", fallback.height),
+      cropX: numberProperty("cropX", fallback.cropX),
+      cropY: numberProperty("cropY", fallback.cropY),
+      cropWidth: numberProperty("cropWidth", fallback.cropWidth),
+      cropHeight: numberProperty("cropHeight", fallback.cropHeight),
+      depth: numberProperty("depth", fallback.depth ?? 10),
+    };
+  }
 
   public point(name: string): WorldPoint {
     const object = this.objects.get(name);

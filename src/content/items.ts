@@ -37,6 +37,30 @@ export const ITEMS: Readonly<Record<ItemId, ItemDefinition>> = {
     stackLimit: 99,
     useKind: "none",
   },
+  clubhouse_journal_page: {
+    itemId: "clubhouse_journal_page",
+    label: "Clubhouse journal page",
+    icon: "journal-page",
+    description: "Andrew's penciled clubhouse plans, complete with the secret knock.",
+    stackLimit: 1,
+    useKind: "none",
+  },
+  paper_airplane: {
+    itemId: "paper_airplane",
+    label: "Paper airplane",
+    icon: "paper-airplane",
+    description: "Ryan's crisp relay plane, folded to fly straight through the wind.",
+    stackLimit: 1,
+    useKind: "none",
+  },
+  bent_creek_visitor_badge: {
+    itemId: "bent_creek_visitor_badge",
+    label: "Bent Creek visitor badge",
+    icon: "visitor-badge",
+    description: "Schwartz's honorary badge, granted after the Caddy Caper.",
+    stackLimit: 1,
+    useKind: "none",
+  },
 };
 
 export function getItemDefinition(itemId: ItemId): ItemDefinition {
@@ -44,5 +68,7 @@ export function getItemDefinition(itemId: ItemId): ItemDefinition {
 }
 
 export function isItemId(value: unknown): value is ItemId {
-  return value === "xbox_controller" || value === "bicycle" || value === "field_token";
+  return value === "xbox_controller" || value === "bicycle" || value === "field_token"
+    || value === "clubhouse_journal_page" || value === "paper_airplane"
+    || value === "bent_creek_visitor_badge";
 }

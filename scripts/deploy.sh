@@ -8,6 +8,9 @@ project_root="$(cd "${script_dir}/.." && pwd)"
 readonly namespace="games"
 readonly deployment="milton-estates-game"
 readonly game_hostname="games.bolblab.org"
+readonly game_path="/games/milton-estates"
+readonly public_health_path="${game_path}/healthz"
+readonly tunnel_path_regex="^${game_path}(/.*)?$"
 readonly image_repository="ghcr.io/bolb23/milton-estates-game"
 readonly tunnel_id="3f6e31eb-7a1b-46a6-b8cf-421e33238beb"
 readonly tunnel_service="http://${deployment}.${namespace}.svc.cluster.local:80"
@@ -219,6 +222,8 @@ assert_manifest_value "${project_root}/k8s/ingress.yaml" \
 assert_manifest_value "${project_root}/k8s/ingress.yaml" \
   '{.spec.tls[0].hosts[0]}' "${game_hostname}" "Ingress TLS hostname"
 assert_manifest_value "${project_root}/k8s/ingress.yaml" \
+  '{.spec.rules[0].http.paths[0].path}' "${game_path}" "Ingress game path"
+assert_manifest_value "${project_root}/k8s/ingress.yaml" \
   '{.spec.rules[0].http.paths[0].backend.service.name}' "${deployment}" "Ingress backend"
 
 # This is deliberately offline: syntax validation must finish before
@@ -294,7 +299,7 @@ jq --exit-status --join-output '.data["config.yaml"]' \
 # route options (including originRequest) are removed as one unit while every
 # unrelated route and comment remains byte-for-byte intact.
 ruby -rpsych -e '
-  source_path, destination_path, expected_tunnel, hostname, service = ARGV
+  source_path, destination_path, expected_tunnel, hostname, path, service = ARGV
   source = File.binread(source_path)
 
   begin
@@ -353,14 +358,24 @@ ruby -rpsych -e '
 
   catch_alls = []
   target_routes = []
+  conflicting_routes = []
+  same_hostname_routes = []
   routes.each_with_index do |route, index|
     route_hostname = scalar_value.call(route, "hostname")
     route_path = scalar_value.call(route, "path")
     route_service = scalar_value.call(route, "service")
-    target_routes << route if route_hostname == hostname
+    same_hostname_routes << route if route_hostname == hostname
+    if route_hostname == hostname && route_path == path && route_service != service
+      conflicting_routes << route
+    end
+    target_routes << route if route_hostname == hostname && route_service == service && (route_path.nil? || route_path == path)
     if route_hostname.nil? && route_path.nil? && route_service == "http_status:404"
       catch_alls << [index, route]
     end
+  end
+  unless conflicting_routes.empty?
+    warn "Tunnel already has a different service for #{hostname} #{path}."
+    exit 1
   end
   if catch_alls.length != 1 || catch_alls.first.first != routes.length - 1
     warn "Tunnel config must end with exactly one hostname-free http_status:404 catch-all rule."
@@ -370,12 +385,10 @@ ruby -rpsych -e '
   lines = source.lines
   newline = source.include?("\r\n") ? "\r\n" : "\n"
   catch_all = catch_alls.first.last
-  catch_all_line = lines.fetch(catch_all.start_line)
+  insertion_route = same_hostname_routes.first || catch_all
+  insertion_line = insertion_route.start_line
+  catch_all_line = lines.fetch(insertion_line)
   indent = catch_all_line[/\A[ \t]*/]
-  insertion_line = catch_all.start_line
-  while insertion_line.positive? && lines[insertion_line - 1].match?(/\A[ \t]*(?:#.*)?(?:\r?\n)?\z/)
-    insertion_line -= 1
-  end
 
   removed_lines = {}
   content_end = lambda do |node|
@@ -395,13 +408,14 @@ ruby -rpsych -e '
   lines.each_with_index do |line, line_number|
     if line_number == insertion_line
       output << indent << "- hostname: " << hostname << newline
+      output << indent << "  path: '" << path << "'" << newline
       output << indent << "  service: " << service << newline
     end
     output << line unless removed_lines[line_number]
   end
   File.binwrite(destination_path, output)
 ' "${current_tunnel_config}" "${desired_tunnel_config}" \
-  "${tunnel_id}" "${game_hostname}" "${tunnel_service}"
+  "${tunnel_id}" "${game_hostname}" "${tunnel_path_regex}" "${tunnel_service}"
 
 # Cloudflare requires a terminal catch-all and evaluates routes in order. Its
 # own validator is the final authority before the shared ConfigMap is touched.
@@ -518,7 +532,7 @@ verify_public_health() {
       --max-time 10 \
       --output "${health_response}" \
       --write-out '%{http_code}' \
-      "https://${game_hostname}/healthz")" \
+      "https://${game_hostname}${public_health_path}")" \
       && [[ "${http_code}" == "200" ]] \
       && grep -qx 'ok' "${health_response}"; then
       return 0
@@ -576,4 +590,4 @@ kubectl --namespace "${namespace}" get deployment,pods,service,ingress \
 verify_public_health
 release_complete=true
 echo "Deployed ${image}"
-echo "URL: https://${game_hostname}"
+echo "URL: https://${game_hostname}${game_path}/"

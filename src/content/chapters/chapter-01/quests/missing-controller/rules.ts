@@ -5,12 +5,14 @@ import type {
 } from "../../../../../game/types";
 
 export type MissingControllerQuestEvent =
+  | { type: "talked_to_billy" }
   | { type: "talked_to_jeremy" }
   | { type: "talked_to_andrew" }
   | { type: "picked_up_controller" }
   | { type: "returned_controller" };
 
 export const MISSING_CONTROLLER_STAGES = [
+  "talk_to_billy",
   "talk_to_jeremy",
   "talk_to_andrew",
   "search_creek",
@@ -27,6 +29,7 @@ export const MISSING_CONTROLLER_MILESTONES = [
 ] as const satisfies readonly QuestMilestone[];
 
 export const MISSING_CONTROLLER_OBJECTIVES: Readonly<Record<MissingControllerStage, string>> = {
+  talk_to_billy: "Talk to Billy outside his house.",
   talk_to_jeremy: "Talk to Jeremy outside his house.",
   talk_to_andrew: "Ask Andrew what he knows about the missing controller.",
   search_creek: "Follow the creek trail and search the tall grass.",
@@ -36,7 +39,8 @@ export const MISSING_CONTROLLER_OBJECTIVES: Readonly<Record<MissingControllerSta
 
 export const MISSING_CONTROLLER_COMPLETED_MILESTONE_COUNT:
 Readonly<Record<MissingControllerStage, number>> = {
-  talk_to_jeremy: 0,
+  talk_to_billy: 0,
+  talk_to_jeremy: 1,
   talk_to_andrew: 1,
   search_creek: 3,
   return_to_jeremy: 4,
@@ -48,6 +52,7 @@ export function advanceMissingControllerStage(
   event: MissingControllerQuestEvent,
 ): QuestStage {
   switch (current) {
+    case "talk_to_billy": return event.type === "talked_to_billy" ? "talk_to_jeremy" : current;
     case "talk_to_jeremy": return event.type === "talked_to_jeremy" ? "talk_to_andrew" : current;
     case "talk_to_andrew": return event.type === "talked_to_andrew" ? "search_creek" : current;
     case "search_creek": return event.type === "picked_up_controller" ? "return_to_jeremy" : current;

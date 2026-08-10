@@ -20,7 +20,11 @@ const retainedSourceAssets = new Set([
   "assets/maps/expansion/reidenbaugh.tmj",
   "assets/maps/expansion/fruitville_pike.tmj",
   "assets/maps/expansion/bent_creek.tmj",
+  // Kept as a rollback reference while the normalized Milton plate is being
+  // QA'd against its reauthored TMJ; it is not loaded by the shipped game.
+  "assets/maps/expansion/neighborhood-master-v2.png",
 ]);
+const ignoredFiles = new Set(["assets/.DS_Store", "assets/concepts/.DS_Store"]);
 
 async function collectFiles(directory) {
   const info = await stat(directory);
@@ -59,7 +63,7 @@ for (const asset of referenced) {
 }
 
 const shippedAssets = (await collectFiles(assetRoot)).map((file) => relative(publicRoot, file));
-const unreferenced = shippedAssets.filter((asset) => !referenced.has(asset) && !retainedSourceAssets.has(asset));
+const unreferenced = shippedAssets.filter((asset) => !referenced.has(asset) && !retainedSourceAssets.has(asset) && !ignoredFiles.has(asset));
 
 if (rootAbsoluteUrls.length > 0) {
   console.error("Root-absolute asset URLs bypass Vite's deployment base:");

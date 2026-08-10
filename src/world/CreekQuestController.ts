@@ -80,12 +80,12 @@ export class CreekQuestController {
 
   private findSecret(): void {
     if (gameStore.hasSecret("creek_token")) {
-      this.host.showDialogue([{ speaker: "Billy", text: "The little clearing feels like a good hideout spot." }]);
+      this.host.showDialogue([{ speaker: "You", text: "The little clearing feels like a good hideout spot." }]);
       return;
     }
     this.host.showDialogue([
-      { speaker: "Billy", text: "A Milton Estates arcade token? This must be ancient." },
-      { speaker: "Billy", text: "Or from last summer. Still counts." },
+      { speaker: "You", text: "A Milton Estates arcade token? This must be ancient." },
+      { speaker: "You", text: "Or from last summer. Still counts." },
     ], () => {
       gameStore.addSecret("creek_token");
       this.secretSprite?.destroy();

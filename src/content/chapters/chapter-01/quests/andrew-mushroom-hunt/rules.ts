@@ -50,19 +50,26 @@ Readonly<Record<MushroomQuestStage, number>> = {
   complete: 5,
 };
 
+/**
+ * Mushroom pickup prompts become active within 62px, so authored candidates
+ * stay at least one full prompt diameter apart. This prevents two randomized
+ * pickups from competing for the same interaction press.
+ */
+export const MUSHROOM_INTERACTION_CLEARANCE = 128;
+
 /** Five backyard and five creek candidates are shuffled for every new save. */
 const NEIGHBORHOOD_CANDIDATES: readonly Omit<MushroomSpawn, "id">[] = [
-  { map: "neighborhood", x: 240, y: 752 },
-  { map: "neighborhood", x: 336, y: 752 },
-  { map: "neighborhood", x: 400, y: 464 },
-  { map: "neighborhood", x: 528, y: 496 },
-  { map: "neighborhood", x: 624, y: 560 },
-  { map: "neighborhood", x: 720, y: 656 },
-  { map: "neighborhood", x: 848, y: 656 },
-  { map: "neighborhood", x: 944, y: 592 },
-  { map: "neighborhood", x: 1008, y: 528 },
-  { map: "neighborhood", x: 1136, y: 528 },
-  { map: "neighborhood", x: 1264, y: 560 },
+  { map: "neighborhood", x: 144, y: 336 },
+  { map: "neighborhood", x: 336, y: 336 },
+  { map: "neighborhood", x: 528, y: 336 },
+  { map: "neighborhood", x: 720, y: 336 },
+  { map: "neighborhood", x: 912, y: 336 },
+  { map: "neighborhood", x: 1104, y: 336 },
+  { map: "neighborhood", x: 1296, y: 336 },
+  { map: "neighborhood", x: 240, y: 816 },
+  { map: "neighborhood", x: 464, y: 816 },
+  { map: "neighborhood", x: 688, y: 816 },
+  { map: "neighborhood", x: 944, y: 816 },
   { map: "neighborhood", x: 1232, y: 816 },
 ];
 
@@ -87,6 +94,13 @@ const CANDIDATES_BY_MAP: Readonly<Record<MushroomMap, readonly Omit<MushroomSpaw
   neighborhood: NEIGHBORHOOD_CANDIDATES,
   creek: CREEK_CANDIDATES,
 };
+
+/** Exposes immutable copies so the authored map acceptance tests cover every candidate. */
+export function getAuthoredMushroomSpawnCandidates(
+  map: MushroomMap,
+): readonly Omit<MushroomSpawn, "id">[] {
+  return CANDIDATES_BY_MAP[map].map((candidate) => ({ ...candidate }));
+}
 
 function positionKey(spawn: Pick<MushroomSpawn, "x" | "y">): string {
   return `${spawn.x},${spawn.y}`;

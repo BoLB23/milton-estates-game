@@ -13,7 +13,8 @@ describe("Missing Controller module", () => {
   });
 
   it("advances through the authored sequence", () => {
-    let stage = advanceMissingControllerStage("talk_to_jeremy", { type: "talked_to_jeremy" });
+    let stage = advanceMissingControllerStage("talk_to_billy", { type: "talked_to_billy" });
+    stage = advanceMissingControllerStage(stage, { type: "talked_to_jeremy" });
     stage = advanceMissingControllerStage(stage, { type: "talked_to_andrew" });
     expect(stage).toBe("search_creek");
     stage = advanceMissingControllerStage(stage, { type: "picked_up_controller" });
@@ -22,6 +23,8 @@ describe("Missing Controller module", () => {
   });
 
   it("ignores out-of-order and repeated events", () => {
+    expect(advanceMissingControllerStage("talk_to_billy", { type: "talked_to_jeremy" }))
+      .toBe("talk_to_billy");
     expect(advanceMissingControllerStage("talk_to_jeremy", { type: "picked_up_controller" }))
       .toBe("talk_to_jeremy");
     expect(advanceMissingControllerStage("complete", { type: "talked_to_jeremy" })).toBe("complete");

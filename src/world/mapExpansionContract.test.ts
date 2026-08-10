@@ -37,7 +37,6 @@ const reciprocalTransitions: readonly ReciprocalTransitionRule[] = [
 
 const boundaryExits: Readonly<Record<typeof EXPANSION_MAP_IDS[number], MapValidationOptions["boundaryExits"]>> = {
   neighborhood: [
-    { objectId: "woods_gate", side: "north" },
     { objectId: "exit_stonehenge", side: "east" },
     { objectId: "exit_fruitville", side: "west" },
   ],
@@ -54,11 +53,11 @@ const boundaryExits: Readonly<Record<typeof EXPANSION_MAP_IDS[number], MapValida
 };
 
 describe("Milton Estates expansion authored contract", () => {
-  it("validates every expansion TMJ against the 32px finite-map contract", () => {
+  it("validates every expansion TMJ against the 16px finite-map contract", () => {
     const maps = [...EXPANSION_MAP_IDS.map(readExpansionMap), readCreekMap()];
     const mapOptionsById = Object.fromEntries([
       ...EXPANSION_MAP_IDS.map((id) => [id, {
-        expectedTileSize: 32,
+        expectedTileSize: 16,
         expectedWorldWidth: MAP_DEFINITIONS[id].worldWidth,
         expectedWorldHeight: MAP_DEFINITIONS[id].worldHeight,
         requiredLayerNames: ["ground", "solid-footprints", "spawns", "transitions", "interactions", "navigation", "qa-probes"],
@@ -93,9 +92,9 @@ describe("Milton Estates expansion authored contract", () => {
       width: collisionLayer.width!,
       height: collisionLayer.height!,
       data: collisionLayer.data!,
-      tileWidth: 32,
-      tileHeight: 32,
+      tileWidth: 16,
+      tileHeight: 16,
     });
-    expect(floodFillWalkable(grid, [{ x: 25, y: 30 }]).has("43,5")).toBe(true);
+    expect(floodFillWalkable(grid, [{ x: 50, y: 60 }]).has("86,10")).toBe(true);
   });
 });

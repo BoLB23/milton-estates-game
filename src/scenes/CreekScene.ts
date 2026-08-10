@@ -1,18 +1,24 @@
 import Phaser from "phaser";
-import { CREEK_MAP, getIllustratedMapLayers } from "../content/maps";
+import { CREEK_MAP } from "../content/maps";
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { BaseExplorationScene } from "./BaseExplorationScene";
 import { CreekQuestController } from "../world/CreekQuestController";
+import { CreekClubhouseController } from "../world/CreekClubhouseController";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 
 /** Sets up Creek Woods' map while the quest controller owns its transient pickups. */
 export class CreekScene extends BaseExplorationScene {
   private questController?: CreekQuestController;
+  private clubhouseController?: CreekClubhouseController;
   private tiledWorld!: TiledRuntimeWorld;
 
   public constructor() {
     super("creek");
+  }
+
+  public preload(): void {
+    this.preloadMapAssets(CREEK_MAP);
   }
 
   public create(): void {
@@ -37,7 +43,22 @@ export class CreekScene extends BaseExplorationScene {
       returnToNeighborhood: () => this.returnToNeighborhood(),
     });
     this.questController.mount();
+    this.clubhouseController = new CreekClubhouseController({
+      world: this,
+      registerInteraction: (interactable) => this.registerInteraction(interactable),
+      unregisterInteraction: (id) => this.unregisterInteraction(id),
+      registerRegionInteraction: (interactable) => this.registerRegionInteraction(interactable),
+      unregisterRegionInteraction: (id) => this.unregisterRegionInteraction(id),
+      showDialogue: (lines, onComplete) => this.showDialogue(lines, onComplete),
+      showChoice: (request) => this.showChoice(request),
+      addLabel: (x, y, text, color) => this.addLabel(x, y, text, color),
+      objectPoint: (name) => this.tiledWorld.point(name),
+      returnToNeighborhood: () => this.returnToNeighborhood(),
+    });
+    this.clubhouseController.mount();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clubhouseController?.dispose();
+      this.clubhouseController = undefined;
       this.questController?.dispose();
       this.questController = undefined;
     });
@@ -46,10 +67,7 @@ export class CreekScene extends BaseExplorationScene {
   public override objectPoint(name: string) { return this.tiledWorld.point(name); }
 
   private drawWorld(): void {
-    for (const layer of getIllustratedMapLayers("creek")) {
-      this.add.image(layer.x, layer.y, layer.textureKey)
-        .setOrigin(0, 0).setDisplaySize(layer.width, layer.height).setDepth(layer.depth);
-    }
+    this.drawAuthoredArtwork(CREEK_MAP, this.tiledWorld);
     for (const collider of this.tiledWorld.rectangles()) {
       this.addObstacle(collider.x, collider.y, collider.width, collider.height);
     }

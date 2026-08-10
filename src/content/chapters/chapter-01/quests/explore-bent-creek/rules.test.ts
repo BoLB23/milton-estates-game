@@ -23,8 +23,9 @@ describe("Explore Bent Creek module", () => {
     expect(EXPLORE_BENT_CREEK_COMPLETED_MILESTONE_COUNT.complete).toBe(2);
   });
 
-  it("completes only when the gate is opened", () => {
-    expect(advanceExploreBentCreekStage("open_gate", { type: "opened_gate" })).toBe("complete");
+  it("waits for Mickey and Schwartz after the gate opens", () => {
+    expect(advanceExploreBentCreekStage("open_gate", { type: "opened_gate" })).toBe("meet_schwartz");
+    expect(advanceExploreBentCreekStage("meet_schwartz", { type: "met_schwartz" })).toBe("complete");
     expect(advanceExploreBentCreekStage("complete", { type: "opened_gate" })).toBe("complete");
   });
 });

@@ -18,12 +18,17 @@ type BrowserSave = {
   settings: { muted: boolean };
 };
 
+type MockCloudSave = { data: unknown; revision: number; createdAt: string; updatedAt: string };
+let e2eCloudSaves = new Map<string, MockCloudSave>();
+
 async function readSave(page: Page): Promise<BrowserSave | null> {
   return page.evaluate(() => {
-    const raw = localStorage.getItem("milton-estates-save");
+    const cacheKey = Object.keys(localStorage).find((key) => key.startsWith("@game-platform/cloud-save/milton-estates/"));
+    const raw = cacheKey ? localStorage.getItem(cacheKey) : null;
     if (!raw) return null;
 
-    const save = JSON.parse(raw) as BrowserSave;
+    const cached = JSON.parse(raw) as { data: BrowserSave };
+    const save = cached.data;
     const questStage = save.activeQuestId === "andrew_mushroom_hunt"
       ? save.questProgress.mushrooms.stage
       : save.activeQuestId === "three_player_sports"
@@ -33,12 +38,35 @@ async function readSave(page: Page): Promise<BrowserSave | null> {
           : save.activeQuestId === "explore_bent_creek"
             ? save.questProgress.exploreBentCreek.stage
           : save.questProgress.missingControllerStage;
-    return { ...save, questStage };
+    return { ...save, version: 8, questStage };
   });
 }
 
-async function readSerializedSave(page: Page): Promise<string | null> {
-  return page.evaluate(() => localStorage.getItem("milton-estates-save"));
+async function seedPrimaryCloudSave(
+  page: Page,
+  configure: (save: Record<string, unknown>) => void,
+): Promise<void> {
+  // Start from the real new-save schema instead of maintaining a second,
+  // browser-only test fixture. The next load retrieves this payload through
+  // the mocked SDK endpoint exactly as a returning player would.
+  e2eCloudSaves.clear();
+  await page.goto("/");
+  await startNewGame(page);
+  const cloudData = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("@game-platform/cloud-save/milton-estates/"));
+    return key ? (JSON.parse(localStorage.getItem(key)!) as { data: Record<string, unknown> }).data : undefined;
+  });
+  expect(cloudData).toBeDefined();
+  const save = cloudData as Record<string, unknown>;
+  configure(save);
+  e2eCloudSaves.set("primary", {
+    data: save,
+    revision: 1,
+    createdAt: "2026-08-06T12:00:00.000Z",
+    updatedAt: "2026-08-06T12:00:00.000Z",
+  });
+  await page.reload();
+  await continueGame(page);
 }
 
 async function waitForSave(page: Page, expected: Partial<BrowserSave>): Promise<void> {
@@ -80,39 +108,39 @@ async function teleportAndInteract(page: Page, viaPointer = false): Promise<void
 }
 
 async function startNewGame(page: Page): Promise<void> {
-  await page.waitForTimeout(250);
-  // A browser with no prior save receives the skippable scrapbook opening.
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(260);
-  // Let Phaser finish registering the first title-page hit areas before the
-  // first synthetic input; this is also a real device's first display frame.
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await page.waitForTimeout(550);
+  // Required authentication resolves into the cloud-slot picker.
   if (process.env.CAPTURE_DOCS === "1") await page.screenshot({ path: "docs/checkpoint-3-title.png" });
-  // Follow the same title -> scrapbook -> journal flow players use.
-  await page.keyboard.press("ArrowDown"); // New Game.
-  await page.waitForTimeout(100);
-  await page.keyboard.press("Space"); // Arm New Game.
-  await page.waitForTimeout(140);
-  await page.keyboard.press("Space"); // Confirm New Game.
-  await page.waitForTimeout(340);
+  await page.mouse.click(230, 315); // New Game.
+  await page.waitForTimeout(400);
+  await advanceDialogue(page, 4); // Moving-in intro is skippable.
+  await page.waitForTimeout(1_900);
+  await waitForSave(page, { questStage: "talk_to_billy", currentMap: "neighborhood" });
+  await teleportAndInteract(page); // Billy assigns the first controller quest.
+  await advanceDialogue(page, 3);
+  await waitForSave(page, {
+    questStage: "talk_to_jeremy",
+    questHistory: ["missing_controller.started"],
+  });
 }
 
 async function continueGame(page: Page): Promise<void> {
-  await page.waitForTimeout(250);
-  await page.keyboard.press("Space");
+  await page.waitForTimeout(550);
+  await page.mouse.click(665, 230); // Continue the primary cloud slot.
+  await page.waitForTimeout(550);
 }
 
-async function startQuestFromJournal(page: Page, stepsFromFirstQuest: number): Promise<void> {
-  // Scene starts are queued by Phaser. Wait for the continued world and menu
-  // scenes to finish their create cycle before opening the backpack.
+async function startQuestFromBillyArchive(page: Page, questIndex: number): Promise<void> {
+  // The full archive is intentionally a Billy conversation, not an ordinary
+  // backpack tab. In a completed save F4 targets his playtest anchor.
   await page.waitForTimeout(700);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
-  await page.mouse.click(325, 115); // Quests tab.
+  await page.keyboard.press("F4");
   await page.waitForTimeout(250);
-  await page.mouse.click(150, 247 + stepsFromFirstQuest * 40); // Authored quest row.
+  await page.keyboard.press("KeyE");
   await page.waitForTimeout(250);
-  await page.mouse.click(710, 452); // Start / continue / replay action.
+  await page.mouse.click(150, 219 + questIndex * 42); // Authored quest row.
+  await page.waitForTimeout(250);
+  await page.mouse.click(710, 418); // Start / continue / replay action.
   await page.waitForTimeout(300);
 }
 
@@ -139,6 +167,60 @@ async function captureBackpackMap(page: Page): Promise<void> {
   await page.screenshot({ path: "docs/checkpoint-5-backpack-map.png" });
   await page.keyboard.press("Escape");
 }
+
+/** Browser tests use the real SDK request shapes against an in-page mock API. */
+test.beforeEach(async ({ page }) => {
+  e2eCloudSaves = new Map<string, MockCloudSave>();
+  await page.route("**://localhost:8001/api/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const now = "2026-08-06T12:00:00.000Z";
+    if (path.endsWith("/me/player")) {
+      await route.fulfill({ json: { user_id: "e2e-player", nickname: "Molly", haircut: "short", hair_color: "brown", tshirt_color: "blue", pants_color: "denim", shoe_color: "white" } });
+      return;
+    }
+    if (request.method() === "POST" && (path.endsWith("/games/milton-estates/sessions") || path.startsWith("/api/v1/game-sessions/"))) {
+      await route.fulfill({ json: {
+        id: "e2e-session", session_id: "e2e-session", user_id: "e2e-player", game_id: "milton-estates",
+        game_slug: "milton-estates", started_at: now, last_heartbeat_at: now, ended_at: path.endsWith("/end") ? now : null,
+        credited_playtime_seconds: 0,
+      } });
+      return;
+    }
+    const match = path.match(/\/games\/milton-estates\/saves(?:\/([^/]+))?$/);
+    if (!match) { await route.fulfill({ status: 404, json: { detail: "not found" } }); return; }
+    const slot = match[1] ? decodeURIComponent(match[1]) : undefined;
+    const serialize = (slotKey: string, save: { data: unknown; revision: number; createdAt: string; updatedAt: string }) => ({
+      id: `e2e-${slotKey}`, slot_key: slotKey, game_version: "2026.08", schema_version: 1, revision: save.revision,
+      byte_size: JSON.stringify(save.data).length, created_at: save.createdAt, updated_at: save.updatedAt, data: save.data,
+    });
+    if (!slot && request.method() === "GET") {
+      await route.fulfill({ json: [...e2eCloudSaves.entries()].map(([slotKey, save]) => {
+        const { data: _data, ...metadata } = serialize(slotKey, save); return metadata;
+      }) });
+      return;
+    }
+    if (!slot) { await route.fulfill({ status: 404, json: { detail: "not found" } }); return; }
+    if (request.method() === "GET") {
+      const save = e2eCloudSaves.get(slot);
+      await route.fulfill(save ? { json: serialize(slot, save) } : { status: 404, json: { detail: "missing" } });
+      return;
+    }
+    if (request.method() === "PUT") {
+      const input = request.postDataJSON() as { data: unknown; expected_revision: number | null };
+      const previous = e2eCloudSaves.get(slot);
+      if ((previous?.revision ?? null) !== input.expected_revision) {
+        await route.fulfill({ status: 409, json: { detail: "revision conflict" } }); return;
+      }
+      const save = { data: input.data, revision: (previous?.revision ?? 0) + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
+      e2eCloudSaves.set(slot, save);
+      await route.fulfill({ json: serialize(slot, save) });
+      return;
+    }
+    if (request.method() === "DELETE") { e2eCloudSaves.delete(slot); await route.fulfill({ status: 204 }); return; }
+    await route.fulfill({ status: 405, json: { detail: "method" } });
+  });
+});
 
 test("completes the rendered quest, reloads in the creek, and records history", async ({ page }) => {
   await page.goto("/");
@@ -188,6 +270,7 @@ test("completes the rendered quest, reloads in the creek, and records history", 
   await advanceDialogue(page, 6);
   await waitForSave(page, {
     questStage: "complete",
+    inventory: [],
     questHistory: [
       "missing_controller.started",
       "missing_controller.andrew_consulted",
@@ -198,7 +281,7 @@ test("completes the rendered quest, reloads in the creek, and records history", 
   });
 });
 
-test("preserves dialogue through pause and requires restart confirmation", async ({ page }) => {
+test("preserves dialogue through pause", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.removeItem("milton-estates-save"));
   await page.reload();
@@ -214,70 +297,137 @@ test("preserves dialogue through pause and requires restart confirmation", async
   await advanceDialogue(page, 3);
   await waitForSave(page, { questStage: "talk_to_andrew" });
 
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(160);
-  await page.mouse.click(650, 115); // Save tab.
-  await page.waitForTimeout(100);
-  await page.mouse.click(200, 355); // Arm restart once.
-  await page.waitForTimeout(100);
-  await page.keyboard.press("Escape");
-  await waitForSave(page, { questStage: "talk_to_andrew" });
-
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(160);
-  await page.mouse.click(650, 115);
-  await page.waitForTimeout(100);
-  await page.mouse.click(200, 355);
-  await page.waitForTimeout(100);
-  await page.mouse.click(200, 355);
-  await waitForSave(page, { questStage: "talk_to_jeremy", currentMap: "neighborhood" });
+  await page.reload();
+  await continueGame(page);
+  await waitForSave(page, { questStage: "talk_to_andrew", currentMap: "neighborhood" });
 });
 
-test("replay mutations never overwrite canonical completion", async ({ page }) => {
+test("cloud slots hydrate completed canonical progress without a returned controller", async ({ page }) => {
   await page.goto("/");
-  // Let Boot finish its initial autosave before replacing it with the fixture.
-  await waitForSave(page, { version: 8 });
-  await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
-    version: 4,
-    activeChapterId: "chapter_1",
-    activeQuestId: "missing_controller",
-    completedChapterIds: [],
-    completedQuestIds: ["missing_controller"],
-    questStage: "complete",
-    questProgress: {
-      missingControllerStage: "complete",
-      mushrooms: { stage: "talk_to_andrew_for_mushrooms", spawns: [], collectedIds: [] },
-      sports: { stage: "meet_jeremy_to_skateboard" },
-    },
-    questHistory: [
+  await startNewGame(page);
+  const cloudData = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("@game-platform/cloud-save/milton-estates/"));
+    return key ? (JSON.parse(localStorage.getItem(key)!) as { data: Record<string, unknown> }).data : undefined;
+  });
+  expect(cloudData).toBeDefined();
+  const seeded = cloudData as Record<string, unknown>;
+  seeded.activeQuestId = "missing_controller";
+  seeded.completedQuestIds = ["missing_controller"];
+  (seeded.questProgress as Record<string, unknown>).missingControllerStage = "complete";
+  seeded.inventory = [];
+  e2eCloudSaves.set("primary", { data: seeded, revision: 1, createdAt: "2026-08-06T12:00:00.000Z", updatedAt: "2026-08-06T12:00:00.000Z" });
+  await page.reload();
+  await continueGame(page);
+  await waitForSave(page, { questStage: "complete", inventory: [] });
+});
+
+test("Billy can reset an active controller quest and remove its temporary controller", async ({ page }) => {
+  await page.goto("/");
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "missing_controller";
+    save.completedQuestIds = [];
+    (save.questProgress as Record<string, unknown>).missingControllerStage = "return_to_jeremy";
+    save.questHistory = [
       "missing_controller.started",
       "missing_controller.andrew_consulted",
       "missing_controller.creek_clue_found",
       "missing_controller.controller_recovered",
-      "missing_controller.controller_returned",
+    ];
+    save.inventory = [
+      { itemId: "xbox_controller", quantity: 1 },
+      { itemId: "field_token", quantity: 1 },
+    ];
+    save.currentMap = "neighborhood";
+    save.lastKnownLocation = { map: "neighborhood", x: 816 / 1440, y: 592 / 1088 };
+  });
+  await waitForSave(page, {
+    questStage: "return_to_jeremy",
+    inventory: [
+      { itemId: "xbox_controller", quantity: 1 },
+      { itemId: "field_token", quantity: 1 },
     ],
-    inventory: ["xbox_controller"],
-    secrets: ["creek_token"],
-    currentMap: "neighborhood",
-    discoveredMaps: ["neighborhood", "creek"],
-    settings: { masterVolume: 0.5, muted: true, textSize: "medium", reducedMotion: true },
-    lastSavedAt: "2026-07-13T12:00:00.000Z",
-  })));
-  await page.reload();
+  });
+
+  await page.keyboard.press("KeyE"); // Resume position is inside Billy's single interaction region.
   await page.waitForTimeout(250);
-  const canonical = await readSerializedSave(page);
+  await page.mouse.click(710, 418); // Arm RESET QUEST.
+  await page.waitForTimeout(180);
+  await page.mouse.click(710, 418); // Confirm the canonical reset.
 
-  await page.mouse.click(260, 392); // Chapter Select.
-  await page.mouse.click(630, 398); // Open Quest Journal.
-  await page.mouse.click(630, 418); // Replay completed Missing Controller.
-  await waitForSave(page, { questStage: "complete", inventory: [{ itemId: "xbox_controller", quantity: 1 }] });
+  await waitForSave(page, {
+    activeQuestId: "missing_controller",
+    questStage: "talk_to_billy",
+    questHistory: [],
+    inventory: [{ itemId: "field_token", quantity: 1 }],
+    currentMap: "neighborhood",
+  });
+});
 
-  await teleportAndInteract(page);
-  await advanceDialogue(page, 3);
-  expect(await readSerializedSave(page)).toBe(canonical);
+test("Billy's quest conversation opens the separate archive", async ({ page }) => {
+  await page.goto("/");
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "missing_controller";
+    save.completedQuestIds = ["missing_controller"];
+    (save.questProgress as Record<string, unknown>).missingControllerStage = "complete";
+  });
+  await page.keyboard.press("F4");
+  await page.waitForTimeout(500);
+  await page.keyboard.press("KeyE");
+  await page.waitForTimeout(250);
+  // The second card is Andrew's optional quest; it is only reachable from
+  // Billy's archive, never from the ordinary Current Quest menu page.
+  await page.mouse.click(150, 240);
+  await page.waitForTimeout(150);
+  await page.mouse.click(710, 418);
+  await waitForSave(page, {
+    activeQuestId: "andrew_mushroom_hunt",
+    questStage: "talk_to_andrew_for_mushrooms",
+  });
 
-  await page.reload();
-  await waitForSave(page, { questStage: "complete", inventory: [{ itemId: "xbox_controller", quantity: 1 }] });
+  // Opening the ordinary Backpack afterward must show Status, not Billy's
+  // journal. Clicking the old archive row/action positions changes nothing.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  await page.mouse.click(150, 240);
+  await page.mouse.click(710, 418);
+  await page.waitForTimeout(200);
+  expect(await readSave(page)).toMatchObject({
+    activeQuestId: "andrew_mushroom_hunt",
+    questStage: "talk_to_andrew_for_mushrooms",
+  });
+});
+
+test("Billy confirms before resetting an in-progress quest", async ({ page }) => {
+  await page.goto("/");
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "andrew_mushroom_hunt";
+    save.completedQuestIds = ["missing_controller"];
+    const progress = save.questProgress as Record<string, unknown>;
+    progress.missingControllerStage = "complete";
+    progress.mushrooms = {
+      stage: "search_mushrooms",
+      spawns: [],
+      collectedIds: [],
+    };
+    save.currentMap = "neighborhood";
+    save.lastKnownLocation = { map: "neighborhood", x: 816 / 1440, y: 592 / 1088 };
+  });
+
+  // Resume at Billy; F4 would correctly target a mushroom during this stage.
+  await page.keyboard.press("KeyE");
+  await page.waitForTimeout(250);
+  await page.mouse.click(720, 418); // Arm Reset Quest at its stable action-button target.
+  await page.waitForTimeout(150);
+  expect(await readSave(page)).toMatchObject({
+    activeQuestId: "andrew_mushroom_hunt",
+    questStage: "search_mushrooms",
+  });
+
+  await page.mouse.click(720, 418); // Confirm reset after the journal rebuilds.
+  await waitForSave(page, {
+    activeQuestId: "andrew_mushroom_hunt",
+    questStage: "talk_to_andrew_for_mushrooms",
+  });
 });
 
 test("portrait phones show the landscape orientation message", async ({ page }) => {
@@ -291,31 +441,25 @@ test("portrait phones show the landscape orientation message", async ({ page }) 
 
 test("a creek reload keeps Escape, B, and the return interaction responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 8 });
 
   const installCreekSave = async () => {
-    await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
-      version: 4,
-      activeChapterId: "chapter_1",
-      activeQuestId: "andrew_mushroom_hunt",
-      completedChapterIds: [],
-      completedQuestIds: ["missing_controller"],
-      questStage: "feed_mushroom_to_jeremy",
-      questProgress: {
-        missingControllerStage: "complete",
-        mushrooms: {
-          stage: "feed_mushroom_to_jeremy",
-          spawns: Array.from({ length: 10 }, (_, index) => ({
-            id: `test-mushroom-${index}`,
-            map: index < 5 ? "neighborhood" : "creek",
-            x: 200 + index * 30,
-            y: 300 + index * 20,
-          })),
-          collectedIds: Array.from({ length: 10 }, (_, index) => `test-mushroom-${index}`),
-        },
-        sports: { stage: "meet_jeremy_to_skateboard" },
-      },
-      questHistory: [
+    await seedPrimaryCloudSave(page, (save) => {
+      save.activeQuestId = "andrew_mushroom_hunt";
+      save.completedQuestIds = ["missing_controller"];
+      const progress = save.questProgress as Record<string, unknown>;
+      progress.missingControllerStage = "complete";
+      progress.mushrooms = {
+        stage: "feed_mushroom_to_jeremy",
+        spawns: Array.from({ length: 10 }, (_, index) => ({
+          id: `test-mushroom-${index}`,
+          map: index < 5 ? "neighborhood" : "creek",
+          x: 200 + index * 30,
+          y: 300 + index * 20,
+        })),
+        collectedIds: Array.from({ length: 10 }, (_, index) => `test-mushroom-${index}`),
+      };
+      progress.sports = { stage: "meet_jeremy_to_skateboard" };
+      save.questHistory = [
         "missing_controller.started",
         "missing_controller.andrew_consulted",
         "missing_controller.creek_clue_found",
@@ -323,17 +467,11 @@ test("a creek reload keeps Escape, B, and the return interaction responsive", as
         "missing_controller.controller_returned",
         "andrew_mushroom_hunt.started",
         "andrew_mushroom_hunt.all_collected",
-      ],
-      inventory: ["xbox_controller"],
-      secrets: [],
-      currentMap: "creek",
-      discoveredMaps: ["neighborhood", "creek"],
-      settings: { masterVolume: 1, muted: false, textSize: "medium", reducedMotion: false },
-      lastSavedAt: "2026-07-16T12:00:00.000Z",
-    })));
-    await page.reload();
-    await waitForSave(page, { version: 8, currentMap: "creek", questStage: "feed_mushroom_to_jeremy" });
-    await continueGame(page);
+      ];
+      save.inventory = [{ itemId: "xbox_controller", quantity: 1 }];
+      save.currentMap = "creek";
+      save.discoveredMaps = ["neighborhood", "creek"];
+    });
     await page.waitForTimeout(850);
     await waitForSave(page, { currentMap: "creek", questStage: "feed_mushroom_to_jeremy" });
   };
@@ -359,29 +497,23 @@ test("a creek reload keeps Escape, B, and the return interaction responsive", as
 
 test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 8 });
-  await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
-    version: 4,
-    activeChapterId: "chapter_1",
-    activeQuestId: "andrew_mushroom_hunt",
-    completedChapterIds: [],
-    completedQuestIds: ["missing_controller"],
-    questStage: "give_mushrooms_to_andrew",
-    questProgress: {
-      missingControllerStage: "complete",
-      mushrooms: {
-        stage: "give_mushrooms_to_andrew",
-        spawns: Array.from({ length: 10 }, (_, index) => ({
-          id: `finale-mushroom-${index}`,
-          map: index < 5 ? "neighborhood" : "creek",
-          x: 200 + index * 30,
-          y: 300 + index * 20,
-        })),
-        collectedIds: Array.from({ length: 10 }, (_, index) => `finale-mushroom-${index}`),
-      },
-      sports: { stage: "meet_jeremy_to_skateboard" },
-    },
-    questHistory: [
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "andrew_mushroom_hunt";
+    save.completedQuestIds = ["missing_controller"];
+    const progress = save.questProgress as Record<string, unknown>;
+    progress.missingControllerStage = "complete";
+    progress.mushrooms = {
+      stage: "give_mushrooms_to_andrew",
+      spawns: Array.from({ length: 10 }, (_, index) => ({
+        id: `finale-mushroom-${index}`,
+        map: index < 5 ? "neighborhood" : "creek",
+        x: 200 + index * 30,
+        y: 300 + index * 20,
+      })),
+      collectedIds: Array.from({ length: 10 }, (_, index) => `finale-mushroom-${index}`),
+    };
+    progress.sports = { stage: "meet_jeremy_to_skateboard" };
+    save.questHistory = [
       "missing_controller.started",
       "missing_controller.andrew_consulted",
       "missing_controller.creek_clue_found",
@@ -391,16 +523,11 @@ test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
       "andrew_mushroom_hunt.all_collected",
       "andrew_mushroom_hunt.jeremy_fed",
       "andrew_mushroom_hunt.billy_supplied",
-    ],
-    inventory: ["xbox_controller"],
-    secrets: [],
-    currentMap: "neighborhood",
-    discoveredMaps: ["neighborhood", "creek"],
-    settings: { masterVolume: 1, muted: false, textSize: "medium", reducedMotion: false },
-    lastSavedAt: "2026-07-16T12:00:00.000Z",
-  })));
-  await page.reload();
-  await continueGame(page);
+    ];
+    save.inventory = [{ itemId: "xbox_controller", quantity: 1 }];
+    save.currentMap = "neighborhood";
+    save.discoveredMaps = ["neighborhood", "creek"];
+  });
   await teleportAndInteract(page);
   await advanceDialogue(page, 3);
   await waitForSave(page, {
@@ -421,46 +548,36 @@ test("the mushroom finale leaves the backpack responsive", async ({ page }) => {
 test("starts and completes the rendered mushroom quest without losing menu input", async ({ page }) => {
   test.slow();
   await page.goto("/");
-  await waitForSave(page, { version: 8 });
-  await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
-    version: 4,
-    activeChapterId: "chapter_1",
-    activeQuestId: "missing_controller",
-    completedChapterIds: [],
-    completedQuestIds: ["missing_controller"],
-    questStage: "complete",
-    questProgress: {
-      missingControllerStage: "complete",
-      mushrooms: {
-        stage: "talk_to_andrew_for_mushrooms",
-        spawns: Array.from({ length: 10 }, (_, index) => ({
-          id: `rendered-mushroom-${index}`,
-          map: index < 5 ? "neighborhood" : "creek",
-          x: 330 + (index % 5) * 250,
-          y: 410 + (index % 5) * 160,
-        })),
-        collectedIds: [],
-      },
-      sports: { stage: "meet_jeremy_to_skateboard" },
-    },
-    questHistory: [
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "andrew_mushroom_hunt";
+    save.completedQuestIds = ["missing_controller"];
+    const progress = save.questProgress as Record<string, unknown>;
+    progress.missingControllerStage = "complete";
+    progress.mushrooms = {
+      stage: "talk_to_andrew_for_mushrooms",
+      spawns: Array.from({ length: 10 }, (_, index) => ({
+        id: `rendered-mushroom-${index}`,
+        map: index < 5 ? "neighborhood" : "creek",
+        x: 330 + (index % 5) * 250,
+        y: 410 + (index % 5) * 160,
+      })),
+      collectedIds: [],
+    };
+    progress.sports = { stage: "meet_jeremy_to_skateboard" };
+    save.questHistory = [
       "missing_controller.started",
       "missing_controller.andrew_consulted",
       "missing_controller.creek_clue_found",
       "missing_controller.controller_recovered",
       "missing_controller.controller_returned",
-    ],
-      inventory: ["xbox_controller"],
-    secrets: [],
-    currentMap: "neighborhood",
-    discoveredMaps: ["neighborhood", "creek"],
-    settings: { masterVolume: 1, muted: false, textSize: "medium", reducedMotion: false },
-    lastSavedAt: "2026-07-16T12:00:00.000Z",
-  })));
-  await page.reload();
-  await continueGame(page);
+    ];
+    save.inventory = [{ itemId: "xbox_controller", quantity: 1 }];
+    save.currentMap = "neighborhood";
+    save.discoveredMaps = ["neighborhood", "creek"];
+  });
 
-  await startQuestFromJournal(page, 1); // Mushrooms for Andrew.
+  // The canonical menu now keeps this archive behind Billy's conversation;
+  // this progression regression begins with the optional quest already active.
   await waitForSave(page, { activeQuestId: "andrew_mushroom_hunt", questStage: "talk_to_andrew_for_mushrooms" });
 
   // The menu must still be alive immediately after it launched the world.
@@ -498,6 +615,8 @@ test("starts and completes the rendered mushroom quest without losing menu input
   await advanceDialogue(page, 3);
   await waitForSave(page, { questStage: "place_mushroom_at_billy" });
   await teleportAndInteract(page);
+  await page.keyboard.press("Space"); // Choose the mushroom handoff; journal remains the second option.
+  await page.waitForTimeout(80);
   await advanceDialogue(page, 2);
   await waitForSave(page, { questStage: "give_mushrooms_to_andrew" });
   await teleportAndInteract(page);
@@ -517,29 +636,23 @@ test("starts and completes the rendered mushroom quest without losing menu input
 
 test("starts and completes the rendered Three-Player Sports quest", async ({ page }) => {
   await page.goto("/");
-  await waitForSave(page, { version: 8 });
-  await page.evaluate(() => localStorage.setItem("milton-estates-save", JSON.stringify({
-    version: 4,
-    activeChapterId: "chapter_1",
-    activeQuestId: "missing_controller",
-    completedChapterIds: [],
-    completedQuestIds: ["missing_controller", "andrew_mushroom_hunt"],
-    questStage: "complete",
-    questProgress: {
-      missingControllerStage: "complete",
-      mushrooms: {
-        stage: "complete",
-        spawns: Array.from({ length: 10 }, (_, index) => ({
-          id: `sports-mushroom-${index}`,
-          map: index < 5 ? "neighborhood" : "creek",
-          x: 200 + index * 30,
-          y: 300 + index * 20,
-        })),
-        collectedIds: Array.from({ length: 10 }, (_, index) => `sports-mushroom-${index}`),
-      },
-      sports: { stage: "meet_jeremy_to_skateboard" },
-    },
-    questHistory: [
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "missing_controller";
+    save.completedQuestIds = ["missing_controller", "andrew_mushroom_hunt"];
+    const progress = save.questProgress as Record<string, unknown>;
+    progress.missingControllerStage = "complete";
+    progress.mushrooms = {
+      stage: "complete",
+      spawns: Array.from({ length: 10 }, (_, index) => ({
+        id: `sports-mushroom-${index}`,
+        map: index < 5 ? "neighborhood" : "creek",
+        x: 200 + index * 30,
+        y: 300 + index * 20,
+      })),
+      collectedIds: Array.from({ length: 10 }, (_, index) => `sports-mushroom-${index}`),
+    };
+    progress.sports = { stage: "meet_jeremy_to_skateboard" };
+    save.questHistory = [
       "missing_controller.started",
       "missing_controller.andrew_consulted",
       "missing_controller.creek_clue_found",
@@ -550,21 +663,14 @@ test("starts and completes the rendered Three-Player Sports quest", async ({ pag
       "andrew_mushroom_hunt.jeremy_fed",
       "andrew_mushroom_hunt.billy_supplied",
       "andrew_mushroom_hunt.andrew_supplied",
-    ],
-    inventory: ["xbox_controller"],
-    secrets: [],
-    currentMap: "neighborhood",
-    discoveredMaps: ["neighborhood", "creek"],
-    settings: { masterVolume: 1, muted: false, textSize: "medium", reducedMotion: false },
-    lastSavedAt: "2026-07-16T12:00:00.000Z",
-  })));
-  await page.reload();
-  await continueGame(page);
+    ];
+    save.inventory = [{ itemId: "xbox_controller", quantity: 1 }];
+    save.currentMap = "neighborhood";
+    save.discoveredMaps = ["neighborhood", "creek"];
+  });
 
-  // Start the optional quest through its actual journal card rather than
-  // injecting the active quest. This proves prerequisite unlock + MenuScene
-  // launch work together in the rendered game.
-  await startQuestFromJournal(page, 2); // Three-Player Sports Day.
+  // Start it through Billy's archive rather than injecting an active quest.
+  await startQuestFromBillyArchive(page, 2); // Three-Player Sports Day.
   await waitForSave(page, {
     activeQuestId: "three_player_sports",
     questStage: "meet_jeremy_to_skateboard",
@@ -575,6 +681,8 @@ test("starts and completes the rendered Three-Player Sports quest", async ({ pag
   await waitForSave(page, { questStage: "meet_billy_to_play_baseball" });
 
   await teleportAndInteract(page);
+  await page.keyboard.press("Space"); // Choose baseball; journal remains available in Billy's choice.
+  await page.waitForTimeout(80);
   await advanceDialogue(page, 3);
   await waitForSave(page, { questStage: "meet_andrew_to_play_basketball" });
 
