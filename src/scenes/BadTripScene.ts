@@ -331,9 +331,9 @@ export class BadTripScene extends Phaser.Scene {
       640,
       423,
       250,
-      this.replay ? "RETURN TO ADVENTURE" : result.passed ? "RUN AGAIN FOR A RECORD" : "BACK TO THE FIRE",
+      this.replay ? "RETURN TO ADVENTURE" : result.passed ? "RUN AGAIN FOR A RECORD" : "RETURN TO BENT CREEK",
       0x4e426a,
-      this.replay ? () => this.returnToAdventure() : result.passed ? () => this.restartRun() : () => this.backToFire(),
+      this.replay ? () => this.returnToAdventure() : result.passed ? () => this.restartRun() : () => this.returnToAdventure(),
     );
     if (this.replay || !result.passed) {
       this.input.keyboard?.once("keydown-ENTER", this.restartRun, this);
@@ -343,10 +343,10 @@ export class BadTripScene extends Phaser.Scene {
       this.input.keyboard?.once("keydown-SPACE", this.continueToBonfire, this);
     }
     this.input.keyboard?.once("keydown-R", this.restartRun, this);
-    if (this.replay) this.input.keyboard?.once("keydown-ESC", this.returnToAdventure, this);
+    if (this.replay || !result.passed) this.input.keyboard?.once("keydown-ESC", this.returnToAdventure, this);
     const hint = this.add.text(480, 476, this.replay
       ? "ENTER / SPACE / R — RUN AGAIN     •     ESC — RETURN"
-      : result.passed ? "ENTER / SPACE — CONTINUE     •     R — RUN AGAIN" : "ENTER / SPACE / R — RUN AGAIN", {
+      : result.passed ? "ENTER / SPACE — CONTINUE     •     R — RUN AGAIN" : "ENTER / SPACE / R — RUN AGAIN     •     ESC — RETURN", {
       fontFamily: "monospace", fontSize: `${this.policy.fontSize(12)}px`, color: "#cbbdde",
     }).setOrigin(0.5);
     this.add.container(0, 0, [shade, card, title, summary, leaderboardHeading, this.leaderboardText, primary, secondary, hint]).setDepth(100);
@@ -374,14 +374,9 @@ export class BadTripScene extends Phaser.Scene {
   }
 
   private returnToAdventure(): void {
-    if (this.phase !== "result" || !this.replay) return;
+    if (this.phase !== "result" || (!this.replay && this.passed)) return;
     this.scene.setVisible(true, "ui");
     this.scene.start(this.returnScene);
-  }
-
-  private backToFire(): void {
-    if (this.phase !== "result") return;
-    this.scene.start("andrews_bonfire", { onNightComplete: this.onNightComplete, returnScene: this.returnScene });
   }
 
   private continueToBonfire(): void {
