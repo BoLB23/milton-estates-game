@@ -25,6 +25,10 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@bolb23'
           always-auth: true
+      - name: Verify SDK tarball metadata
+        run: npm view @bolb23/game-client-sdk@0.1.0 dist.tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
