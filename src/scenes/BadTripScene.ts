@@ -1,9 +1,10 @@
 import Phaser from "phaser";
 
-import { inputCapture } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { createPresentationPolicy, type PresentationPolicy } from "../presentation/presentationPolicy";
 import { submitBadTripSurvivalTime, survivalLeaderboardLines } from "../platform/leaderboards";
+import { inputState } from "./InputRouterScene";
 import { BAD_TRIP_PASS_MS, badTripDifficulty, stepBadTripPlayer, type BadTripPlatform, type BadTripState } from "./badTripCore";
 
 export const BAD_TRIP_SCENE_KEY = "bad_trip";
@@ -36,19 +37,16 @@ export class BadTripScene extends Phaser.Scene {
   private countdownMs = COUNTDOWN_MS;
   private passed = false;
   private phase: BadTripPhase = "countdown";
-  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys?: Record<string, Phaser.Input.Keyboard.Key>;
-  private touch = { left: false, right: false, jump: false };
   private timerText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private countdownText!: Phaser.GameObjects.Text;
   private progressFill!: Phaser.GameObjects.Rectangle;
   private progressLabel!: Phaser.GameObjects.Text;
-  private controls!: Phaser.GameObjects.Container;
   private sky!: Phaser.GameObjects.Graphics;
   private backgroundPhase = 0;
   private leaderboardText?: Phaser.GameObjects.Text;
   private runGeneration = 0;
+  private jumpRequested = false;
 
   public constructor() { super(BAD_TRIP_SCENE_KEY); }
 
@@ -62,7 +60,7 @@ export class BadTripScene extends Phaser.Scene {
     this.passed = false;
     this.phase = "countdown";
     this.state = { x: 180, y: 404, vx: 0, vy: 0, grounded: true };
-    this.touch = { left: false, right: false, jump: false };
+    this.jumpRequested = false;
     this.platformVisuals = [];
     this.leaderboardText = undefined;
   }
@@ -79,7 +77,6 @@ export class BadTripScene extends Phaser.Scene {
     this.player = this.drawKid(180, 404);
     this.don = this.drawDon(48, 404);
     this.buildHud();
-    this.controls = this.makeTouchControls();
     this.bindInputs();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
   }
@@ -98,12 +95,10 @@ export class BadTripScene extends Phaser.Scene {
     }
 
     this.elapsedMs += delta;
-    const left = Boolean(this.cursors?.left?.isDown || this.keys?.A?.isDown || this.touch.left);
-    const right = Boolean(this.cursors?.right?.isDown || this.keys?.D?.isDown || this.touch.right);
-    const jump = this.justPressed(this.cursors?.space)
-      || this.justPressed(this.cursors?.up)
-      || this.justPressed(this.keys?.W)
-      || this.consumeTouchJump();
+    const movement = inputState.movement();
+    const left = movement.x < -0.2;
+    const right = movement.x > 0.2;
+    const jump = this.consumeJumpRequest();
     this.state = stepBadTripPlayer(this.state, { left, right, jump }, this.platforms, delta);
     this.player.setPosition(this.state.x, this.state.y);
     const difficulty = badTripDifficulty(this.elapsedMs);
@@ -129,7 +124,7 @@ export class BadTripScene extends Phaser.Scene {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(14)}px`, color: "#ffb5cf",
       fontStyle: "bold", align: "right",
     }).setOrigin(1, 0).setDepth(50);
-    this.add.text(480, 52, "MOVE  A / D  or  ← / →     •     JUMP  W / SPACE / ↑", {
+    this.add.text(480, 52, "MOVE  JOYSTICK / A / D / ← / →     •     JUMP  ACT / W / SPACE / ↑", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(14)}px`, color: "#f4ecff", fontStyle: "bold",
     }).setOrigin(0.5).setDepth(50);
     this.add.text(480, 76, "Stay alive 45 seconds to secure the Dorito. Then keep running to set the longest survival time.", {
@@ -270,45 +265,24 @@ export class BadTripScene extends Phaser.Scene {
   }
 
   private bindInputs(): void {
-    this.cursors = this.input.keyboard?.createCursorKeys();
-    this.keys = this.input.keyboard?.addKeys("A,D,W") as Record<string, Phaser.Input.Keyboard.Key> | undefined;
-    this.input.keyboard?.addCapture("SPACE,UP,LEFT,RIGHT,ENTER");
+    gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
   }
 
-  private makeTouchControls(): Phaser.GameObjects.Container {
-    const children: Phaser.GameObjects.GameObject[] = [];
-    const make = (x: number, width: number, label: string, key: keyof typeof this.touch) => {
-      const button = this.add.rectangle(x, 498, width, 52, 0x2d2356, 0.96)
-        .setStrokeStyle(3, 0xf4c85b, 0.9).setInteractive({ useHandCursor: true });
-      const text = this.add.text(x, 498, label, {
-        fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "17px", color: "#fff4d6", fontStyle: "bold",
-      }).setOrigin(0.5);
-      button.on("pointerdown", () => { this.touch[key] = true; button.setFillStyle(0x5a3a78, 1); });
-      const release = () => { this.touch[key] = false; button.setFillStyle(0x2d2356, 0.96); };
-      button.on("pointerup", release).on("pointerout", release).on("pointerupoutside", release);
-      children.push(button, text);
-    };
-    make(68, 86, "◀ LEFT", "left");
-    make(170, 86, "RIGHT ▶", "right");
-    make(874, 126, "JUMP", "jump");
-    return this.add.container(0, 0, children).setDepth(60).setScrollFactor(0);
+  private handleInputAction(event: InputActionEvent): void {
+    if (this.phase !== "running" || !event.pressed) return;
+    if (event.action === "interact" || event.action === "moveUp") this.jumpRequested = true;
   }
 
-  private consumeTouchJump(): boolean {
-    const pressed = this.touch.jump;
-    this.touch.jump = false;
+  private consumeJumpRequest(): boolean {
+    const pressed = this.jumpRequested;
+    this.jumpRequested = false;
     return pressed;
-  }
-
-  private justPressed(key: Phaser.Input.Keyboard.Key | undefined): boolean {
-    return key ? Phaser.Input.Keyboard.JustDown(key) : false;
   }
 
   private finish(): void {
     if (this.phase === "result") return;
     this.phase = "result";
     const result = { passed: this.passed, elapsedMs: Math.round(this.elapsedMs) };
-    this.controls.setVisible(false);
     this.statusText.setText(result.passed ? "DORITO SECURED — RUN COMPLETE" : "DON ROSSI CAUGHT YOU");
     this.cameras.main.shake(this.policy.duration(240), this.policy.reducedMotion ? 0 : 0.012);
     this.showResult(result);
@@ -423,13 +397,13 @@ export class BadTripScene extends Phaser.Scene {
   private cleanup(): void {
     this.runGeneration += 1;
     inputCapture.release(INPUT_CAPTURE_OWNER);
+    gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     this.input?.keyboard?.off("keydown-R", this.restartRun, this);
     this.input?.keyboard?.off("keydown-ENTER", this.restartRun, this);
     this.input?.keyboard?.off("keydown-SPACE", this.restartRun, this);
     this.input?.keyboard?.off("keydown-ENTER", this.continueToBonfire, this);
     this.input?.keyboard?.off("keydown-SPACE", this.continueToBonfire, this);
     this.input?.keyboard?.off("keydown-ESC", this.returnToAdventure, this);
-    this.input?.keyboard?.removeCapture("SPACE,UP,LEFT,RIGHT,ENTER");
     this.cameras?.main?.resetFX();
   }
 }
