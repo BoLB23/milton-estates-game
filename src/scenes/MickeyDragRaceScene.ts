@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-import { inputCapture } from "../game/events";
+import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { MapId } from "../game/types";
 import { gamePlatform } from "../platform/integration";
@@ -64,7 +64,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
   private engineBlown = false;
   private revLimiterActive = false;
   private gasHeld = false;
-  private pointerGasHeld = false;
+  private touchGasHeld = false;
   private playerCar!: Phaser.GameObjects.Graphics;
   private mickeyCar!: Phaser.GameObjects.Graphics;
   private rpmGauge!: Phaser.GameObjects.Graphics;
@@ -79,9 +79,6 @@ export class MickeyDragRaceScene extends Phaser.Scene {
   private gasIndicator!: Phaser.GameObjects.Text;
   private engineHeatFill!: Phaser.GameObjects.Rectangle;
   private engineHeatText!: Phaser.GameObjects.Text;
-  private gasButton!: Phaser.GameObjects.Container;
-  private shiftUpButton!: Phaser.GameObjects.Container;
-  private shiftDownButton!: Phaser.GameObjects.Container;
   private shiftUpKey?: Phaser.Input.Keyboard.Key;
   private shiftDownKey?: Phaser.Input.Keyboard.Key;
   private gasKeys: Phaser.Input.Keyboard.Key[] = [];
@@ -106,7 +103,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.engineBlown = false;
     this.revLimiterActive = false;
     this.gasHeld = false;
-    this.pointerGasHeld = false;
+    this.touchGasHeld = false;
   }
 
   public create(): void {
@@ -127,8 +124,8 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, 540);
     this.cameras.main.startFollow(this.playerCar, true, 0.12, 1);
     this.buildHud();
-    this.buildControls();
     this.bindKeyboard();
+    gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
     this.time.addEvent({
       delay: 1_000,
       repeat: 2,
@@ -143,7 +140,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
 
   public update(_time: number, delta: number): void {
     if (this.phase !== "racing") return;
-    this.gasHeld = this.pointerGasHeld || this.gasKeys.some((key) => key.isDown);
+    this.gasHeld = this.touchGasHeld || this.gasKeys.some((key) => key.isDown);
     if (this.shiftUpKey && Phaser.Input.Keyboard.JustDown(this.shiftUpKey)) this.shift(1);
     if (this.shiftDownKey && Phaser.Input.Keyboard.JustDown(this.shiftDownKey)) this.shift(-1);
     this.elapsedMs += delta;
@@ -210,7 +207,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.add.rectangle(265, 477, 190, 10, 0x2a3637, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x9a9f7a, 1).setScrollFactor(0).setDepth(16);
     this.engineHeatFill = this.add.rectangle(267, 477, 0, 6, 0x5d9b68, 1).setOrigin(0, 0.5).setScrollFactor(0).setDepth(17);
     this.engineHeatText = this.add.text(465, 477, "HEAT 0%", { fontFamily: "monospace", fontSize: "9px", color: "#c8dfcb", fontStyle: "bold" }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(17);
-    this.instructionText = this.add.text(505, 418, "HOLD GAS • SHIFT IN THE GOLD ZONE", {
+    this.instructionText = this.add.text(505, 418, "HOLD ACT / GAS • JOYSTICK UP / DOWN SHIFTS", {
       fontFamily: "monospace", fontSize: "10px", color: "#d8e6d4", fontStyle: "bold", fixedWidth: 270, align: "center",
     }).setOrigin(0.5).setScrollFactor(0).setDepth(18);
     this.timerText = this.add.text(505, 442, "0:00.00", { fontFamily: "monospace", fontSize: "14px", color: "#fff3c9", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(16);
@@ -221,18 +218,6 @@ export class MickeyDragRaceScene extends Phaser.Scene {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "56px", color: "#fff3c9", fontStyle: "bold", stroke: "#12252b", strokeThickness: 9,
     }).setOrigin(0.5).setFixedSize(820, 64).setAlign("center").setScrollFactor(0).setDepth(20);
     this.drawRpmGauge();
-  }
-
-  private buildControls(): void {
-    this.shiftUpButton = this.button(555, 510, 104, 42, "UPSHIFT", "SHIFT / F", 0x6b5b2f);
-    this.shiftDownButton = this.button(675, 510, 104, 42, "DOWNSHIFT", "CTRL / D", 0x4d5c77);
-    this.gasButton = this.button(835, 510, 190, 42, "GAS", "HOLD  G / W / ↑", 0x37764e);
-    this.gasButton.on("pointerdown", () => { this.pointerGasHeld = true; this.updateGasFeedback(); });
-    this.gasButton.on("pointerup", () => { this.pointerGasHeld = false; this.updateGasFeedback(); });
-    this.gasButton.on("pointerout", () => { this.pointerGasHeld = false; this.updateGasFeedback(); });
-    this.gasButton.on("pointerupoutside", () => { this.pointerGasHeld = false; this.updateGasFeedback(); });
-    this.shiftUpButton.on("pointerdown", () => this.shift(1));
-    this.shiftDownButton.on("pointerdown", () => this.shift(-1));
   }
 
   private button(x: number, y: number, width: number, height: number, label: string, hint: string, color: number): Phaser.GameObjects.Container {
@@ -251,6 +236,18 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-SPACE", this.handleShiftUp, this);
     this.input.keyboard?.on("keydown-ENTER", this.handleShiftUp, this);
     this.input.keyboard?.on("keydown-D", this.handleShiftDown, this);
+  }
+
+  private handleInputAction(event: InputActionEvent): void {
+    if (event.source !== "touch") return;
+    if (event.action === "interact") {
+      this.touchGasHeld = event.pressed;
+      this.updateGasFeedback();
+      return;
+    }
+    if (!event.pressed || this.phase !== "racing") return;
+    if (event.action === "moveUp") this.shift(1);
+    if (event.action === "moveDown") this.shift(-1);
   }
 
   private updateEngine(delta: number): void {
@@ -362,7 +359,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     // not affect the local best-time/save update immediately below.
     void gamePlatform.endPlaySession();
     this.gasHeld = false;
-    this.pointerGasHeld = false;
+    this.touchGasHeld = false;
     gameStore.recordMickeyDragRace(Math.round(this.elapsedMs), won);
     this.statusText.setText(message).setFontSize(30);
     const finalTime = raceTime(this.elapsedMs);
@@ -379,9 +376,6 @@ export class MickeyDragRaceScene extends Phaser.Scene {
         else this.instructionText.setText(`${detail}\nTIME SAVED — NO OTHER LEADERBOARD TIMES YET`).setColor("#fff0a3");
       });
     }
-    this.gasButton.setVisible(false);
-    this.shiftUpButton.setVisible(false);
-    this.shiftDownButton.setVisible(false);
     const retry = this.button(630, 510, 200, 42, "RACE AGAIN", "TAP TO CHASE YOUR BEST", 0x37764e);
     const returnButton = this.button(850, 510, 200, 42, "RETURN", "BACK TO YOUR ADVENTURE", 0x315f4c);
     retry.on("pointerdown", () => this.scene.restart({ returnMap: this.returnMap }));
@@ -421,11 +415,10 @@ export class MickeyDragRaceScene extends Phaser.Scene {
   }
 
   private updateGasFeedback(): void {
-    if (!this.gasIndicator || !this.gasButton) return;
-    const active = this.phase === "racing" && (this.pointerGasHeld || this.gasKeys.some((key) => key.isDown));
+    if (!this.gasIndicator) return;
+    const active = this.phase === "racing" && (this.touchGasHeld || this.gasKeys.some((key) => key.isDown));
     this.gasIndicator.setText(active ? "THROTTLE OPEN  •  GAS PRESSED" : "THROTTLE CLOSED")
       .setColor(active ? "#b8f0bf" : "#9bb7a3");
-    this.gasButton.setAlpha(active ? 1 : 0.78);
   }
 
   private drawRpmGauge(): void {
@@ -478,6 +471,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
 
   private cleanup(): void {
     inputCapture.release("mickey-drag-race");
+    gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
     this.input.keyboard?.off("keydown-F", this.handleShiftUp, this);
     this.input.keyboard?.off("keydown-SPACE", this.handleShiftUp, this);
     this.input.keyboard?.off("keydown-ENTER", this.handleShiftUp, this);

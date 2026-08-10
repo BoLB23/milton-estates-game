@@ -87,8 +87,24 @@ export class InputRouterScene extends Phaser.Scene {
     });
     document.querySelectorAll<HTMLElement>("[data-game-joystick]").forEach((element) => {
       const stick = element.querySelector<HTMLElement>(".touch-joystick-stick");
+      const controlId = this.nextTouchControlId++;
       let activePointerId: number | null = null;
+      const directionToken = (action: SemanticAction, pointerId: number) => `touch:${controlId}:${pointerId}:${action}`;
+      const setDirections = (movement: MovementVector, pointerId: number, pressed: boolean) => {
+        const directions: ReadonlyArray<[SemanticAction, boolean]> = [
+          ["moveUp", movement.y < -0.45],
+          ["moveDown", movement.y > 0.45],
+          ["moveLeft", movement.x < -0.45],
+          ["moveRight", movement.x > 0.45],
+        ];
+        for (const [action, active] of directions) {
+          // The joystick's continuous vector remains the source of movement;
+          // these edges are for contexts such as mini-game menu navigation.
+          this.setAction(action, pressed && active, "touch", directionToken(action, pointerId), false);
+        }
+      };
       const reset = () => {
+        if (activePointerId !== null) setDirections({ x: 0, y: 0 }, activePointerId, false);
         activePointerId = null;
         inputState.setTouchJoystickMovement({ x: 0, y: 0 });
         stick?.style.removeProperty("transform");
@@ -105,7 +121,9 @@ export class InputRouterScene extends Phaser.Scene {
         const scale = distance > maxOffset ? maxOffset / distance : 1;
         const x = offsetX * scale;
         const y = offsetY * scale;
-        inputState.setTouchJoystickMovement(normalizeMovement(x / maxOffset, y / maxOffset));
+        const movement = normalizeMovement(x / maxOffset, y / maxOffset);
+        inputState.setTouchJoystickMovement(movement);
+        setDirections(movement, event.pointerId, true);
         if (stick) stick.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
       };
       const press = (event: PointerEvent) => {
@@ -181,8 +199,9 @@ export class InputRouterScene extends Phaser.Scene {
     pressed: boolean,
     source: "keyboard" | "gamepad" | "touch",
     token: string,
+    contributesToMovement = source !== "gamepad",
   ): void {
-    const changed = inputState.set(action, token, pressed, source !== "gamepad");
+    const changed = inputState.set(action, token, pressed, contributesToMovement);
     if (!changed) return;
     const event = { action, pressed, source } as const;
     inputCapture.consumeMenuToggle(event);
