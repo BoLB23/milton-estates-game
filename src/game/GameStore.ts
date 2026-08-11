@@ -307,11 +307,11 @@ function isMiltonCloudSave(value: unknown): value is MiltonCloudSave {
   return isSaveData({ ...candidate, version: 9, lastSavedAt: null });
 }
 
-function toGameState(save: SaveData): GameState {
+function toGameState(save: SaveData, replayQuestId: QuestId | null = null): GameState {
   const copy = copySave(save);
   const questStage = stageFromProgress(copy.questProgress, copy.activeQuestId);
   if (!questStage) throw new RangeError(`Quest ${copy.activeQuestId} has no runtime stage`);
-  return { ...copy, questStage };
+  return { ...copy, questStage, replayQuestId };
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -1081,9 +1081,14 @@ export class GameStore {
     this.state = this.useLegacyLocalStorage ? this.load() : copySave(DEFAULT_SAVE);
   }
 
-  public getState(): GameState { return toGameState(this.replayState ?? this.state); }
+  /** Replay identity is runtime-only; canonical projections never expose it. */
+  public getState(): GameState { return toGameState(this.replayState ?? this.state, this.replayQuestId); }
   public getCanonicalState(): GameState { return toGameState(this.state); }
   public isReplaying(): boolean { return this.replayState !== null; }
+  public getReplayQuestId(): QuestId | null { return this.replayQuestId; }
+  public isQuestReplayActive(questId?: QuestId): boolean {
+    return this.replayQuestId !== null && (questId === undefined || this.replayQuestId === questId);
+  }
   /** Captured before Boot creates its initial autosave, so the welcome scene runs once. */
   public isFirstVisit(): boolean { return this.firstVisit; }
   public hasLegacyBrowserSave(): boolean { return this.legacyBrowserSaveDetected; }
@@ -1456,12 +1461,12 @@ export class GameStore {
   }
 
   public setActiveQuest(activeChapterId: ChapterId, activeQuestId: QuestId): void {
-    const current = this.replayState ?? this.state;
+    if (this.replayState) throw new RangeError("Cannot activate a canonical quest during a replay");
     if (!IMPLEMENTED_QUEST_IDS.includes(activeQuestId as typeof IMPLEMENTED_QUEST_IDS[number])) {
       throw new RangeError(`Quest ${activeQuestId} is not implemented`);
     }
     this.update({
-      ...current,
+      ...this.state,
       activeChapterId,
       activeQuestId,
     });
@@ -1587,19 +1592,22 @@ export class GameStore {
   public acceptBonfireInvitation(): boolean {
     const current = this.replayState ?? this.state;
     if (!this.canAcceptBonfireInvitation()) return false;
-    const stage = current.questProgress.bonfire.stage;
-    if (stage !== "talk_to_schwartz") return false;
-    const next = advanceBonfireQuestStage(stage, { type: "accepted_schwartz_invitation" });
     const exploreNext = advanceExploreBentCreekStage(
       current.questProgress.exploreBentCreek.stage,
       { type: "met_schwartz" },
     );
+    if (this.replayState && current.activeQuestId === "explore_bent_creek") {
+      if (exploreNext !== "complete") return false;
+      this.setQuestStage(exploreNext);
+      return true;
+    }
+    const stage = current.questProgress.bonfire.stage;
+    if (stage !== "talk_to_schwartz") return false;
+    const next = advanceBonfireQuestStage(stage, { type: "accepted_schwartz_invitation" });
     this.update({
       ...current,
       activeQuestId: "attend_bonfire_at_andrews",
-      completedQuestIds: this.replayState
-        ? current.completedQuestIds
-        : unique([...current.completedQuestIds, "explore_bent_creek"]),
+      completedQuestIds: unique([...current.completedQuestIds, "explore_bent_creek"]),
       questProgress: {
         ...copyQuestProgress(current.questProgress),
         exploreBentCreek: { stage: exploreNext },
@@ -1643,7 +1651,7 @@ export class GameStore {
     const completedQuestIds: QuestId[] = !this.replayState && next === "complete"
       ? unique<QuestId>([...current.completedQuestIds, "catch_ryan"])
       : current.completedQuestIds;
-    const unlockedMaps = next === "complete"
+    const unlockedMaps = !this.replayState && next === "complete"
       ? unique<MapId>([...current.unlockedMaps, ...RYAN_UNLOCKED_MAPS])
       : current.unlockedMaps;
     const inventory = !this.replayState && next === "complete"
@@ -1662,8 +1670,13 @@ export class GameStore {
     });
   }
 
-  /** Starts a temporary replay of any implemented quest. Nothing in this state is persisted. */
+  /**
+   * Starts a temporary replay of any implemented quest. Only the selected
+   * quest's runtime record is reset; the player's durable adventure context
+   * remains available so replays cannot hide unlocked content.
+   */
   public startQuestReplay(questId: QuestId): void {
+    if (this.replayState) throw new RangeError("End the current replay before starting another");
     if (![
       "missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek",
       "attend_bonfire_at_andrews", "creek_clubhouse", "paper_airplane_relay", "bent_creek_caddy_caper",
@@ -1696,21 +1709,10 @@ export class GameStore {
     this.replayQuestId = questId;
     this.replayState = {
       ...copySave(this.state),
-      activeChapterId: "chapter_1",
+      activeChapterId: this.state.activeChapterId,
       activeQuestId: questId,
       questProgress,
-      questHistory: [],
-      inventory: [],
-      equipment: { ...DEFAULT_EQUIPMENT },
-      collectedPickupIds: [],
-      lastKnownLocation: { ...DEFAULT_LAST_KNOWN_LOCATION },
-      secrets: [],
-      currentMap: "neighborhood",
-      discoveredMaps: ["neighborhood"],
-      unlockedMaps: questId === "explore_bent_creek" || questId === "attend_bonfire_at_andrews"
-        || questId === "paper_airplane_relay" || questId === "bent_creek_caddy_caper"
-        ? unique<MapId>([...BASE_UNLOCKED_MAPS, ...RYAN_UNLOCKED_MAPS])
-        : ["neighborhood", "creek"],
+      questHistory: this.state.questHistory.filter((milestone) => !milestone.startsWith(`${questId}.`)),
     };
     gameEvents.emit(EVENT.stateChanged, this.getState());
   }
@@ -1758,13 +1760,13 @@ export class GameStore {
   }
 
   public recordMickeyDragRace(timeMs: number, won: boolean): void {
-    if (!Number.isInteger(timeMs) || timeMs <= 0) return;
+    if (!Number.isInteger(timeMs) || timeMs <= 0 || !won) return;
     const current = this.replayState ?? this.state;
     const existingBest = this.getMickeyDragRaceRecord().bestTimeMs;
     const bestTimeMs = existingBest === undefined ? timeMs : Math.min(existingBest, timeMs);
     const secrets = current.secrets.filter((secret) => !secret.startsWith(MICKEY_DRAG_RACE_BEST_PREFIX));
     secrets.push(`${MICKEY_DRAG_RACE_BEST_PREFIX}${bestTimeMs}`);
-    if (won && !secrets.includes(MICKEY_DRAG_RACE_BEATEN)) secrets.push(MICKEY_DRAG_RACE_BEATEN);
+    if (!secrets.includes(MICKEY_DRAG_RACE_BEATEN)) secrets.push(MICKEY_DRAG_RACE_BEATEN);
     this.update({ ...current, secrets: unique(secrets) });
   }
 

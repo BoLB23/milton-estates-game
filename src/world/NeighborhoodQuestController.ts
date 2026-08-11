@@ -16,6 +16,7 @@ import {
 } from "../content/ryanRideDialogue";
 import { CONTROLLER_ITEM, gameStore } from "../game/GameStore";
 import { selectUnlockedMinigames } from "../game/minigames";
+import { CharacterFactory } from "./CharacterFactory";
 import {
   advanceMissingControllerStage,
   type MissingControllerQuestEvent,
@@ -53,6 +54,15 @@ export function createBillyQuestChoices(actionLabel: string): readonly ChoiceOpt
   return [
     { id: "quest_action", label: actionLabel },
     { id: "quest_journal", label: "Open quest journal" },
+    { id: "back", label: "Not right now" },
+  ];
+}
+
+/** Shown whenever Billy has no immediate quest handoff, so leaderboards stay reachable. */
+export function createBillyIdleChoices(): readonly ChoiceOption[] {
+  return [
+    { id: "quest_journal", label: "Open quest journal" },
+    { id: "leaderboards", label: "Browse leaderboards" },
     { id: "back", label: "Not right now" },
   ];
 }
@@ -176,7 +186,7 @@ export class NeighborhoodQuestController {
   private renderBillyHost(): void {
     const billy = this.host.objectPoint("billy");
     this.characters.push(
-      this.host.world.add.sprite(billy.x, billy.y, "billy").setDepth(45).setScale(0.18),
+      CharacterFactory.styleNpc(this.host.world.add.sprite(billy.x, billy.y, "billy"), { id: "billy", depth: 45 }),
       this.host.addLabel(billy.x, billy.y - 55, "Billy", "#315f4c"),
     );
     this.host.registerRegionInteraction({
@@ -220,7 +230,17 @@ export class NeighborhoodQuestController {
       });
       return;
     }
-    gameEvents.emit(EVENT.questJournalRequested);
+    // No urgent quest handoff right now — offer the journal alongside every
+    // Milton Estates leaderboard instead of jumping straight into the journal.
+    this.host.showChoice({
+      speaker: "Billy",
+      prompt: "What do you want to do?",
+      options: createBillyIdleChoices(),
+      onSelect: (id) => {
+        if (id === "quest_journal") gameEvents.emit(EVENT.questJournalRequested);
+        else if (id === "leaderboards") gameEvents.emit(EVENT.menuRequested, { page: "leaderboards" });
+      },
+    });
   }
 
   private renderLegacyCharacters(): void {
@@ -229,7 +249,7 @@ export class NeighborhoodQuestController {
       && (state.questStage === "invite" || state.questStage === "choose_destination")) {
       const ryan = this.host.objectPoint("ryan_invite");
       this.characters.push(
-        this.host.world.add.sprite(ryan.x, ryan.y, "ryan").setDepth(45).setScale(1.2),
+        CharacterFactory.styleNpc(this.host.world.add.sprite(ryan.x, ryan.y, "ryan"), { id: "ryan", depth: 45 }),
         this.host.addLabel(ryan.x, ryan.y - 48, "Ryan!", "#315f92"),
       );
     }
@@ -239,8 +259,8 @@ export class NeighborhoodQuestController {
     const andrew = this.host.objectPoint(finaleMeetup ? "jeremy_driveway" : "andrew");
     const jeremy = this.host.objectPoint("jeremy");
     this.characters.push(
-      this.host.world.add.sprite(andrew.x, andrew.y, "andrew").setDepth(45),
-      this.host.world.add.sprite(jeremy.x, jeremy.y, "jeremy").setDepth(45),
+      CharacterFactory.styleNpc(this.host.world.add.sprite(andrew.x, andrew.y, "andrew"), { id: "andrew", depth: 45 }),
+      CharacterFactory.styleNpc(this.host.world.add.sprite(jeremy.x, jeremy.y, "jeremy"), { id: "jeremy", depth: 45 }),
       this.host.addLabel(andrew.x, andrew.y - 55, "Andrew", "#7d461b"),
       this.host.addLabel(jeremy.x, jeremy.y - 55, "Jeremy", "#7a2630"),
     );

@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { EVENT, gameEvents, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import { createPresentationPolicy, type PresentationPolicy } from "../presentation/presentationPolicy";
+import { PlayerAvatar } from "../world/PlayerAvatar";
 
 const PAPER = 0xf7efd2;
 const INK = "#2f2923";
@@ -116,18 +117,20 @@ export class WelcomeScene extends Phaser.Scene {
     yard.fillStyle(0x9c563e).fillTriangle(-314, -31, -231, -88, -148, -31);
     yard.fillStyle(0x315948).fillCircle(222, -32, 48).fillCircle(278, 3, 57);
     yard.fillStyle(0xf3c95f, 0.75).fillCircle(85, -39, 19);
-    const player = this.add.sprite(-276, 67, "player", 0).setScale(0.28);
+    const playerAvatar = PlayerAvatar.createPreview(this, {
+      x: -276, y: 67, scale: 0.28, profile: gameStore.getPlayerProfile(),
+    });
     const nickname = gameStore.getPlayerProfile()?.nickname ?? "You";
     const label = this.add.text(-345, 155, `This is ${nickname}. School is out—and adventure is already calling.`, {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "17px", color: INK,
     });
-    page.add([yard, player, heading, note, label]);
+    page.add([yard, ...playerAvatar.getRenderSprites(), heading, note, label]);
 
     if (this.policy.reducedMotion) {
-      player.setX(70).anims.play("player-idle-side");
+      playerAvatar.getRenderSprites().forEach((sprite) => sprite.setX(70)); playerAvatar.play("player-idle-side");
     } else {
-      player.anims.play("player-walk-side");
-      this.tweens.add({ targets: player, x: 124, duration: 2_600, ease: "Sine.easeInOut", yoyo: true, repeat: -1 });
+      playerAvatar.play("player-walk-side");
+      this.tweens.add({ targets: playerAvatar.getRenderSprites(), x: 124, duration: 2_600, ease: "Sine.easeInOut", yoyo: true, repeat: -1 });
       heading.setAlpha(0).setX(-375);
       this.tweens.add({ targets: heading, x: -352, alpha: 1, duration: 420, ease: "Cubic.easeOut" });
     }

@@ -5,12 +5,13 @@ import type {
   NeighborhoodQuestHost,
   QuestRuntimeBinding,
 } from "../../../../../../world/contracts";
+import { CharacterFactory } from "../../../../../../world/CharacterFactory";
 import { getMushroomDialogue, type MushroomDialogueId } from "../dialogue";
 import {
   advanceMushroomStage,
   type MushroomQuestEvent,
 } from "../rules";
-import { finishLeaderboardTimer, leaderboardLines, startLeaderboardTimer } from "../../../../../../platform/leaderboards";
+import { finishLeaderboardTimer, leaderboardSummaryLines, startLeaderboardTimer } from "../../../../../../platform/leaderboards";
 
 const INTERACTION_IDS = ["jeremy", "billy_home", "andrew"] as const;
 
@@ -41,8 +42,8 @@ export class MushroomNeighborhoodBinding implements QuestRuntimeBinding {
     const andrew = this.host.objectPoint("andrew");
     const jeremy = this.host.objectPoint("jeremy");
     this.objects.push(
-      this.host.world.add.sprite(andrew.x, andrew.y, "andrew").setDepth(45),
-      this.host.world.add.sprite(jeremy.x, jeremy.y, "jeremy").setDepth(45),
+      CharacterFactory.styleNpc(this.host.world.add.sprite(andrew.x, andrew.y, "andrew"), { id: "andrew", depth: 45 }),
+      CharacterFactory.styleNpc(this.host.world.add.sprite(jeremy.x, jeremy.y, "jeremy"), { id: "jeremy", depth: 45 }),
       this.host.addLabel(andrew.x, andrew.y - 55, "Andrew", "#7d461b"),
       this.host.addLabel(jeremy.x, jeremy.y - 55, "Jeremy", "#7a2630"),
     );
@@ -101,10 +102,10 @@ export class MushroomNeighborhoodBinding implements QuestRuntimeBinding {
       }
       if (current === "give_mushrooms_to_andrew" && next === "complete") {
         void finishLeaderboardTimer("mushroomHunt").then((entries) => {
-          const lines = leaderboardLines(entries);
+          const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id);
           this.host.showDialogue([{
             speaker: "Leaderboard",
-            text: lines.length ? `Top neighbors:\n${lines.join("\n")}` : "Mushroom Hunt time saved. No other leaderboard times yet.",
+            text: `Mushroom Hunt scores:\n${lines.join("\n")}`,
           }]);
         });
       }

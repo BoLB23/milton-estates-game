@@ -5,8 +5,9 @@ import type { PaperAirplaneAdvisor } from "../rules";
 import { EVENT, gameEvents } from "../../../../../../game/events";
 import { gameStore } from "../../../../../../game/GameStore";
 import type { NeighborhoodQuestHost, QuestRuntimeBinding } from "../../../../../../world/contracts";
+import { CharacterFactory } from "../../../../../../world/CharacterFactory";
 
-const INTERACTION_IDS = ["paper-relay-billy", "paper-relay-andrew-advice", "paper-relay-andrew-delivery"] as const;
+const INTERACTION_IDS = ["billy_home", "paper-relay-andrew-advice", "paper-relay-andrew-delivery"] as const;
 
 /** Milton-side stops for the relay. Kept with the quest so Neighborhood stays map-agnostic. */
 export class PaperAirplaneNeighborhoodBinding implements QuestRuntimeBinding {
@@ -19,7 +20,9 @@ export class PaperAirplaneNeighborhoodBinding implements QuestRuntimeBinding {
     const state = gameStore.getState();
     if (state.activeQuestId !== "paper_airplane_relay") return;
     const relay = state.questProgress.paperAirplaneRelay;
-    if (relay.stage === "ask_for_advice") this.mountAdvice(relay.adviceIds);
+    // Ryan hands out the relay at Reidenbaugh first; Billy and Andrew's Milton
+    // stops only make sense — and only unlock — once that kickoff happened.
+    if (relay.stage === "ask_for_advice" && relay.adviceIds.includes("ryan")) this.mountAdvice(relay.adviceIds);
     if (relay.stage === "deliver_message") this.mountDelivery();
   }
 
@@ -33,19 +36,34 @@ export class PaperAirplaneNeighborhoodBinding implements QuestRuntimeBinding {
   }
 
   private mountAdvice(adviceIds: readonly string[]): void {
-    if (!adviceIds.includes("billy")) this.addAdviceStop("billy", "billy", "paper-relay-billy", "Ask Billy about paper planes");
+    if (!adviceIds.includes("billy")) this.addBillyAdviceStop();
     if (!adviceIds.includes("andrew")) this.addAdviceStop("andrew", "andrew", "paper-relay-andrew-advice", "Ask Andrew about paper planes");
+  }
+
+  /**
+   * Billy already has a permanent sprite and single shared world interaction
+   * (see NeighborhoodQuestController). This stop must route through that
+   * "billy_home" id — registering a separate hit area left Billy stuck on the
+   * quest-journal-only path, and drawing another undersized-scale sprite here
+   * produced an oversized duplicate of his HD art on top of the real one.
+   */
+  private addBillyAdviceStop(): void {
+    const point = this.host.objectPoint("billy");
+    const bubble = this.addIdeaBubble(point);
+    this.objects.push(bubble);
+    this.host.registerRegionInteraction({
+      id: "billy_home", x: point.x, y: point.y, width: 220, height: 110, label: "Ask Billy about paper planes",
+      interact: () => this.host.showDialogue(PAPER_AIRPLANE_ADVICE.billy, () => {
+        gameStore.advancePaperAirplaneRelay({ type: "advisor_consulted", advisor: "billy" });
+        this.host.refreshQuestBindings();
+      }),
+    });
   }
 
   private addAdviceStop(advisor: Exclude<PaperAirplaneAdvisor, "ryan">, anchor: "billy" | "andrew", id: typeof INTERACTION_IDS[number], label: string): void {
     const point = this.host.objectPoint(anchor);
-    const friend = this.host.world.add.sprite(point.x, point.y + 12, advisor).setDepth(45);
-    const bubble = this.host.world.add.text(point.x, point.y - 66, "✈ idea", {
-      fontFamily: "monospace", fontSize: "12px", fontStyle: "bold", color: "#315f4c", backgroundColor: "#fff5d6e8", padding: { x: 6, y: 3 },
-    }).setOrigin(0.5).setDepth(60);
-    if (!gameStore.getState().settings.reducedMotion) {
-      this.host.world.tweens.add({ targets: bubble, y: bubble.y - 5, duration: 580, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    }
+    const friend = CharacterFactory.styleNpc(this.host.world.add.sprite(point.x, point.y + 12, advisor), { id: advisor, depth: 45 });
+    const bubble = this.addIdeaBubble(point);
     this.objects.push(friend, bubble);
     this.host.registerRegionInteraction({
       id, x: point.x, y: point.y, width: 175, height: 105, label,
@@ -56,9 +74,19 @@ export class PaperAirplaneNeighborhoodBinding implements QuestRuntimeBinding {
     });
   }
 
+  private addIdeaBubble(point: { x: number; y: number }): Phaser.GameObjects.Text {
+    const bubble = this.host.world.add.text(point.x, point.y - 66, "✈ idea", {
+      fontFamily: "monospace", fontSize: "12px", fontStyle: "bold", color: "#315f4c", backgroundColor: "#fff5d6e8", padding: { x: 6, y: 3 },
+    }).setOrigin(0.5).setDepth(60);
+    if (!gameStore.getState().settings.reducedMotion) {
+      this.host.world.tweens.add({ targets: bubble, y: bubble.y - 5, duration: 580, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    }
+    return bubble;
+  }
+
   private mountDelivery(): void {
     const point = this.host.objectPoint("andrew");
-    const andrew = this.host.world.add.sprite(point.x, point.y + 12, "andrew").setDepth(45);
+    const andrew = CharacterFactory.styleNpc(this.host.world.add.sprite(point.x, point.y + 12, "andrew"), { id: "andrew", depth: 45 });
     const plane = this.host.world.add.text(point.x + 34, point.y - 24, "✈", { fontFamily: "sans-serif", fontSize: "30px", color: "#fff5d6", stroke: "#315f4c", strokeThickness: 3 }).setDepth(61);
     if (!gameStore.getState().settings.reducedMotion) {
       this.host.world.tweens.add({ targets: plane, x: plane.x + 12, y: plane.y - 9, angle: -12, duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });

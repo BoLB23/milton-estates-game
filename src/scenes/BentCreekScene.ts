@@ -7,6 +7,7 @@ import { gameStore } from "../game/GameStore";
 import { normalizeTextEntryForComparison } from "../ui/textEntry";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BentCreekCaddyCaperController } from "../world/BentCreekCaddyCaperController";
+import { CharacterFactory } from "../world/CharacterFactory";
 import { BaseExplorationScene } from "./BaseExplorationScene";
 
 const GATE_ANSWER_PROMPT = "Who are you here to visit?";
@@ -208,11 +209,7 @@ export class BentCreekScene extends BaseExplorationScene {
   private mountSchwartz(): void {
     if (this.schwartzVisual) return;
     const point = this.tiledWorld.point("golf_cart_path_10");
-    const body = this.add.graphics();
-    body.fillStyle(0xe1af89, 1).fillCircle(0, -30, 12);
-    body.fillStyle(0x302c42, 1).fillRoundedRect(-14, -18, 28, 36, 6);
-    body.lineStyle(3, 0xc7a35c, 1).lineBetween(-9, 18, -10, 39).lineBetween(9, 18, 10, 39);
-    body.lineStyle(2, 0x201f2b, 1).strokeCircle(-5, -31, 5).strokeCircle(5, -31, 5).lineBetween(0, -31, 0, -31);
+    const body = CharacterFactory.createNpc(this, { id: "schwartz", x: 0, y: 0, scale: 0.16 });
     const name = this.add.text(0, 49, "SCHWARTZ", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#fff5d6",
       backgroundColor: "#302c42dd", padding: { x: 5, y: 2 },
@@ -271,21 +268,8 @@ export class BentCreekScene extends BaseExplorationScene {
   private mountMickey(arriving: boolean, onArrive?: () => void): void {
     if (this.mickeyVisual) return;
     const entry = this.tiledWorld.point("gate_entry");
-    const car = this.add.graphics();
-    car.fillStyle(0x202a2f, 0.62).fillEllipse(0, 20, 116, 24);
-    car.fillStyle(0xbcc4cb, 1).fillRoundedRect(-54, -15, 108, 35, 8);
-    car.fillStyle(0xdfe6e9, 1).fillRoundedRect(-24, -37, 60, 26, 6);
-    car.fillStyle(0x52616a, 1).fillRect(-17, -33, 24, 16).fillRect(11, -33, 20, 16);
-    car.lineStyle(2, 0x68747a, 1).lineBetween(-1, -35, -1, 18).lineBetween(23, -35, 23, 18);
-    car.fillStyle(0x1e2528, 1).fillCircle(-32, 20, 12).fillCircle(31, 20, 12);
-    car.fillStyle(0xbec9cf, 1).fillCircle(-32, 20, 5).fillCircle(31, 20, 5);
-    car.fillStyle(0xe6cf89, 1).fillRect(49, -4, 5, 10);
-    const mickey = this.add.graphics();
-    mickey.fillStyle(0xf0b07f, 1).fillCircle(72, -42, 10);
-    mickey.lineStyle(6, 0xe06f2e, 1).lineBetween(66, -53, 64, -28).lineBetween(72, -54, 75, -28).lineBetween(78, -51, 82, -31);
-    mickey.fillStyle(0x315f4c, 1).fillRoundedRect(63, -30, 19, 27, 5);
-    mickey.lineStyle(3, 0xf0b07f, 1).lineBetween(66, -5, 62, 10).lineBetween(79, -5, 84, 10);
-    mickey.lineStyle(3, 0x2f3440, 1).lineBetween(68, -2, 67, 17).lineBetween(78, -2, 79, 17);
+    const car = this.add.image(0, 0, "mickey-car-left").setOrigin(0.5, 0.75).setDisplaySize(128, 115);
+    const mickey = CharacterFactory.createNpc(this, { id: "mickey", x: 72, y: -20, scale: 0.16 });
     const name = this.add.text(72, -68, "MICKEY", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#fff5d6",
       backgroundColor: "#173d32dd", padding: { x: 4, y: 2 },

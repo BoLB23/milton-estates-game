@@ -89,12 +89,16 @@ export class UIScene extends Phaser.Scene {
 
   update(): void {
     const state = gameStore.getState();
-    const running = state.activeQuestId === "andrew_mushroom_hunt"
+    const mushroomRunning = state.activeQuestId === "andrew_mushroom_hunt"
       && state.questProgress.mushrooms.stage !== "talk_to_andrew_for_mushrooms"
       && state.questProgress.mushrooms.stage !== "complete";
-    const elapsed = getLeaderboardElapsedMs("mushroomHunt");
-    this.mushroomTimerText.setVisible(running && elapsed !== undefined);
-    if (running && elapsed !== undefined) this.mushroomTimerText.setText(`MUSHROOM HUNT  ${formatLeaderboardTime(elapsed)}`);
+    const mushroomElapsed = getLeaderboardElapsedMs("mushroomHunt");
+    const chaseElapsed = getLeaderboardElapsedMs("chaseRyan");
+    const timer = mushroomRunning && mushroomElapsed !== undefined
+      ? { label: "MUSHROOM HUNT", elapsed: mushroomElapsed }
+      : chaseElapsed !== undefined ? { label: "CATCH RYAN", elapsed: chaseElapsed } : undefined;
+    this.mushroomTimerText.setVisible(timer !== undefined);
+    if (timer) this.mushroomTimerText.setText(`${timer.label}  ${formatLeaderboardTime(timer.elapsed)}`);
   }
 
   private buildObjectivePanel(): void {

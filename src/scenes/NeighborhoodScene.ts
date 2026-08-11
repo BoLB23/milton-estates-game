@@ -7,6 +7,7 @@ import { NeighborhoodQuestController } from "../world/NeighborhoodQuestControlle
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { NEIGHBORHOOD_DEPARTURE_ROUTE } from "../content/ryanRideRoutes";
 import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
+import { CharacterFactory } from "../world/CharacterFactory";
 
 /** Sets up Wheatfield Drive's map and delegates quest presentation to controllers. */
 export class NeighborhoodScene extends BaseExplorationScene {
@@ -147,7 +148,7 @@ export class NeighborhoodScene extends BaseExplorationScene {
     (this.getPlayerSprite().body as Phaser.Physics.Arcade.Body).reset(mount.x, mount.y);
     this.setScriptedTransportOverride("bicycle");
     const start = this.tiledWorld.point("ryan_depart_00");
-    this.rideRyan = this.physics.add.sprite(start.x, start.y, "ryan").setScale(1.2).setDepth(49).setName("ryan-ride");
+    this.rideRyan = CharacterFactory.styleNpc(this.physics.add.sprite(start.x, start.y, "ryan"), { id: "ryan", depth: 49 }).setName("ryan-ride");
     this.rideFollower = new RyanRouteFollower({
       time: this.time,
       objectPoint: (id) => this.tiledWorld.point(id),

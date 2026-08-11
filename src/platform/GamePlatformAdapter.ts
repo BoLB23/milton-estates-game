@@ -165,7 +165,7 @@ export class GamePlatformAdapter {
     return () => this.identityListeners.delete(listener);
   }
 
-  /** Records a time and returns up to three competitors, without affecting play on failure. */
+  /** Records a time and returns the player's best plus up to three competitors. */
   public async submitLeaderboardTime(leaderboardKey: string, value: number): Promise<LeaderboardEntry[]> {
     const client = await this.resolveClient();
     if (!client?.leaderboards || !Number.isInteger(value) || value <= 0) return [];
@@ -173,7 +173,21 @@ export class GamePlatformAdapter {
       await client.leaderboards.submit(MILTON_ESTATES_GAME_ID, leaderboardKey, value);
       const response = await client.leaderboards.get(leaderboardKey, MILTON_ESTATES_GAME_ID, 25);
       const currentPlayerId = this.identity.status === "authenticated" ? this.identity.player.id : undefined;
-      return response.entries.filter((entry) => entry.userId !== currentPlayerId).slice(0, 3);
+      const personalBest = response.entries.find((entry) => entry.userId === currentPlayerId);
+      const competitors = response.entries.filter((entry) => entry.userId !== currentPlayerId).slice(0, 3);
+      return personalBest ? [personalBest, ...competitors] : competitors;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Read-only lookup for a leaderboard-browsing page; never submits a score. */
+  public async fetchLeaderboard(leaderboardKey: string, limit = 10): Promise<LeaderboardEntry[]> {
+    const client = await this.resolveClient();
+    if (!client?.leaderboards) return [];
+    try {
+      const response = await client.leaderboards.get(leaderboardKey, MILTON_ESTATES_GAME_ID, limit);
+      return response.entries;
     } catch {
       return [];
     }

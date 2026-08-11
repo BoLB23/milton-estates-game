@@ -12,16 +12,17 @@ import { gameStore } from "../game/GameStore";
 import { assetUrl } from "../content/assets";
 import { getMapDefinition, normalizeWorldMapPoint, type MapDefinition } from "../content/maps";
 import type { MapEditorController } from "../mapEditor/MapEditorController";
+import { PlayerAvatar } from "../world/PlayerAvatar";
 
 const REGIONAL_CAMERA_ZOOM = 1.35;
 const PLAYER_ORIGIN_X = 0.5;
 // Authored map points represent the character's contact point with the world.
-// The supplied 400x450 frames contain transparent padding above the shoes, so
-// the sprite origin must sit near the lower edge rather than at frame center.
+// The normalized player atlas uses a bottom-center contact anchor.
 const PLAYER_ORIGIN_Y = 0.9;
 
 export abstract class BaseExplorationScene extends Phaser.Scene {
   protected player!: Phaser.Physics.Arcade.Sprite;
+  private playerAvatar?: PlayerAvatar;
   protected obstacles!: Phaser.Physics.Arcade.StaticGroup;
   protected interactables: Interactable[] = [];
   private regionInteractables: RegionInteraction[] = [];
@@ -76,6 +77,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.collisionInspectionText?.destroy();
     this.collisionInspectionText = undefined;
     this.collisionInspectionEnabled = false;
+    this.playerAvatar?.destroy();
+    this.playerAvatar = undefined;
     this.mapEditor = undefined;
     this.mapEditorOpening = false;
     for (const obstacle of this.dynamicObstacles.values()) obstacle.destroy();
@@ -110,12 +113,13 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(spawn.x, spawn.y, "player").setName("player");
     this.player
       .setDepth(50)
-      .setScale(0.18)
+      // Match the former 400×450 player at scale 0.18 (~81px tall).
+      .setScale(0.4)
       .setOrigin(PLAYER_ORIGIN_X, PLAYER_ORIGIN_Y)
       .setCollideWorldBounds(true)
-      .setSize(110, 95)
-      .setOffset(145, 275);
-    this.applyPlayerProfilePresentation();
+      .setSize(78, 42)
+      .setOffset(25, 58);
+    this.playerAvatar = PlayerAvatar.attachToGameplaySprite(this, this.player, gameStore.getPlayerProfile());
     this.bicycleVisual = this.add.graphics().setDepth(49).setVisible(false);
     this.drawBicycleVisual();
     this.syncEffectiveTransport();
@@ -158,6 +162,8 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       this.collisionInspectionText?.destroy();
       this.collisionInspectionText = undefined;
       this.collisionInspectionEnabled = false;
+      this.playerAvatar?.destroy();
+      this.playerAvatar = undefined;
       void this.mapEditor?.close(true);
       this.mapEditor = undefined;
       this.mapEditorOpening = false;
@@ -235,6 +241,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     const next = this.locomotion.update(movement, delta, this.inputLocked || inputCapture.isCaptured());
     this.player.setVelocity(next.velocityX, next.velocityY);
     this.updatePlayerPresentation({ x: next.velocityX, y: next.velocityY }, next.speed > 0);
+    this.playerAvatar?.syncFromBody();
     this.syncBicycleVisual();
     this.drawPlayerGeometryDebug();
     this.updateCollisionInspection();
@@ -476,18 +483,19 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
       // display slightly so his hips sit over the bicycle saddle instead of
       // reading as a standing character floating above it.
       this.player
-        .setScale(0.16)
+        .setScale(0.36)
         .setOrigin(PLAYER_ORIGIN_X, 0.92)
-        .setSize(150, 105)
-        .setOffset(125, 260);
+        .setSize(78, 42)
+        .setOffset(25, 58);
     } else {
       this.player
-        .setScale(0.18)
+        .setScale(0.4)
         .setOrigin(PLAYER_ORIGIN_X, PLAYER_ORIGIN_Y)
-        .setSize(110, 95)
-        .setOffset(145, 275);
+        .setSize(78, 42)
+        .setOffset(25, 58);
     }
     (this.player.body as Phaser.Physics.Arcade.Body).reset(this.player.x, this.player.y);
+    this.playerAvatar?.syncFromBody();
     this.syncBicycleVisual();
   }
 
@@ -545,28 +553,16 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
     const presentationFacing = this.playerFacing === "left" || this.playerFacing === "right"
       ? "side"
       : this.playerFacing;
-    // The authored side-facing frames look right by default, so left movement
+    // The authored side-facing frames look left by default, so right movement
     // is the mirrored case. Keeping this here makes player intent and visual
     // direction share a single source of truth.
-    this.player.setFlipX(this.playerFacing === "left");
+    this.player.setFlipX(this.playerFacing === "right");
     const prefix = this.travelMode === "bicycle" ? "player-bike" : "player";
     const motion = this.travelMode === "bicycle" ? "ride" : "walk";
     this.player.anims.play(
       moving ? `${prefix}-${motion}-${presentationFacing}` : `${prefix}-idle-${presentationFacing}`,
       true,
     );
-  }
-
-  private applyPlayerProfilePresentation(): void {
-    const shirt = gameStore.getPlayerProfile()?.tshirtColor.toLowerCase();
-    const palette: Record<string, number> = {
-      blue: 0xa9cdf0, green: 0xb9e0a5, red: 0xf0b0a9, yellow: 0xf4dda0,
-      purple: 0xd0b5e8, black: 0xb0b0b0, white: 0xffffff,
-    };
-    const tint = shirt?.startsWith("#")
-      ? Phaser.Display.Color.HexStringToColor(shirt).color
-      : palette[shirt ?? ""];
-    if (tint !== undefined) this.player.setTint(tint);
   }
 
   /**
@@ -957,6 +953,7 @@ export abstract class BaseExplorationScene extends Phaser.Scene {
   }
 
   private handleStateChanged = (_state: GameState): void => {
+    this.playerAvatar?.setProfile(gameStore.getPlayerProfile());
     if (this.worldPaused || this.sys.isPaused()) return;
     this.syncEffectiveTransport();
   };

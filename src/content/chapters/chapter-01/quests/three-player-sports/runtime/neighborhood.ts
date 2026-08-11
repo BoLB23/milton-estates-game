@@ -5,6 +5,7 @@ import type {
   NeighborhoodQuestHost,
   QuestRuntimeBinding,
 } from "../../../../../../world/contracts";
+import { CharacterFactory } from "../../../../../../world/CharacterFactory";
 import { getSportsDialogue, type SportsStop } from "../dialogue";
 import {
   isSportsMeetupStage,
@@ -86,8 +87,8 @@ export class SportsNeighborhoodBinding implements QuestRuntimeBinding {
   private renderMeetup(stage: SportsMeetupStage): void {
     const meetup = SPORTS_MEETUPS[stage];
     const { x, y } = this.host.objectPoint(meetup.anchor);
-    const andrew = this.host.world.add.sprite(x - 44, y + 10, "andrew").setDepth(45);
-    const jeremy = this.host.world.add.sprite(x + 44, y + 10, "jeremy").setDepth(45);
+    const andrew = CharacterFactory.styleNpc(this.host.world.add.sprite(x - 44, y + 10, "andrew"), { id: "andrew", depth: 45 });
+    const jeremy = CharacterFactory.styleNpc(this.host.world.add.sprite(x + 44, y + 10, "jeremy"), { id: "jeremy", depth: 45 });
     const activity = this.host.world.add.text(x, y - 76, meetup.activity, {
       fontFamily: "monospace",
       fontSize: "12px",

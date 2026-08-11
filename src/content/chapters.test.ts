@@ -63,6 +63,20 @@ describe("chapter and quest registry", () => {
     expect(hasAvailableQuest(progress())).toBe(false);
   });
 
+  it("gives a matching replay priority over completed canonical state", () => {
+    const replay = {
+      ...progress(["missing_controller", "andrew_mushroom_hunt"]),
+      replayQuestId: "missing_controller" as const,
+    };
+    expect(selectQuestState(QUEST_BY_ID.missing_controller, replay)).toBe("replaying");
+    expect(selectQuestState(QUEST_BY_ID.andrew_mushroom_hunt, replay)).toBe("completed");
+  });
+
+  it("does not make a completed canonical active quest active", () => {
+    expect(selectQuestState(QUEST_BY_ID.missing_controller, progress(["missing_controller"])))
+      .toBe("completed");
+  });
+
   it("keeps linear future quests locked until prerequisites and implementation exist", () => {
     expect(selectQuestState(QUEST_BY_ID.storm_drain_detectives, progress())).toBe("locked");
     expect(selectQuestState(QUEST_BY_ID.storm_drain_detectives, progress(["missing_controller"]))).toBe("locked");

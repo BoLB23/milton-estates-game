@@ -27,7 +27,7 @@ export function getLeaderboardElapsedMs(board: TimedLeaderboard): number | undef
 export async function finishLeaderboardTimer(board: TimedLeaderboard): Promise<LeaderboardEntry[]> {
   const startedAt = starts.get(board);
   starts.delete(board);
-  if (startedAt === undefined) return [];
+  if (startedAt === undefined) return fetchLeaderboard(board, 25);
   return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS[board], Math.max(1, Math.round(performance.now() - startedAt)));
 }
 
@@ -35,9 +35,50 @@ export function submitLeaderboardTime(board: TimedLeaderboard, milliseconds: num
   return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS[board], Math.max(1, Math.round(milliseconds)));
 }
 
+/** Read-only lookup for the in-game leaderboard-browsing page; never submits a score. */
+export function fetchLeaderboard(board: TimedLeaderboard, limit = 10): Promise<LeaderboardEntry[]> {
+  return gamePlatform.fetchLeaderboard(LEADERBOARD_KEYS[board], limit);
+}
+
+/** Static copy for the browsable leaderboard page. Order matches Billy's chapter-1 quest order. */
+export const LEADERBOARD_PAGES: ReadonlyArray<{ board: TimedLeaderboard; title: string; kind: "fastest" | "longest" }> = [
+  { board: "mushroomHunt", title: "Andrew's Mushroom Hunt — fastest completion", kind: "fastest" },
+  { board: "chaseRyan", title: "Catch Ryan — fastest catch", kind: "fastest" },
+  { board: "mickeyDragRace", title: "Mickey's Drag Race — fastest win", kind: "fastest" },
+  { board: "badTripSurvival", title: "Don Rossi's Chase — longest survival", kind: "longest" },
+];
+
+/** Formats any leaderboard's entries as display lines, in the direction that board ranks best. */
+export function leaderboardPageLines(kind: "fastest" | "longest", entries: readonly LeaderboardEntry[]): string[] {
+  return kind === "longest" ? survivalLeaderboardLines(entries) : leaderboardLines(entries);
+}
+
+/** A compact personal-best line followed by leading scores from other players. */
+export function leaderboardSummaryLines(
+  kind: "fastest" | "longest",
+  entries: readonly LeaderboardEntry[],
+  currentUserId?: string,
+  competitorLimit = 3,
+  fallbackBestMs?: number,
+): string[] {
+  const personalBest = currentUserId ? entries.find((entry) => entry.userId === currentUserId) : undefined;
+  const personalValue = personalBest
+    ? kind === "longest" ? decodeBadTripSurvivalValue(personalBest.value) : personalBest.value
+    : fallbackBestMs;
+  const personalLine = personalValue === undefined
+    ? "YOUR BEST — Not ranked yet"
+    : `YOUR BEST${personalBest ? ` — #${personalBest.rank}` : ""} — ${kind === "longest" ? "survived " : ""}${formatLeaderboardTime(personalValue)}`;
+  const competitors = entries
+    .filter((entry) => !currentUserId || entry.userId !== currentUserId)
+    .slice(0, competitorLimit);
+  const competitorLines = leaderboardPageLines(kind, competitors);
+  return [personalLine, ...(competitorLines.length ? competitorLines : ["No other player scores yet."])];
+}
+
+/** Milton Estates always displays elapsed/leaderboard time as plain seconds. */
 export function formatLeaderboardTime(milliseconds: number): string {
   const seconds = Math.max(0, milliseconds) / 1_000;
-  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+  return `${seconds.toFixed(2)}s`;
 }
 
 export function leaderboardLines(entries: readonly LeaderboardEntry[]): string[] {

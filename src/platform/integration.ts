@@ -67,12 +67,22 @@ export function createGamePlatformFacade(
       },
       async get(leaderboardKey: string, gameId: string, limit: number) {
         const result = await sdk.leaderboards.get(leaderboardKey, gameId, limit);
-        return { entries: result.entries.map((entry) => ({
+        const entries = result.entries.map((entry) => ({
           userId: entry.user_id,
           nickname: entry.nickname || entry.display_name,
           value: entry.value,
           rank: entry.rank,
-        })) };
+        }));
+        const current = result.current_user_entry;
+        if (current && !entries.some((entry) => entry.userId === current.user_id)) {
+          entries.push({
+            userId: current.user_id,
+            nickname: current.nickname || current.display_name,
+            value: current.value,
+            rank: current.rank,
+          });
+        }
+        return { entries };
       },
     },
 

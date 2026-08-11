@@ -7,6 +7,7 @@ import { gameStore } from "../game/GameStore";
 import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BaseExplorationScene } from "./BaseExplorationScene";
+import { CharacterFactory } from "../world/CharacterFactory";
 
 /** The former road leg is now the authored Stonehenge regional map. */
 export class StonehengeScene extends BaseExplorationScene {
@@ -61,9 +62,7 @@ export class StonehengeScene extends BaseExplorationScene {
   private startRide(): void {
     this.setScriptedTransportOverride("bicycle");
     const start = this.tiledWorld.point("stonehenge_route_00");
-    this.ryan = this.physics.add.sprite(start.x, start.y, "ryan")
-      .setScale(1.2)
-      .setDepth(49)
+    this.ryan = CharacterFactory.styleNpc(this.physics.add.sprite(start.x, start.y, "ryan"), { id: "ryan", depth: 49 })
       .setName("ryan-stonehenge");
     this.follower = new RyanRouteFollower({
       time: this.time,

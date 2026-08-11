@@ -11,5 +11,5 @@ export const CADDY_CAPER_DIALOGUE: Readonly<Record<CaddyCaperStage, readonly Dia
   sprinklers: [{ speaker: "Billy", text: "The trophy is under that hedge. The sprinkler valves read blue, gold, then green." }],
   chase_trophy: [{ speaker: "Mickey", text: "Catch it if you can, caddy!" }],
   return_trophy: [{ speaker: "Schwartz", text: "You found it! The display is ready for its guest of honor." }],
-  complete: [{ speaker: "Schwartz", text: "An honorary visitor badge, Billy. Please use your new cart-path wisdom responsibly." }],
+  complete: [{ speaker: "Schwartz", text: "An honorary visitor badge for you. Please use your new cart-path wisdom responsibly." }],
 };

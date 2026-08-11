@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BAD_TRIP_SURVIVAL_CEILING_MS, decodeBadTripSurvivalValue, encodeBadTripSurvivalValue } from "./leaderboards";
+import {
+  BAD_TRIP_SURVIVAL_CEILING_MS,
+  decodeBadTripSurvivalValue,
+  encodeBadTripSurvivalValue,
+  leaderboardSummaryLines,
+} from "./leaderboards";
 
 describe("bad-trip survival leaderboard encoding", () => {
   it("encodes a longer run as a lower SDK score", () => {
@@ -12,5 +17,26 @@ describe("bad-trip survival leaderboard encoding", () => {
 
   it("caps the score without ever producing zero", () => {
     expect(encodeBadTripSurvivalValue(BAD_TRIP_SURVIVAL_CEILING_MS * 2)).toBe(1);
+  });
+});
+
+describe("leaderboard summaries", () => {
+  it("shows the current player's best before other users", () => {
+    expect(leaderboardSummaryLines("fastest", [
+      { userId: "other", nickname: "June", value: 12_000, rank: 1 },
+      { userId: "me", nickname: "Molly", value: 12_300, rank: 2 },
+      { userId: "third", nickname: "Sam", value: 12_800, rank: 3 },
+    ], "me")).toEqual([
+      "YOUR BEST — #2 — 12.30s",
+      "#1 June — 12.00s",
+      "#3 Sam — 12.80s",
+    ]);
+  });
+
+  it("decodes survival scores and supports a local fallback", () => {
+    expect(leaderboardSummaryLines("longest", [], "me", 1, 51_250)).toEqual([
+      "YOUR BEST — survived 51.25s",
+      "No other player scores yet.",
+    ]);
   });
 });

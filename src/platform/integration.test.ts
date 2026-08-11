@@ -17,7 +17,10 @@ describe("Game Lab SDK facade", () => {
       })),
       startGameSession: vi.fn(async () => ({ sessionId: "sdk-session-7", heartbeat, end })),
       submitLeaderboardEntry: vi.fn(),
-      leaderboards: { get: vi.fn(async () => ({ entries: [] })) as never },
+      leaderboards: { get: vi.fn(async () => ({
+        entries: [{ user_id: "other", nickname: "June", display_name: "June", value: 12_000, rank: 1 }],
+        current_user_entry: { user_id: "user-42", nickname: "Molly", display_name: "Molly", value: 12_300, rank: 2 },
+      })) as never },
       saves: {
         list: vi.fn(async () => []),
         get: vi.fn(),
@@ -44,5 +47,9 @@ describe("Game Lab SDK facade", () => {
 
     expect(heartbeat).toHaveBeenCalledOnce();
     expect(end).toHaveBeenCalledOnce();
+    await expect(facade.leaderboards?.get("mushrooms", "milton-estates", 10)).resolves.toEqual({ entries: [
+      { userId: "other", nickname: "June", value: 12_000, rank: 1 },
+      { userId: "user-42", nickname: "Molly", value: 12_300, rank: 2 },
+    ] });
   });
 });

@@ -10,6 +10,7 @@ import {
 import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { ExplorationInteractionHost } from "./contracts";
+import { CharacterFactory } from "./CharacterFactory";
 
 type ClubhouseRecord = {
   stage: CreekClubhouseStage;
@@ -261,39 +262,36 @@ export class CreekClubhouseController {
   }
 
   private renderChalkBoard(): void {
-    const board = this.host.world.add.rectangle(CLEARING.x, CLEARING.y, 150, 90, 0x2d4a42).setDepth(38).setStrokeStyle(4, 0xf6d48a);
+    // The early design choice now uses the supplied half-built clubhouse
+    // illustration as its pinboard instead of a plain world rectangle.
+    const board = this.host.world.add.image(CLEARING.x, CLEARING.y + 22, "clubhouse-halfBuilt")
+      .setOrigin(0.5, 0.9).setDisplaySize(150, 140).setDepth(38).setAlpha(0.84);
     const words = this.host.world.add.text(CLEARING.x, CLEARING.y - 7, "LOOKOUT  FORT\n  HIDDEN DEN", { fontFamily: "cursive", fontSize: "13px", color: "#f7e6a3", align: "center" }).setOrigin(0.5).setDepth(39);
-    const chalk = this.host.world.add.graphics().setDepth(39).lineStyle(2, 0xf7e6a3).strokeTriangle(CLEARING.x - 57, CLEARING.y + 27, CLEARING.x - 31, CLEARING.y + 4, CLEARING.x - 5, CLEARING.y + 27).strokeRect(CLEARING.x + 8, CLEARING.y + 5, 38, 22);
-    this.objects.push(board, words, chalk, this.host.addLabel(CLEARING.x, CLEARING.y - 69, "Andrew's chalk sketches", "#fff9d8"));
+    this.objects.push(board, words, this.host.addLabel(CLEARING.x, CLEARING.y - 69, "Andrew's chalk sketches", "#fff9d8"));
   }
 
   private renderScaffold(): void {
-    const g = this.host.world.add.graphics().setDepth(39);
-    g.lineStyle(10, 0x725235).lineBetween(495, 295, 495, 155).lineBetween(620, 295, 620, 155).lineBetween(495, 165, 620, 165).lineBetween(495, 295, 620, 165);
-    g.lineStyle(6, 0x9c7348).lineBetween(478, 295, 638, 295).lineBetween(485, 225, 630, 225);
-    this.objects.push(g, this.host.addLabel(558, 111, "Clubhouse frame", "#fff9d8"));
+    const frame = this.host.world.add.image(558, 240, "clubhouse-frame").setOrigin(0.5, 0.9).setDisplaySize(185, 210).setDepth(39);
+    this.objects.push(frame, this.host.addLabel(558, 111, "Clubhouse frame", "#fff9d8"));
   }
 
   private renderFinishedClubhouse(animated: boolean): void {
-    this.renderScaffold();
-    const tarp = this.host.world.add.polygon(558, 188, [-83, 106, -61, -30, 0, -72, 67, -30, 85, 106], 0x4d7953, animated && !this.reducedMotion ? 0 : 0.96).setDepth(40).setStrokeStyle(4, 0xf6d48a);
-    const entrance = this.host.world.add.arc(558, 260, 25, 0, 180, false, 0x26364a).setDepth(41);
-    const flag = this.host.world.add.rectangle(635, 116, 5, 100, 0x4d565a).setDepth(42);
-    const flagCloth = this.host.world.add.triangle(640, 123, 0, 0, 44, 12, 0, 25, 0xe44c36).setOrigin(0, 0.5).setDepth(43);
+    const clubhouse = this.host.world.add.image(558, 274, "clubhouse-complete").setOrigin(0.5, 0.9).setDisplaySize(230, 250).setDepth(40).setAlpha(animated && !this.reducedMotion ? 0 : 1);
+    const flagCloth = this.host.world.add.image(635, 131, "clubhouse-flag").setOrigin(0.08, 0.65).setDisplaySize(44, 54).setDepth(43);
     const label = this.host.addLabel(558, 89, "Creek Clubhouse", "#fff9d8");
-    this.objects.push(tarp, entrance, flag, flagCloth, label);
+    this.objects.push(clubhouse, flagCloth, label);
     if (!this.reducedMotion) this.host.world.tweens.add({ targets: flagCloth, angle: { from: -4, to: 5 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
     if (!animated) return;
     if (!this.reducedMotion) {
-      this.host.world.tweens.add({ targets: tarp, alpha: 0.96, duration: 620, ease: "Sine.easeOut" });
+      this.host.world.tweens.add({ targets: clubhouse, alpha: 1, scale: { from: 0.92, to: 1 }, duration: 620, ease: "Sine.easeOut" });
       const dust = Array.from({ length: 6 }, (_, i) => this.host.world.add.circle(500 + i * 24, 300, 8, 0xd8c39a, 0.8).setDepth(44));
       this.objects.push(...dust);
       this.host.world.tweens.add({ targets: dust, y: "-=28", alpha: 0, scale: 1.9, duration: 740, delay: this.host.world.tweens.stagger(70), onComplete: () => dust.forEach((puff) => puff.destroy()) });
     }
     const friends = [
-      this.host.world.add.sprite(505, 302, "andrew").setDepth(44).setScale(0.65),
-      this.host.world.add.sprite(620, 302, "jeremy").setDepth(44).setScale(0.65),
-      this.host.world.add.sprite(575, 315, "billy").setDepth(44).setScale(0.12),
+      CharacterFactory.createNpc(this.host.world, { id: "andrew", x: 505, y: 302, depth: 44, scale: 0.28 }),
+      CharacterFactory.createNpc(this.host.world, { id: "jeremy", x: 620, y: 302, depth: 44, scale: 0.28 }),
+      CharacterFactory.createNpc(this.host.world, { id: "billy", x: 575, y: 315, depth: 44, scale: 0.28 }),
     ];
     this.objects.push(...friends);
     if (this.reducedMotion) friends.forEach((friend) => friend.setPosition(558, 270).setScale(0.2));

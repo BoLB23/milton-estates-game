@@ -21,9 +21,11 @@ export interface RegistryProgress {
   activeQuestId: QuestId;
   completedChapterIds: readonly ChapterId[];
   completedQuestIds: readonly QuestId[];
+  /** Runtime-only identity of the quest being replayed, if any. */
+  replayQuestId?: QuestId | null;
 }
 
-export type QuestRegistryState = "locked" | "available" | "active" | "completed";
+export type QuestRegistryState = "locked" | "available" | "active" | "completed" | "replaying";
 
 export function arePrerequisitesComplete(
   quest: QuestDefinition,
@@ -45,6 +47,7 @@ export function selectQuestState(
   quest: QuestDefinition,
   progress: RegistryProgress,
 ): QuestRegistryState {
+  if (progress.replayQuestId === quest.id) return "replaying";
   if (progress.completedQuestIds.includes(quest.id)) return "completed";
   if (!quest.implemented) return "locked";
   const chapter = CHAPTER_BY_ID[quest.chapterId];

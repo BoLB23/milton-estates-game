@@ -5,7 +5,7 @@ export type { PlayerMapLocation } from "./types";
 
 export type { SemanticAction as InputAction, SemanticActionEvent as InputActionEvent } from "../input/actions";
 
-export type MenuPage = "resume" | "chapters" | "quests" | "games" | "items" | "map" | "save" | "settings" | "help";
+export type MenuPage = "resume" | "chapters" | "quests" | "games" | "items" | "map" | "save" | "settings" | "help" | "leaderboards";
 interface MenuRequest {
   page?: MenuPage;
   storage?: boolean;

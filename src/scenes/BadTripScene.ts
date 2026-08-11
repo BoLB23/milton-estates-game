@@ -2,8 +2,9 @@ import Phaser from "phaser";
 
 import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
+import { canLaunchMinigameReplay } from "../game/minigames";
 import { createPresentationPolicy, type PresentationPolicy } from "../presentation/presentationPolicy";
-import { submitBadTripSurvivalTime, survivalLeaderboardLines } from "../platform/leaderboards";
+import { submitBadTripSurvivalTime, leaderboardSummaryLines, formatLeaderboardTime } from "../platform/leaderboards";
 import { inputState } from "./InputRouterScene";
 import { BAD_TRIP_PASS_MS, badTripDifficulty, stepBadTripPlayer, type BadTripPlatform, type BadTripState } from "./badTripCore";
 
@@ -47,6 +48,7 @@ export class BadTripScene extends Phaser.Scene {
   private leaderboardText?: Phaser.GameObjects.Text;
   private runGeneration = 0;
   private jumpRequested = false;
+  private actButtonOriginalLabel?: string | null;
 
   public constructor() { super(BAD_TRIP_SCENE_KEY); }
 
@@ -66,6 +68,13 @@ export class BadTripScene extends Phaser.Scene {
   }
 
   public create(): void {
+    // Block only a standalone mini-game replay nested inside a quest replay.
+    // The bonfire quest owns this challenge too, and its disposable replay
+    // must be allowed to reach the trial and complete its isolated progress.
+    if (!canLaunchMinigameReplay(gameStore.getState(), this.replay)) {
+      this.scene.start(this.returnScene);
+      return;
+    }
     this.policy = createPresentationPolicy(gameStore.getState().settings);
     this.scene.setVisible(false, "ui");
     inputCapture.capture(INPUT_CAPTURE_OWNER, { blockMenuToggle: true });
@@ -78,7 +87,29 @@ export class BadTripScene extends Phaser.Scene {
     this.don = this.drawDon(48, 404);
     this.buildHud();
     this.bindInputs();
+    this.applyTouchControlOverrides();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanup, this);
+  }
+
+  /**
+   * This trial is jump-only, so the touch backpack button has no purpose and
+   * the lone action button reads "JUMP" instead of the generic "ACT", sized
+   * up for an easy hit while running from Don Rossi.
+   */
+  private applyTouchControlOverrides(): void {
+    document.body.classList.add("bad-trip-active");
+    const actButton = document.querySelector<HTMLElement>('[data-game-action="interact"]');
+    if (actButton) {
+      this.actButtonOriginalLabel = actButton.textContent;
+      actButton.textContent = "JUMP";
+    }
+  }
+
+  private restoreTouchControlOverrides(): void {
+    document.body.classList.remove("bad-trip-active");
+    const actButton = document.querySelector<HTMLElement>('[data-game-action="interact"]');
+    if (actButton && this.actButtonOriginalLabel !== undefined) actButton.textContent = this.actButtonOriginalLabel;
+    this.actButtonOriginalLabel = undefined;
   }
 
   public update(_time: number, delta: number): void {
@@ -116,7 +147,7 @@ export class BadTripScene extends Phaser.Scene {
     this.add.rectangle(0, 0, VIEW_WIDTH, 122, 0x110b26, 0.94)
       .setOrigin(0).setStrokeStyle(0).setDepth(40);
     this.add.rectangle(0, 120, VIEW_WIDTH, 2, 0xf4c85b, 0.7).setOrigin(0).setDepth(41);
-    this.timerText = this.add.text(22, 17, "SURVIVED  0:00.00", {
+    this.timerText = this.add.text(22, 17, "SURVIVED  0.00s", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(20)}px`, color: "#fff0a8",
       fontStyle: "bold", stroke: "#2a123e", strokeThickness: 4,
     }).setDepth(50);
@@ -124,7 +155,7 @@ export class BadTripScene extends Phaser.Scene {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(14)}px`, color: "#ffb5cf",
       fontStyle: "bold", align: "right",
     }).setOrigin(1, 0).setDepth(50);
-    this.add.text(480, 52, "MOVE  JOYSTICK / A / D / ← / →     •     JUMP  ACT / W / SPACE / ↑", {
+    this.add.text(480, 52, "MOVE  JOYSTICK / A / D / ← / →     •     JUMP  BUTTON / W / SPACE / ↑", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(14)}px`, color: "#f4ecff", fontStyle: "bold",
     }).setOrigin(0.5).setDepth(50);
     this.add.text(480, 76, "Stay alive 45 seconds to secure the Dorito. Then keep running to set the longest survival time.", {
@@ -132,7 +163,7 @@ export class BadTripScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
     this.add.rectangle(300, 101, 360, 12, 0x080713, 0.95).setOrigin(0, 0.5).setStrokeStyle(2, 0x70577f, 1).setDepth(50);
     this.progressFill = this.add.rectangle(302, 101, 0, 8, 0xf4c85b, 1).setOrigin(0, 0.5).setDepth(51);
-    this.progressLabel = this.add.text(674, 101, "DORITO IN 0:45", {
+    this.progressLabel = this.add.text(674, 101, "DORITO IN 45s", {
       fontFamily: "monospace", fontSize: `${this.policy.fontSize(11)}px`, color: "#fff0a8", fontStyle: "bold",
     }).setOrigin(0, 0.5).setDepth(51);
     this.drawDoritoIcon(278, 101, 12, 52);
@@ -153,11 +184,11 @@ export class BadTripScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    this.timerText.setText(`SURVIVED  ${formatMs(this.elapsedMs)}`);
+    this.timerText.setText(`SURVIVED  ${formatLeaderboardTime(this.elapsedMs)}`);
     const progress = Phaser.Math.Clamp(this.elapsedMs / BAD_TRIP_PASS_MS, 0, 1);
     this.progressFill.width = 356 * progress;
     const remaining = Math.max(0, Math.ceil((BAD_TRIP_PASS_MS - this.elapsedMs) / 1_000));
-    this.progressLabel.setText(this.passed ? "DORITO SECURED" : `DORITO IN 0:${String(remaining).padStart(2, "0")}`);
+    this.progressLabel.setText(this.passed ? "DORITO SECURED" : `DORITO IN ${remaining}s`);
   }
 
   private secureDorito(): void {
@@ -289,10 +320,8 @@ export class BadTripScene extends Phaser.Scene {
     const generation = this.runGeneration;
     void submitBadTripSurvivalTime(result.elapsedMs).then((entries) => {
       if (generation !== this.runGeneration || this.phase !== "result" || !this.leaderboardText?.active) return;
-      const lines = survivalLeaderboardLines(entries);
-      this.leaderboardText.setText(lines.length
-        ? lines.join("\n")
-        : "No shared survival times are available yet.\nYour run was still recorded.");
+      const lines = leaderboardSummaryLines("longest", entries, gameStore.getPlayerProfile()?.id);
+      this.leaderboardText.setText(lines.join("\n"));
     }).catch(() => {
       if (generation === this.runGeneration && this.leaderboardText?.active) {
         this.leaderboardText.setText("Leaderboard unavailable right now.\nYour retry is ready.");
@@ -309,8 +338,8 @@ export class BadTripScene extends Phaser.Scene {
     }).setOrigin(0.5);
     const summary = this.add.text(480, 157,
       result.passed
-        ? `YOU SURVIVED ${formatMs(result.elapsedMs)}  •  THE FIRE-ROASTED DORITO IS YOURS`
-        : `YOUR RUN: ${formatMs(result.elapsedMs)}  •  SURVIVE 0:45.00 TO SECURE THE DORITO`, {
+        ? `YOU SURVIVED ${formatLeaderboardTime(result.elapsedMs)}  •  THE FIRE-ROASTED DORITO IS YOURS`
+        : `YOUR RUN: ${formatLeaderboardTime(result.elapsedMs)}  •  SURVIVE ${formatLeaderboardTime(BAD_TRIP_PASS_MS)} TO SECURE THE DORITO`, {
         fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: `${this.policy.fontSize(15)}px`, color: "#eee6fa", fontStyle: "bold",
       }).setOrigin(0.5);
     const leaderboardHeading = this.add.text(480, 207, "LONGEST DON ROSSI SURVIVORS", {
@@ -399,11 +428,7 @@ export class BadTripScene extends Phaser.Scene {
     this.input?.keyboard?.off("keydown-ENTER", this.continueToBonfire, this);
     this.input?.keyboard?.off("keydown-SPACE", this.continueToBonfire, this);
     this.input?.keyboard?.off("keydown-ESC", this.returnToAdventure, this);
+    this.restoreTouchControlOverrides();
     this.cameras?.main?.resetFX();
   }
-}
-
-function formatMs(milliseconds: number): string {
-  const seconds = Math.max(0, milliseconds) / 1_000;
-  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 }
