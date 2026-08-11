@@ -13,8 +13,8 @@ body { overflow: hidden; touch-action: none; overscroll-behavior: none; }
 
 .exit-to-catalog {
   position: fixed;
-  top: max(10px, env(safe-area-inset-top));
-  left: max(12px, env(safe-area-inset-left));
+  top: -100px;
+  left: -100px;
   z-index: 1000;
   min-height: 44px;
   padding: 12px 16px;
@@ -25,6 +25,8 @@ body { overflow: hidden; touch-action: none; overscroll-behavior: none; }
   box-shadow: 0 3px 0 #07131ccc;
   font: 800 14px/1 system-ui, sans-serif;
   text-decoration: none;
+  visibility: hidden;
+  pointer-events: none;
   touch-action: manipulation;
 }
 
@@ -52,8 +54,6 @@ canvas {
     user-select: none;
     -webkit-user-select: none;
   }
-
-  .exit-to-catalog { top: max(10px, env(safe-area-inset-top)); }
 
   .touch-controls button {
     border: 2px solid #fff5d6;
@@ -136,4 +136,18 @@ canvas {
 
   .portrait-message strong { font-size: clamp(24px, 8vw, 42px); }
   .portrait-message span { color: #f4d37b; font-size: 16px; }
+}
+
+/* The catalog link is only useful while a touch device is blocked by the
+   portrait orientation prompt. Keep it out of the game frame everywhere
+   else so it cannot cover the quest journal. */
+@media (pointer: coarse) and (orientation: portrait) and (max-width: 900px) {
+  .exit-to-catalog {
+    top: auto;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: auto;
+    visibility: visible;
+    pointer-events: auto;
+  }
 }

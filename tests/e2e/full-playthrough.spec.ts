@@ -537,6 +537,37 @@ test("Billy confirms before resetting an in-progress quest", async ({ page }) =>
   });
 });
 
+test("catalog exit stays out of gameplay and is available from the portrait prompt", async ({ browser, baseURL }) => {
+  const desktopContext = await browser.newContext({ baseURL, viewport: { width: 1280, height: 720 } });
+  const desktopPage = await desktopContext.newPage();
+  await desktopPage.goto("/");
+  await expect(desktopPage.locator("[data-exit-to-catalog]")).toBeHidden();
+  await desktopContext.close();
+
+  const landscapeContext = await browser.newContext({
+    baseURL,
+    viewport: { width: 844, height: 390 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const landscapePage = await landscapeContext.newPage();
+  await landscapePage.goto("/");
+  await expect(landscapePage.locator("[data-exit-to-catalog]")).toBeHidden();
+  await landscapeContext.close();
+
+  const portraitContext = await browser.newContext({
+    baseURL,
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const portraitPage = await portraitContext.newPage();
+  await portraitPage.goto("/");
+  await expect(portraitPage.locator(".portrait-message")).toBeVisible();
+  await expect(portraitPage.locator("[data-exit-to-catalog]")).toBeVisible();
+  await portraitContext.close();
+});
+
 test("portrait phones show the landscape orientation message", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
