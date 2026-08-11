@@ -5,6 +5,7 @@ import { initializeTiledMapMarkerCatalog, MAP_DEFINITIONS, type TiledMarkerSourc
 import type { MapId } from "../game/types";
 import { gamePlatform } from "../platform/integration";
 import { COLLISION_GRID_TILE_SIZE } from "../world/tiledRuntime";
+import { preloadArt, registerCharacterAnimations } from "../world/characterAssets";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -28,16 +29,7 @@ export class BootScene extends Phaser.Scene {
     for (const map of [MAP_DEFINITIONS.creek, MAP_DEFINITIONS.neighborhood]) {
       for (const layer of map.layers) this.load.image(layer.textureKey, layer.imagePath);
     }
-    this.load.spritesheet("player", assetUrl("assets/characters/billy-hd-movement.png"), {
-      frameWidth: 400,
-      frameHeight: 450,
-    });
-    // Billy remains an ambient NPC with his existing art; the playable
-    // character uses the neutral `player-*` animation namespace.
-    this.load.spritesheet("billy", assetUrl("assets/characters/billy-hd-movement.png"), {
-      frameWidth: 400,
-      frameHeight: 450,
-    });
+    preloadArt(this);
   }
 
   create(): void {
@@ -48,8 +40,8 @@ export class BootScene extends Phaser.Scene {
     validateRegisteredContent(new Set(Object.keys(MAP_DEFINITIONS) as MapId[]));
     validateMapDefinitions();
     this.makeTextures();
-    this.makeCharacterAnimations("player");
-    this.makeCharacterAnimations("billy");
+    this.makePlayerAnimations();
+    (["billy", "andrew", "jeremy", "ryan", "mickey", "schwartz"] as const).forEach((id) => registerCharacterAnimations(this, id));
     this.makeBikeAnimations();
     this.scene.launch("input-router");
     // Login and cloud-slot selection happen in FrontEndScene. Never stamp a
@@ -62,10 +54,6 @@ export class BootScene extends Phaser.Scene {
     const collisionGrid = this.make.graphics({ x: 0, y: 0 });
     collisionGrid.fillStyle(0xffffff, 1).fillRect(0, 0, COLLISION_GRID_TILE_SIZE, COLLISION_GRID_TILE_SIZE);
     collisionGrid.generateTexture("map.collision-grid", COLLISION_GRID_TILE_SIZE, COLLISION_GRID_TILE_SIZE).destroy();
-
-    this.makePerson("andrew", 0xf29f3d, 0xe5b887);
-    this.makePerson("jeremy", 0xd85b63, 0xd7a36d);
-    this.makePerson("ryan", 0x4f8cc9, 0xe0ad8b);
 
     const controller = this.make.graphics({ x: 0, y: 0 });
     controller.fillStyle(0x182127).fillRoundedRect(2, 8, 28, 18, 7);
@@ -93,25 +81,25 @@ export class BootScene extends Phaser.Scene {
     mushroom.generateTexture("mushroom", 28, 32).destroy();
   }
 
-  private makeCharacterAnimations(character: "player" | "billy"): void {
+  private makePlayerAnimations(): void {
     const makeWalk = (key: string, frames: number[]) => {
       this.anims.create({
         key,
-        frames: frames.map((frame) => ({ key: character, frame })),
+        frames: frames.map((frame) => ({ key: "player", frame })),
         frameRate: 7,
         repeat: -1,
       });
     };
     const makeIdle = (key: string, frame: number) => {
-      this.anims.create({ key, frames: [{ key: character, frame }] });
+      this.anims.create({ key, frames: [{ key: "player", frame }] });
     };
 
-    makeIdle(`${character}-idle-down`, 0);
-    makeWalk(`${character}-walk-down`, [0, 1]);
-    makeIdle(`${character}-idle-side`, 4);
-    makeWalk(`${character}-walk-side`, [4, 5]);
-    makeIdle(`${character}-idle-up`, 6);
-    makeWalk(`${character}-walk-up`, [6, 7]);
+    makeIdle("player-idle-down", 0);
+    makeWalk("player-walk-down", [0, 1, 2]);
+    makeIdle("player-idle-side", 3);
+    makeWalk("player-walk-side", [3, 4, 5]);
+    makeIdle("player-idle-up", 6);
+    makeWalk("player-walk-up", [6, 7, 8]);
   }
 
   /** Bike presentation reuses the playable character's four-direction sheet. */
@@ -141,20 +129,4 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
-  private makePerson(key: string, shirt: number, skin: number): void {
-    const graphics = this.make.graphics({ x: 0, y: 0 });
-    graphics.fillStyle(0x173026, 0.24).fillEllipse(17, 39, 25, 7);
-    graphics.fillStyle(0x2b2524).fillRect(9, 5, 15, 10).fillRect(7, 9, 4, 7);
-    graphics.fillStyle(skin).fillRoundedRect(10, 9, 13, 11, 4);
-    graphics.fillStyle(0x443129).fillRect(9, 8, 14, 4).fillRect(20, 6, 4, 6);
-    graphics.fillStyle(0x28343a).fillRect(12, 13, 2, 2).fillRect(19, 13, 2, 2);
-    graphics.fillStyle(0x8f5e48).fillRect(15, 17, 4, 2);
-    graphics.fillStyle(0x1b272b).fillRoundedRect(7, 19, 19, 17, 4);
-    graphics.fillStyle(shirt).fillRoundedRect(8, 18, 16, 16, 4);
-    graphics.fillStyle(0xffffff, 0.22).fillRect(10, 20, 3, 10);
-    graphics.fillStyle(skin).fillRect(5, 22, 4, 11).fillRect(24, 22, 4, 11);
-    graphics.fillStyle(0x26364a).fillRect(9, 32, 6, 8).fillRect(18, 32, 6, 8);
-    graphics.fillStyle(0x26282b).fillRect(8, 39, 8, 3).fillRect(18, 39, 8, 3);
-    graphics.generateTexture(key, 32, 42).destroy();
-  }
 }

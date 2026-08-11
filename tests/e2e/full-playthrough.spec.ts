@@ -130,17 +130,27 @@ async function continueGame(page: Page): Promise<void> {
   await page.waitForTimeout(550);
 }
 
-async function startQuestFromBillyArchive(page: Page, questIndex: number): Promise<void> {
+async function openBillyQuestJournal(page: Page): Promise<void> {
   // The full archive is intentionally a Billy conversation, not an ordinary
-  // backpack tab. In a completed save F4 targets his playtest anchor.
+  // backpack tab. A second relocation makes this resilient when the first
+  // debug key lands while the restored world is still creating its anchors.
   await page.waitForTimeout(700);
   await page.keyboard.press("F4");
+  await page.waitForTimeout(500);
+  await page.keyboard.press("F4");
+  await page.waitForTimeout(500);
+  await clickInteractionPrompt(page);
+  await page.waitForTimeout(170);
+  // Billy presents the journal as the first choice of his idle conversation.
+  await page.mouse.click(480, 290);
   await page.waitForTimeout(250);
-  await page.keyboard.press("KeyE");
-  await page.waitForTimeout(250);
+}
+
+async function startQuestFromBillyArchive(page: Page, questIndex: number): Promise<void> {
+  await openBillyQuestJournal(page);
   await page.mouse.click(150, 219 + questIndex * 42); // Authored quest row.
   await page.waitForTimeout(250);
-  await page.mouse.click(710, 418); // Start / continue / replay action.
+  await page.keyboard.press("Space"); // Start / continue / replay action.
   await page.waitForTimeout(300);
 }
 
@@ -184,6 +194,32 @@ test.beforeEach(async ({ page }) => {
         id: "e2e-session", session_id: "e2e-session", user_id: "e2e-player", game_id: "milton-estates",
         game_slug: "milton-estates", started_at: now, last_heartbeat_at: now, ended_at: path.endsWith("/end") ? now : null,
         credited_playtime_seconds: 0,
+      } });
+      return;
+    }
+    const leaderboardSubmission = path.match(/\/games\/milton-estates\/leaderboards\/([^/]+)\/entries$/);
+    if (leaderboardSubmission && request.method() === "POST") {
+      const value = (request.postDataJSON() as { value: number }).value;
+      await route.fulfill({ json: {
+        entry: { user_id: "e2e-player", nickname: "Molly", display_name: "Molly", value, rank: 2 },
+        rank: 2,
+      } });
+      return;
+    }
+    const leaderboardMatch = path.match(/\/leaderboards\/([^/]+)$/);
+    if (leaderboardMatch && request.method() === "GET") {
+      const survival = decodeURIComponent(leaderboardMatch[1]!).includes("longest-survival");
+      const value = survival ? 850_000 : 12_000;
+      await route.fulfill({ json: {
+        definition: {},
+        entries: [
+          { user_id: "other-player", nickname: "June", display_name: "June", value, rank: 1 },
+        ],
+        current_user_entry: {
+          user_id: "e2e-player", nickname: "Molly", display_name: "Molly",
+          value: survival ? 855_000 : 12_300, rank: 2,
+        },
+        current_user_rank: 2,
       } });
       return;
     }
@@ -348,11 +384,17 @@ test("Billy can reset an active controller quest and remove its temporary contro
     ],
   });
 
-  await page.keyboard.press("KeyE"); // Resume position is inside Billy's single interaction region.
+  await clickInteractionPrompt(page); // Resume position is inside Billy's single interaction region.
+  await page.waitForTimeout(170);
+  await page.mouse.click(480, 290); // Open Billy's first-choice quest journal.
   await page.waitForTimeout(250);
-  await page.mouse.click(710, 418); // Arm RESET QUEST.
+  // Canvas coordinates can land outside a text button after accessibility
+  // scaling; exercise the same focus path used by keyboard/gamepad players.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space"); // Arm RESET QUEST.
   await page.waitForTimeout(180);
-  await page.mouse.click(710, 418); // Confirm the canonical reset.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space"); // Confirm the canonical reset.
 
   await waitForSave(page, {
     activeQuestId: "missing_controller",
@@ -363,22 +405,18 @@ test("Billy can reset an active controller quest and remove its temporary contro
   });
 });
 
-test("Billy's quest conversation opens the separate archive", async ({ page }) => {
+test("Billy defaults a completed Controller save to Andrew's next quest without a row click", async ({ page }) => {
   await page.goto("/");
   await seedPrimaryCloudSave(page, (save) => {
     save.activeQuestId = "missing_controller";
     save.completedQuestIds = ["missing_controller"];
     (save.questProgress as Record<string, unknown>).missingControllerStage = "complete";
   });
-  await page.keyboard.press("F4");
-  await page.waitForTimeout(500);
-  await page.keyboard.press("KeyE");
-  await page.waitForTimeout(250);
-  // The second card is Andrew's optional quest; it is only reachable from
-  // Billy's archive, never from the ordinary Current Quest menu page.
-  await page.mouse.click(150, 240);
-  await page.waitForTimeout(150);
-  await page.mouse.click(710, 418);
+  await openBillyQuestJournal(page);
+  // The journal must select the next available quest itself. Clicking its
+  // action immediately would restart Missing Controller if a completed
+  // activeQuestId still won selection precedence.
+  await page.keyboard.press("Space");
   await waitForSave(page, {
     activeQuestId: "andrew_mushroom_hunt",
     questStage: "talk_to_andrew_for_mushrooms",
@@ -395,6 +433,71 @@ test("Billy's quest conversation opens the separate archive", async ({ page }) =
     activeQuestId: "andrew_mushroom_hunt",
     questStage: "talk_to_andrew_for_mushrooms",
   });
+});
+
+test("Billy continues a replay without resetting it or persisting replay progress", async ({ page }) => {
+  await page.goto("/");
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "missing_controller";
+    save.completedQuestIds = ["missing_controller"];
+    (save.questProgress as Record<string, unknown>).missingControllerStage = "complete";
+    save.currentMap = "neighborhood";
+    save.lastKnownLocation = { map: "neighborhood", x: 816 / 1440, y: 592 / 1088 };
+  });
+
+  await openBillyQuestJournal(page);
+  // Missing Controller is immediately before the default Andrew row. Use the
+  // journal's controller/keyboard navigation, rather than canvas hit testing,
+  // to select the replay deterministically.
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(300);
+  // A replay is runtime-only. Its first stage must never replace the
+  // completed canonical payload that the browser will reload.
+  await waitForSave(page, { activeQuestId: "missing_controller", questStage: "complete" });
+  await page.keyboard.press("KeyE");
+  await advanceDialogue(page, 3);
+
+  // Reopen Billy during the replay. CONTINUE REPLAY closes the journal; it
+  // must not call the replay initializer again and lose this first handoff.
+  await openBillyQuestJournal(page);
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(250);
+  expect(await readSave(page)).toMatchObject({
+    activeQuestId: "missing_controller",
+    questStage: "complete",
+  });
+
+  // A later quest remains visible in the archive but its stale/click action
+  // cannot replace the active replay.
+  await openBillyQuestJournal(page);
+  await page.keyboard.press("ArrowRight"); // Andrew's row.
+  await page.keyboard.press("Space"); // Locked rows intentionally have no action.
+  await page.waitForTimeout(250);
+  expect(await readSave(page)).toMatchObject({
+    activeQuestId: "missing_controller",
+    questStage: "complete",
+  });
+});
+
+test("Billy opens the shared leaderboard browser from his idle conversation", async ({ page }) => {
+  await page.goto("/");
+  await seedPrimaryCloudSave(page, (save) => {
+    save.activeQuestId = "missing_controller";
+    save.completedQuestIds = ["missing_controller"];
+    (save.questProgress as Record<string, unknown>).missingControllerStage = "complete";
+    save.currentMap = "neighborhood";
+    save.lastKnownLocation = { map: "neighborhood", x: 816 / 1440, y: 592 / 1088 };
+  });
+
+  const leaderboardRequest = page.waitForRequest((request) =>
+    request.method() === "GET" && new URL(request.url()).pathname.includes("/leaderboards/"));
+  await clickInteractionPrompt(page);
+  await page.keyboard.press("ArrowDown"); // Browse leaderboards.
+  await page.keyboard.press("Space");
+
+  const request = await leaderboardRequest;
+  expect(new URL(request.url()).searchParams.get("game_slug")).toBe("milton-estates");
 });
 
 test("Billy confirms before resetting an in-progress quest", async ({ page }) => {
@@ -414,16 +517,20 @@ test("Billy confirms before resetting an in-progress quest", async ({ page }) =>
   });
 
   // Resume at Billy; F4 would correctly target a mushroom during this stage.
-  await page.keyboard.press("KeyE");
+  await clickInteractionPrompt(page);
+  await page.waitForTimeout(170);
+  await page.mouse.click(480, 290); // Open Billy's first-choice quest journal.
   await page.waitForTimeout(250);
-  await page.mouse.click(720, 418); // Arm Reset Quest at its stable action-button target.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space"); // Arm Reset Quest.
   await page.waitForTimeout(150);
   expect(await readSave(page)).toMatchObject({
     activeQuestId: "andrew_mushroom_hunt",
     questStage: "search_mushrooms",
   });
 
-  await page.mouse.click(720, 418); // Confirm reset after the journal rebuilds.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space"); // Confirm reset after the journal rebuilds.
   await waitForSave(page, {
     activeQuestId: "andrew_mushroom_hunt",
     questStage: "talk_to_andrew_for_mushrooms",

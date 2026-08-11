@@ -4,6 +4,7 @@ import { advanceCaddyCaperStage, type CaddyCaperStage } from "../content/chapter
 import { EVENT, gameEvents } from "../game/events";
 import { gameStore } from "../game/GameStore";
 import type { ExplorationInteractionHost } from "./contracts";
+import { CharacterFactory } from "./CharacterFactory";
 
 export interface BentCreekCaddyCaperRecord {
   stage: CaddyCaperStage;
@@ -195,7 +196,7 @@ export class BentCreekCaddyCaperController {
   private returnTrophy(): void {
     this.host.showDialogue([
       ...CADDY_CAPER_DIALOGUE.complete,
-      { speaker: "Mickey", text: "Rematch later, Billy. I can make that cup roll even faster." },
+      { speaker: "Mickey", text: "Rematch later. I can make that cup roll even faster." },
     ], () => {
       this.store.addInventoryItem("bent_creek_visitor_badge");
       this.advance({ type: "trophy_returned" });
@@ -247,11 +248,7 @@ export class BentCreekCaddyCaperController {
     });
     const trophyP = this.point("golf_cart_path_11"); this.trophy = this.makeTrophy(trophyP.x, trophyP.y); this.visuals.push(this.trophy);
     const mickeyPoint = this.point("golf_cart_path_08");
-    const mickey = world.add.graphics().setDepth(48);
-    mickey.fillStyle(0xf0b07f, 1).fillCircle(mickeyPoint.x, mickeyPoint.y - 25, 10);
-    mickey.lineStyle(6, 0xe06f2e, 1).lineBetween(mickeyPoint.x - 6, mickeyPoint.y - 35, mickeyPoint.x - 8, mickeyPoint.y - 15).lineBetween(mickeyPoint.x, mickeyPoint.y - 36, mickeyPoint.x + 2, mickeyPoint.y - 15).lineBetween(mickeyPoint.x + 7, mickeyPoint.y - 34, mickeyPoint.x + 10, mickeyPoint.y - 16);
-    mickey.fillStyle(0x315f4c, 1).fillRoundedRect(mickeyPoint.x - 10, mickeyPoint.y - 13, 20, 28, 5);
-    mickey.lineStyle(3, 0xf0b07f, 1).lineBetween(mickeyPoint.x - 8, mickeyPoint.y - 9, mickeyPoint.x - 25, mickeyPoint.y - 23).lineBetween(mickeyPoint.x + 8, mickeyPoint.y - 9, mickeyPoint.x + 27, mickeyPoint.y - 22);
+    const mickey = CharacterFactory.createNpc(world, { id: "mickey", x: mickeyPoint.x, y: mickeyPoint.y + 6, depth: 48, scale: 0.18 });
     this.visuals.push(mickey);
     if (!this.host.settings.reducedMotion) world.tweens.add({ targets: mickey, angle: { from: -3, to: 3 }, duration: 420, yoyo: true, repeat: -1 });
     this.drawMovingCarts();

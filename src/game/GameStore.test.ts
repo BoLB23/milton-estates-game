@@ -19,6 +19,10 @@ class MemoryStorage implements Storage {
 
 const savedAt = new Date("2026-07-12T18:30:00.000Z");
 const makeStore = (storage = new MemoryStorage()) => new GameStore(storage, () => savedAt);
+const replayableQuestIds = [
+  "missing_controller", "andrew_mushroom_hunt", "three_player_sports", "catch_ryan", "explore_bent_creek",
+  "attend_bonfire_at_andrews", "creek_clubhouse", "paper_airplane_relay", "bent_creek_caddy_caper",
+] as const;
 
 function completeCatchRyan(store: GameStore): void {
   store.setActiveQuest("chapter_1", "catch_ryan");
@@ -328,7 +332,7 @@ describe("GameStore save v9", () => {
     expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null").version).toBe(9);
   });
 
-  it("isolates replay inventory, secrets, history, completion, saves, and map discovery", () => {
+  it("preserves the current adventure context while isolating replay progress", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
     store.setQuestStage("complete");
@@ -344,7 +348,7 @@ describe("GameStore save v9", () => {
       questStage: "talk_to_billy",
       questHistory: [],
       inventory: [],
-      secrets: [],
+      secrets: ["creek_token"],
       currentMap: "neighborhood",
       completedQuestIds: ["missing_controller"],
     });
@@ -370,6 +374,86 @@ describe("GameStore save v9", () => {
     expect(() => store.startQuestReplay("missing_controller")).toThrow(RangeError);
     store.setQuestStage("complete");
     expect(() => store.startQuestReplay("storm_drain_detectives")).toThrow(RangeError);
+  });
+
+  it("exposes replay identity only in the runtime projection and never persists it", () => {
+    const storage = new MemoryStorage();
+    const store = makeStore(storage);
+    store.setQuestStage("complete");
+    const canonical = store.getCanonicalState();
+
+    store.startQuestReplay("missing_controller");
+
+    expect(store.getState().replayQuestId).toBe("missing_controller");
+    expect(store.getReplayQuestId()).toBe("missing_controller");
+    expect(store.isQuestReplayActive()).toBe(true);
+    expect(store.isQuestReplayActive("missing_controller")).toBe(true);
+    expect(store.isQuestReplayActive("andrew_mushroom_hunt")).toBe(false);
+    expect(store.getCanonicalState()).toEqual(canonical);
+    expect(store.getCanonicalState().replayQuestId).toBeNull();
+    expect(JSON.parse(storage.getItem("milton-estates-save") ?? "null")).not.toHaveProperty("replayQuestId");
+    expect(store.getCloudSnapshot()).not.toHaveProperty("replayQuestId");
+
+    expect(store.endQuestReplay()).toBe(true);
+    expect(store.getState().replayQuestId).toBeNull();
+  });
+
+  it("rejects nested replay and canonical activation without mutations or events", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    const canonical = store.getCanonicalState();
+    store.startQuestReplay("missing_controller");
+    const replay = store.getState();
+    const listener = vi.fn();
+    gameEvents.on(EVENT.stateChanged, listener);
+
+    expect(() => store.startQuestReplay("missing_controller")).toThrow(RangeError);
+    expect(() => store.setActiveQuest("chapter_1", "andrew_mushroom_hunt")).toThrow(RangeError);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual(replay);
+    expect(store.getCanonicalState()).toEqual(canonical);
+  });
+
+  it("advances a Missing Controller replay from Billy exactly once", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    const canonical = store.getCanonicalState();
+
+    store.startQuestReplay("missing_controller");
+    expect(store.beginMissingControllerQuest()).toBe(true);
+    expect(store.beginMissingControllerQuest()).toBe(false);
+    expect(store.getState()).toMatchObject({
+      replayQuestId: "missing_controller",
+      questStage: "talk_to_jeremy",
+      questHistory: ["missing_controller.started"],
+    });
+    expect(store.getCanonicalState()).toEqual(canonical);
+  });
+
+  it.each([
+    ["missing_controller", "talk_to_billy"],
+    ["andrew_mushroom_hunt", "talk_to_andrew_for_mushrooms"],
+    ["three_player_sports", "meet_jeremy_to_skateboard"],
+    ["catch_ryan", "invite"],
+    ["explore_bent_creek", "open_gate"],
+    ["attend_bonfire_at_andrews", "talk_to_schwartz"],
+    ["creek_clubhouse", "talk_to_andrew"],
+    ["paper_airplane_relay", "ask_for_advice"],
+    ["bent_creek_caddy_caper", "inspect_display"],
+  ] as const)("initializes and isolates the %s replay", (questId, initialStage) => {
+    const store = makeStore();
+    // This table covers replay construction; individual quest tests cover the
+    // valid progression paths that earn these completed records.
+    (store as unknown as { state: { completedQuestIds: typeof replayableQuestIds[number][] } })
+      .state.completedQuestIds = [...replayableQuestIds];
+    const canonical = store.getCanonicalState();
+
+    store.startQuestReplay(questId);
+    expect(store.getState()).toMatchObject({ replayQuestId: questId, activeQuestId: questId, questStage: initialStage });
+    expect(store.getCanonicalState()).toEqual(canonical);
+    expect(store.endQuestReplay()).toBe(true);
+    expect(store.getState()).toEqual(canonical);
   });
 
   it("saveNow refreshes lastSavedAt without changing mission progress", () => {
@@ -642,7 +726,7 @@ describe("GameStore save v9", () => {
     });
   });
 
-  it("isolates Catch Ryan replay progress and regional unlocks from canonical state", () => {
+  it("preserves regional unlocks and durable rewards during a Catch Ryan replay", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
     completeCatchRyan(store);
@@ -652,9 +736,10 @@ describe("GameStore save v9", () => {
     store.startQuestReplay("catch_ryan");
     expect(store.getState()).toMatchObject({
       questStage: "invite",
-      currentMap: "neighborhood",
-      discoveredMaps: ["neighborhood"],
-      unlockedMaps: ["neighborhood", "creek"],
+      currentMap: "reidenbaugh",
+      discoveredMaps: ["neighborhood", "stonehenge", "reidenbaugh"],
+      unlockedMaps: ["neighborhood", "creek", "stonehenge", "reidenbaugh", "fruitville_pike", "bent_creek"],
+      inventory: [{ itemId: "bicycle", quantity: 1 }],
     });
     store.acceptRyanRide();
     store.selectRyanRideDestination("reidenbaugh", 99);
@@ -671,6 +756,48 @@ describe("GameStore save v9", () => {
     expect(storage.getItem("milton-estates-save")).toBe(persisted);
   });
 
+  it("does not hand a replayed Bent Creek exploration into the next quest", () => {
+    const store = makeStore();
+    completeCatchRyan(store);
+    store.openBentCreekGate();
+    store.recordMickeyDragRace(23_120, true);
+    expect(store.acceptBonfireInvitation()).toBe(true);
+    const canonical = store.getCanonicalState();
+
+    store.startQuestReplay("explore_bent_creek");
+    store.openBentCreekGate();
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "explore_bent_creek",
+      questStage: "meet_schwartz",
+    });
+    expect(store.acceptBonfireInvitation()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeQuestId: "explore_bent_creek",
+      questStage: "complete",
+    });
+    expect(store.getCanonicalState()).toEqual(canonical);
+  });
+
+  it("keeps completed Mickey progress available during an earlier quest replay", () => {
+    const store = makeStore();
+    store.setQuestStage("complete");
+    completeCatchRyan(store);
+    store.openBentCreekGate();
+    store.recordMickeyDragRace(23_120, true);
+    const canonical = store.getCanonicalState();
+
+    store.startQuestReplay("missing_controller");
+    expect(store.getMickeyDragRaceRecord()).toEqual({
+      unlocked: true,
+      introSeen: false,
+      beaten: true,
+      bestTimeMs: 23_120,
+    });
+    expect(store.getCanonicalState()).toEqual(canonical);
+    expect(store.endQuestReplay()).toBe(true);
+    expect(store.getState()).toEqual(canonical);
+  });
+
   it("keeps Mickey's race unlock and fastest time inside the existing save", () => {
     const storage = new MemoryStorage();
     const store = makeStore(storage);
@@ -681,6 +808,7 @@ describe("GameStore save v9", () => {
     store.markMickeyDragRaceIntroSeen();
     store.recordMickeyDragRace(24_860, false);
     store.recordMickeyDragRace(23_120, true);
+    store.recordMickeyDragRace(20_000, false);
     store.recordMickeyDragRace(25_000, true);
 
     expect(store.getMickeyDragRaceRecord()).toEqual({ unlocked: true, introSeen: true, beaten: true, bestTimeMs: 23_120 });

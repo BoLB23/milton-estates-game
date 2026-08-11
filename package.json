@@ -8,6 +8,7 @@
     "typecheck": "tsc -b && tsc -p tsconfig.e2e.json",
     "check:exports": "node scripts/check-exports.mjs",
     "check:assets": "node scripts/audit-assets.mjs",
+    "process:art": "node scripts/process-game-art.mjs",
     "check:maps": "node scripts/validate-map-expansion.mjs",
     "maps:migrate-editor": "node scripts/migrate-map-editor.mjs",
     "build": "npm run typecheck && npm run check:exports && npm run check:assets && vite build",

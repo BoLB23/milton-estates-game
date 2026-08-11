@@ -17,6 +17,7 @@ import { WelcomeScene } from "./scenes/WelcomeScene";
 import { MickeyDragRaceScene } from "./scenes/MickeyDragRaceScene";
 import { AndrewsBonfireScene } from "./scenes/AndrewsBonfireScene";
 import { BadTripScene } from "./scenes/BadTripScene";
+import { registerServiceWorker, setupPwaNavigation } from "./platform/pwa";
 
 const game = new Phaser.Game({
   // The browser behavior suite uses Canvas to avoid
@@ -60,3 +61,5 @@ const game = new Phaser.Game({
 
 // Phaser owns the sole SoundManager, its AudioContext, and autoplay unlock.
 audioManager.install(game.sound, game.events);
+setupPwaNavigation();
+registerServiceWorker();

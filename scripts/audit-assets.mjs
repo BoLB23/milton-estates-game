@@ -14,6 +14,11 @@ const publicRoot = join(root, "public");
 const assetRoot = join(publicRoot, "assets");
 const runtimeRoots = ["src", "index.html"];
 const retainedSourceAssets = new Set([
+  "assets/art/chibi_rpg_character_sprite_atlas.png",
+  "assets/art/four_character_rpg_sprite_sheet.png",
+  "assets/art/twin_character_rpg_sprite_sheet.png",
+  "assets/art/gray_sedan_sprite_sheet_collection.png",
+  "assets/art/creek_clubhouse_building_kit_spritesheet.png",
   "assets/maps/creek-woods.tmj",
   "assets/maps/expansion/neighborhood.tmj",
   "assets/maps/expansion/stonehenge.tmj",
@@ -24,7 +29,7 @@ const retainedSourceAssets = new Set([
   // QA'd against its reauthored TMJ; it is not loaded by the shipped game.
   "assets/maps/expansion/neighborhood-master-v2.png",
 ]);
-const ignoredFiles = new Set(["assets/.DS_Store", "assets/concepts/.DS_Store"]);
+const ignoredFiles = new Set(["assets/.DS_Store", "assets/concepts/.DS_Store", "assets/maps/.DS_Store"]);
 
 async function collectFiles(directory) {
   const info = await stat(directory);

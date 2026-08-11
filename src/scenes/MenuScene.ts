@@ -5,13 +5,14 @@ import { CHAPTER_REGISTRY, selectChapterProgress, selectOptionalProgress } from 
 import { getMapDefinition, MAP_DEFINITIONS, projectRegionalMapBounds, projectRegionalMapPoint, selectActiveObjectiveMarker, type RegionalMapDisplayBounds } from "../content/maps";
 import { EVENT, gameEvents, inputCapture, type InputActionEvent, type MenuPage, type PlayerMapLocation } from "../game/events";
 import { gameStore } from "../game/GameStore";
-import { isMinigameUnlocked, MINIGAMES, type MinigameId } from "../game/minigames";
+import { canLaunchMinigameReplay, isMinigameUnlocked, MINIGAMES, type MinigameId } from "../game/minigames";
 import type { GameState, PlayerSettings } from "../game/types";
 import { createPresentationPolicy, cycleTextSize, nextVolume } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 import { ScrollablePanel } from "../presentation/ScrollablePanel";
 import { BACKPACK_MAP_LAYOUT, spreadMapLabels } from "../presentation/backpackMapLayout";
 import { gamePlatform } from "../platform/integration";
+import { fetchLeaderboard, LEADERBOARD_PAGES, leaderboardSummaryLines } from "../platform/leaderboards";
 
 const PAGES: readonly MenuPage[] = ["resume", "games", "items", "map", "settings"];
 const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
@@ -24,7 +25,26 @@ const PAGE_LABELS: Readonly<Record<MenuPage, string>> = {
   save: "SAVE",
   settings: "SETTINGS",
   help: "HELP",
+  leaderboards: "LEADERBOARDS",
 };
+
+/**
+ * Restores the canonical world after a disposable quest replay. Both the
+ * Backpack and Billy's journal use this so scene ordering and the return
+ * confirmation cannot drift apart.
+ */
+export function returnToCurrentAdventure(scene: Phaser.Scene): boolean {
+  if (!gameStore.isReplaying()) return false;
+  const replayMap = gameStore.getState().currentMap;
+  if (!gameStore.endQuestReplay()) return false;
+  const canonicalMap = gameStore.getState().currentMap;
+  scene.scene.stop(replayMap);
+  scene.scene.launch(canonicalMap);
+  scene.scene.bringToTop("ui");
+  scene.scene.bringToTop();
+  gameEvents.emit(EVENT.toast, "Returned to your saved adventure.");
+  return true;
+}
 
 export class MenuScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Container;
@@ -40,6 +60,7 @@ export class MenuScene extends Phaser.Scene {
   private storageMode = false;
   private scrollPanel?: ScrollablePanel;
   private scrollPointerY?: number;
+  private leaderboardRequestId = 0;
 
   constructor() { super("menu"); }
 
@@ -113,7 +134,7 @@ export class MenuScene extends Phaser.Scene {
   private handleMenuRequest(request?: { page?: MenuPage; storage?: boolean }): void {
     this.storageMode = request?.storage === true;
     const requestedPage = request?.page;
-    this.openMenu(requestedPage && PAGES.includes(requestedPage) ? requestedPage : "resume");
+    this.openMenu(requestedPage === "leaderboards" || (requestedPage && PAGES.includes(requestedPage)) ? requestedPage : "resume");
   }
 
   private openMenu(page: MenuPage): void {
@@ -182,6 +203,7 @@ export class MenuScene extends Phaser.Scene {
       case "save": this.renderSave(); break;
       case "settings": this.renderSettings(); break;
       case "help": this.renderHelp(); break;
+      case "leaderboards": this.renderLeaderboards(); break;
     }
     this.focus.refresh();
   }
@@ -445,7 +467,12 @@ export class MenuScene extends Phaser.Scene {
 
   private renderGames(): void {
     const race = gameStore.getMickeyDragRaceRecord();
-    this.heading("Mini games", "Beat a challenge once, then replay it here or by talking to Jeremy.");
+    const canReplay = canLaunchMinigameReplay(this.state);
+    const requestId = ++this.leaderboardRequestId;
+    const currentUserId = gameStore.getPlayerProfile()?.id;
+    this.heading("Mini games", canReplay
+      ? "Beat a challenge once, then replay it here or by talking to Jeremy."
+      : "Return to your saved adventure before replaying a mini-game.");
     MINIGAMES.forEach((game, index) => {
       const unlocked = isMinigameUnlocked(game.id, this.state);
       const y = 214 + index * 112;
@@ -454,25 +481,69 @@ export class MenuScene extends Phaser.Scene {
       this.note(92, y + 42, unlocked ? game.description : `LOCKED  •  ${game.unlockHint}`, {
         fontSize: "14px", color: unlocked ? "#675544" : "#a34237", wordWrap: { width: 510 },
       });
-      if (game.id === "mickey_drag_race" && unlocked) {
-        this.note(92, y + 72, race.bestTimeMs ? `BEST  •  ${this.formatRaceTime(race.bestTimeMs)}` : "BEST  •  Not set", {
-          fontSize: "13px", color: "#315f4c", fontStyle: "bold",
+      if (unlocked) {
+        const score = this.note(92, y + 66, "Loading your best and shared scores…", {
+          fontSize: "11px", color: "#315f4c", fontStyle: "bold", lineSpacing: 2,
         });
-      } else if (game.id === "don_rossi" && unlocked) {
-        this.note(92, y + 72, "Longest-survival leaderboard appears after every run.", {
-          fontSize: "13px", color: "#315f4c", fontStyle: "bold",
+        const board = game.id === "mickey_drag_race" ? "mickeyDragRace" : "badTripSurvival";
+        const kind = game.id === "mickey_drag_race" ? "fastest" : "longest";
+        const fallbackBest = game.id === "mickey_drag_race" ? race.bestTimeMs : undefined;
+        void fetchLeaderboard(board, 25).then((entries) => {
+          if (requestId !== this.leaderboardRequestId || !score.active) return;
+          score.setText(leaderboardSummaryLines(kind, entries, currentUserId, 1, fallbackBest).join("\n"));
         });
       }
-      if (unlocked) this.button(641, y + 30, "PLAY AGAIN", () => this.launchMinigame(game.id), 194);
+      if (unlocked && canReplay) {
+        this.button(641, y + 30, "PLAY AGAIN", () => this.launchMinigame(game.id), 194);
+      } else if (unlocked) {
+        this.note(622, y + 29, "REPLAY PAUSED", {
+          fontSize: "13px", color: "#a34237", fontStyle: "bold", wordWrap: { width: 210 },
+        });
+        this.note(622, y + 49, "Return to your saved adventure first.", {
+          fontSize: "11px", color: "#76624f", wordWrap: { width: 210 },
+        });
+      }
     });
   }
 
-  private formatRaceTime(timeMs: number): string {
-    const seconds = timeMs / 1000;
-    return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+  /**
+   * Billy's "Browse leaderboards" option. Every timed challenge in Milton
+   * Estates lives here so players don't have to re-finish a game just to
+   * check standings; times always read in plain seconds for consistency.
+   */
+  private renderLeaderboards(): void {
+    this.heading("Milton Estates leaderboards", "Every timed challenge, ranked. Times are always shown in seconds.");
+    const panel = this.createScrollablePanel(68, 226, 796, 260);
+    const requestId = ++this.leaderboardRequestId;
+    const currentUserId = gameStore.getPlayerProfile()?.id;
+    const rowHeight = 128;
+    this.withRenderTarget(panel.content, () => {
+      LEADERBOARD_PAGES.forEach((page, index) => {
+        const y = 226 + index * rowHeight;
+        this.card(68, y, 796, rowHeight - 12, index % 2 === 0 ? 0xfff8df : 0xe9d29e);
+        this.note(92, y + 13, page.title.toUpperCase(), { fontSize: "16px", fontStyle: "bold" });
+        const status = this.note(92, y + 42, "Loading leaderboard…", {
+          fontSize: "13px", color: "#675544", wordWrap: { width: 740 }, lineSpacing: 4,
+        });
+        void fetchLeaderboard(page.board, 25).then((entries) => {
+          if (requestId !== this.leaderboardRequestId || !status.active) return;
+          status.setText(leaderboardSummaryLines(page.kind, entries, currentUserId).join("\n"));
+        }).catch(() => {
+          if (requestId !== this.leaderboardRequestId || !status.active) return;
+          status.setText("Leaderboard unavailable right now.");
+        });
+      });
+    });
+    panel.setContentHeight(LEADERBOARD_PAGES.length * rowHeight);
   }
 
   private launchMinigame(id: MinigameId): void {
+    // The button can be stale after a state change, so enforce the nested
+    // replay policy at the action boundary as well as in the target scenes.
+    if (!canLaunchMinigameReplay(gameStore.getState())) {
+      gameEvents.emit(EVENT.toast, "Return to your saved adventure before replaying a mini-game.");
+      return;
+    }
     const returnMap = gameStore.getState().currentMap;
     this.closeMenu();
     this.scene.stop(returnMap);
@@ -614,16 +685,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private endReplay(): void {
-    if (!gameStore.isReplaying()) return;
-    const replayMap = gameStore.getState().currentMap;
     this.closeMenu();
-    if (!gameStore.endQuestReplay()) return;
-    const canonicalMap = gameStore.getState().currentMap;
-    this.scene.stop(replayMap);
-    this.scene.launch(canonicalMap);
-    this.scene.bringToTop("ui");
-    this.scene.bringToTop();
-    gameEvents.emit(EVENT.toast, "Returned to your saved adventure.");
+    returnToCurrentAdventure(this);
   }
 
   private launchNeighborhood(oldMap: GameState["currentMap"], playIntro = false): void {

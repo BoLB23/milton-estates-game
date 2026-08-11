@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isMinigameUnlocked, selectUnlockedMinigames } from "./minigames";
+import { canLaunchMinigameReplay, isMinigameUnlocked, selectUnlockedMinigames } from "./minigames";
 
 describe("minigame replay unlocks", () => {
   it("keeps Mickey's replay locked until Mickey has been beaten", () => {
@@ -24,5 +24,11 @@ describe("minigame replay unlocks", () => {
       completedQuestIds: ["attend_bonfire_at_andrews"],
       secrets: ["mickey_drag_race.beaten"],
     }).map((game) => game.id)).toEqual(["mickey_drag_race", "don_rossi"]);
+  });
+
+  it("does not allow a mini-game replay inside a quest replay", () => {
+    expect(canLaunchMinigameReplay({ replayQuestId: null })).toBe(true);
+    expect(canLaunchMinigameReplay({ replayQuestId: "missing_controller" })).toBe(false);
+    expect(canLaunchMinigameReplay({ replayQuestId: "attend_bonfire_at_andrews" }, false)).toBe(true);
   });
 });

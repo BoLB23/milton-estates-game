@@ -308,9 +308,16 @@ export interface SaveData {
   lastSavedAt: string | null;
 }
 
-/** Scene-facing projection. questStage is derived and is never serialized. */
+/**
+ * Scene-facing projection. Derived/runtime fields are never serialized.
+ *
+ * replayQuestId exists only while a temporary quest replay is running. It
+ * deliberately does not belong to SaveData: a reload must resume the
+ * canonical adventure, rather than a disposable replay snapshot.
+ */
 export interface GameState extends SaveData {
   readonly questStage: QuestStage;
+  readonly replayQuestId: QuestId | null;
 }
 
 export interface DialogueLine {

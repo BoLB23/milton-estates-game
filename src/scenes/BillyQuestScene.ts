@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { CHAPTER_REGISTRY, hasAvailableQuest, selectQuestState, type QuestDefinition } from "../content/chapters";
+import { selectDefaultQuestId, selectQuestJournalAction } from "../content/questJournal";
 import { getObjective } from "../content/quest";
 import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
@@ -7,6 +8,7 @@ import type { GameState, QuestId } from "../game/types";
 import { createPresentationPolicy } from "../presentation/presentationPolicy";
 import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusController } from "../presentation/scrapbook";
 import { ScrollablePanel } from "../presentation/ScrollablePanel";
+import { returnToCurrentAdventure } from "./MenuScene";
 
 /**
  * Billy's quest journal is a conversation-owned modal, deliberately separate
@@ -65,8 +67,9 @@ export class BillyQuestScene extends Phaser.Scene {
   private openJournal(): void {
     this.state = gameStore.getState();
     const chapter = this.activeChapter();
-    const activeIndex = chapter.quests.findIndex((quest) => quest.id === this.state.activeQuestId);
-    this.selectedQuestIndex = activeIndex >= 0 ? activeIndex : 0;
+    const defaultQuestId = selectDefaultQuestId(this.state);
+    const defaultIndex = chapter.quests.findIndex((quest) => quest.id === defaultQuestId);
+    this.selectedQuestIndex = defaultIndex >= 0 ? defaultIndex : 0;
     this.resetArmedQuestId = undefined;
     if (!this.isOpen) {
       this.isOpen = true;
@@ -101,6 +104,10 @@ export class BillyQuestScene extends Phaser.Scene {
     this.selectedQuestIndex = Phaser.Math.Clamp(this.selectedQuestIndex, 0, Math.max(0, chapter.quests.length - 1));
     const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0]!;
     const status = selectQuestState(selected, this.state);
+    const action = selectQuestJournalAction(selected, {
+      ...this.state,
+      replayComplete: this.state.replayQuestId === selected.id && this.state.questStage === "complete",
+    });
     const policy = createPresentationPolicy(this.state.settings);
 
     scrapbookText(this, this.content, 68, 119, "QUESTS WITH BILLY", {
@@ -139,6 +146,7 @@ export class BillyQuestScene extends Phaser.Scene {
       }, policy.textScale);
     });
     this.listPanel.setContentHeight(Math.max(276, chapter.quests.length * 42 + 4));
+    this.listPanel.scrollIntoView(198 + this.selectedQuestIndex * 42, 38);
 
     scrapbookCard(this, this.content, 356, 188, 506, 292, 0xfff8df, false);
     scrapbookText(this, this.content, 380, 207, `${selected.kind.toUpperCase()} QUEST`, {
@@ -157,7 +165,7 @@ export class BillyQuestScene extends Phaser.Scene {
     }, policy.textScale);
     this.fitText(detail, 450, 48, 10);
 
-    if (status === "active") {
+    if (action === "continue-quest") {
       this.button(380, 397, "CONTINUE QUEST", () => this.closeJournal(), 210);
       const armed = this.resetArmedQuestId === selected.id;
       this.button(610, 397, armed ? "CONFIRM RESET" : "RESET QUEST", () => this.resetQuest(selected), 220, armed ? "#c65246" : "#d69b62");
@@ -165,13 +173,21 @@ export class BillyQuestScene extends Phaser.Scene {
         armed ? "Reset starts this quest over and removes its temporary quest progress." : "Reset is available even while this quest is in progress.", {
           fontSize: "11px", color: armed ? "#a43732" : "#76624f", fontStyle: "italic", wordWrap: { width: 450 },
         }, policy.textScale);
-    } else if (status === "available" && selected.implemented) {
+    } else if (action === "start-quest" && selected.implemented) {
       this.button(610, 397, "START QUEST", () => this.playQuest(selected), 220);
-    } else if (status === "completed" && selected.implemented) {
+    } else if (action === "replay-quest" && selected.implemented) {
       this.button(610, 397, "REPLAY QUEST", () => this.playQuest(selected), 220);
+    } else if (action === "continue-replay") {
+      this.button(380, 397, "CONTINUE REPLAY", () => this.closeJournal(), 210);
+      this.button(610, 397, "RETURN TO ADVENTURE", () => this.returnToAdventure(), 220, "#b8d6a4");
+    } else if (action === "return-to-adventure") {
+      this.button(500, 397, "RETURN TO CURRENT ADVENTURE", () => this.returnToAdventure(), 330, "#b8d6a4");
     } else {
-      scrapbookText(this, this.content, 610, 412, status === "locked" ? "LOCKED" : "NOT AVAILABLE YET", {
+      const replayBlocked = this.state.replayQuestId !== null && selected.id !== this.state.replayQuestId;
+      scrapbookText(this, this.content, 380, 402,
+        replayBlocked ? "Return to your saved adventure before starting another quest." : status === "locked" ? "LOCKED" : "NOT AVAILABLE YET", {
         fontSize: "13px", color: "#a34237", fontStyle: "bold",
+        wordWrap: { width: 450 },
       }, policy.textScale);
     }
     this.focus.refresh();
@@ -197,13 +213,20 @@ export class BillyQuestScene extends Phaser.Scene {
 
   private playQuest(quest: QuestDefinition): void {
     const status = selectQuestState(quest, this.state);
-    if (status === "locked" || status === "active" || !quest.implemented) return;
+    // Pointer and controller callbacks can outlive a render. Do not let a
+    // stale action start or replace another active replay.
+    if (gameStore.isReplaying() || status === "locked" || status === "active" || status === "replaying" || !quest.implemented) return;
     const oldMap = gameStore.getState().currentMap;
     if (status === "completed") gameStore.startQuestReplay(quest.id);
     else gameStore.setActiveQuest(quest.chapterId, quest.id);
     gameStore.setCurrentMap("neighborhood");
     this.closeJournal();
     this.relaunchNeighborhood(oldMap);
+  }
+
+  private returnToAdventure(): void {
+    this.closeJournal();
+    returnToCurrentAdventure(this);
   }
 
   private resetQuest(quest: QuestDefinition): void {
@@ -236,14 +259,17 @@ export class BillyQuestScene extends Phaser.Scene {
   }
 
   private statusLabel(status: ReturnType<typeof selectQuestState>): string {
-    return status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
+    return status === "replaying" ? "↻ REPLAYING" : status === "completed" ? "✓ COMPLETED" : status === "active" ? "● ACTIVE" : status === "available" ? "○ AVAILABLE" : "🔒 LOCKED";
   }
 
   private statusColor(status: ReturnType<typeof selectQuestState>): string {
-    return status === "completed" || status === "active" ? "#315f4c" : status === "available" ? "#275c73" : "#a34237";
+    return status === "completed" || status === "active" || status === "replaying" ? "#315f4c" : status === "available" ? "#275c73" : "#a34237";
   }
 
   private questDetail(quest: QuestDefinition, status: ReturnType<typeof selectQuestState>): string {
+    if (status === "replaying") return this.state.questStage === "complete"
+      ? "Replay complete. Return to your current adventure when you are ready."
+      : `Replay objective: ${getObjective(this.state.questStage, this.state.activeQuestId)}`;
     if (status === "completed") return "Complete. Replaying this memory leaves your real adventure untouched.";
     if (status === "active") return `Current objective: ${getObjective(this.state.questStage, this.state.activeQuestId)}`;
     if (status === "available") return "Ready to begin whenever you are.";

@@ -129,7 +129,7 @@ describe("GamePlatformAdapter identity", () => {
 });
 
 describe("GamePlatformAdapter leaderboards", () => {
-  it("submits a completed time and returns up to three other players", async () => {
+  it("submits a completed time and returns the player's best plus three other players", async () => {
     const submit = vi.fn(async () => undefined);
     const get = vi.fn(async () => ({ entries: [
       { userId: "player-1", nickname: "Molly", value: 12_000, rank: 1 },
@@ -143,6 +143,7 @@ describe("GamePlatformAdapter leaderboards", () => {
     await adapter.initializeIdentity();
 
     await expect(adapter.submitLeaderboardTime("mushrooms", 12_000)).resolves.toEqual([
+      { userId: "player-1", nickname: "Molly", value: 12_000, rank: 1 },
       { userId: "player-2", nickname: "June", value: 12_300, rank: 2 },
       { userId: "player-3", nickname: "Sam", value: 12_800, rank: 3 },
       { userId: "player-4", nickname: "Bea", value: 13_100, rank: 4 },

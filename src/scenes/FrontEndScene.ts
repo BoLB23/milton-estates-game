@@ -9,6 +9,7 @@ import { SCRAPBOOK, scrapbookButton, scrapbookCard, scrapbookText, TextFocusCont
 import { miltonCloudSaves, gamePlatform } from "../platform/integration";
 import type { GameSaveMetadata, GamePlatformIdentityState } from "../platform/GamePlatformAdapter";
 import { toPlayerProfile } from "../platform/playerProfile";
+import { PlayerAvatar } from "../world/PlayerAvatar";
 
 type FrontPage = "saves" | "settings";
 type SlotPreview = { metadata: GameSaveMetadata; save?: MiltonCloudSave };
@@ -33,6 +34,7 @@ export class FrontEndScene extends Phaser.Scene {
   private savesLoading = false;
   private saveError?: string;
   private confirmation?: { kind: "reset" | "delete"; slotKey: string };
+  private profilePreview?: PlayerAvatar;
 
   constructor() { super("front-end"); }
 
@@ -54,6 +56,8 @@ export class FrontEndScene extends Phaser.Scene {
   }
 
   private render(): void {
+    this.profilePreview?.destroy();
+    this.profilePreview = undefined;
     this.content.removeAll(true);
     this.focus.reset();
     this.drawDesk();
@@ -226,13 +230,13 @@ export class FrontEndScene extends Phaser.Scene {
   }
 
   private drawProfilePreview(x: number, y: number): void {
-    const profile = gameStore.getPlayerProfile();
-    const color = Phaser.Display.Color.HexStringToColor(profile?.tshirtColor?.startsWith("#") ? profile.tshirtColor : "#4f8cc9").color;
-    const g = this.add.graphics();
-    g.fillStyle(0xf1c39f).fillCircle(x, y - 12, 18);
-    g.fillStyle(0x4a332a).fillRoundedRect(x - 18, y - 31, 36, 12, 5);
-    g.fillStyle(color).fillRoundedRect(x - 20, y + 5, 40, 35, 8);
-    this.content.add(g);
+    this.profilePreview = PlayerAvatar.createPreview(this, {
+      x,
+      y: y + 32,
+      scale: 0.58,
+      profile: gameStore.getPlayerProfile(),
+    });
+    this.content.add([...this.profilePreview.getRenderSprites()]);
   }
 
   private renderSettings(): void {
@@ -272,6 +276,8 @@ export class FrontEndScene extends Phaser.Scene {
 
   private cleanup(): void {
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
+    this.profilePreview?.destroy();
+    this.profilePreview = undefined;
     this.unsubscribePlatformIdentity?.();
     this.unsubscribePlatformIdentity = undefined;
   }

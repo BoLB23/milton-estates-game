@@ -1,0 +1,16 @@
+{
+  "name": "Milton Estates",
+  "short_name": "Milton Estates",
+  "start_url": "./",
+  "display": "standalone",
+  "theme_color": "#102e28",
+  "background_color": "#102e28",
+  "icons": [
+    {
+      "src": "./assets/maps/milton-estates-new.png",
+      "sizes": "1448x1086",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

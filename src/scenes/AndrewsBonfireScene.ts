@@ -2,6 +2,8 @@ import Phaser from "phaser";
 
 import { gameStore } from "../game/GameStore";
 import { createPresentationPolicy, type PresentationPolicy } from "../presentation/presentationPolicy";
+import { CharacterFactory } from "../world/CharacterFactory";
+import { PlayerAvatar } from "../world/PlayerAvatar";
 
 export const ANDREWS_BONFIRE_SCENE_KEY = "andrews_bonfire";
 
@@ -28,6 +30,8 @@ const CUTSCENE: readonly BonfireBeat[] = [
   { speaker: "Andrew", text: "He's fine. He can try again next time. Your turn." },
   { speaker: "Billy", text: "Take a puff, then get the Dorito from the fire. If you can do that, you're crew." },
   { speaker: "You", text: "You take a puff. The fire stretches upward—and the whole backyard falls away." },
+  { speaker: "You", text: "Out of the smoke, a towering shape rises — Don Rossi, and his eyes are locked right on you." },
+  { speaker: "Don Rossi", text: "You don't get the Dorito without going through me first, kid. Better start running." },
 ];
 
 /**
@@ -99,18 +103,17 @@ export class AndrewsBonfireScene extends Phaser.Scene {
   }
 
   private drawPeople(): void {
-    const people: Array<[number, number, string, number]> = [
-      [238, 274, "JEREMY", 0x75a8d7], [352, 198, "ANDREW", 0x8ebc73], [606, 198, "BILLY", 0xd27b55],
-      [722, 274, "SCHWARTZ", 0xa98acf], [480, 337, "YOU", 0xe4d2a1],
+    const people: Array<[number, number, "jeremy" | "andrew" | "billy" | "schwartz", string]> = [
+      [238, 274, "jeremy", "JEREMY"], [352, 198, "andrew", "ANDREW"], [606, 198, "billy", "BILLY"],
+      [722, 274, "schwartz", "SCHWARTZ"],
     ];
-    for (const [x, y, name, shirt] of people) {
-      const person = this.add.graphics().setDepth(10);
-      person.fillStyle(0xd6a27f).fillCircle(x, y, 15);
-      person.fillStyle(0x332a2a).fillRect(x - 13, y + 14, 26, 31);
-      person.fillStyle(shirt).fillRoundedRect(x - 15, y + 11, 30, 35, 6);
-      person.fillStyle(0x19272d).fillRect(x - 12, y + 46, 9, 22).fillRect(x + 3, y + 46, 9, 22);
+    for (const [x, y, id, name] of people) {
+      CharacterFactory.createNpc(this, { id, x, y: y + 56, depth: 10, scale: id === "billy" ? 0.26 : 0.2 });
       this.add.text(x, y + 76, name, { fontFamily: "monospace", fontSize: `${this.policy.fontSize(10)}px`, color: "#edf3de", fontStyle: "bold" }).setOrigin(0.5).setDepth(12);
     }
+    const player = PlayerAvatar.createPreview(this, { x: 480, y: 393, scale: 0.32, depth: 10, profile: gameStore.getPlayerProfile() });
+    this.add.text(480, 413, "YOU", { fontFamily: "monospace", fontSize: `${this.policy.fontSize(10)}px`, color: "#edf3de", fontStyle: "bold" }).setOrigin(0.5).setDepth(12);
+    void player;
   }
 
   private drawFlame(): void {

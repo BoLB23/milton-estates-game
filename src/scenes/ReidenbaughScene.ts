@@ -10,7 +10,8 @@ import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
 import { PaperAirplaneRelayController } from "../world/paperAirplaneRelay/PaperAirplaneRelayController";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BaseExplorationScene } from "./BaseExplorationScene";
-import { finishLeaderboardTimer, leaderboardLines, startLeaderboardTimer } from "../platform/leaderboards";
+import { finishLeaderboardTimer, leaderboardSummaryLines, startLeaderboardTimer } from "../platform/leaderboards";
+import { CharacterFactory } from "../world/CharacterFactory";
 
 /** Reidenbaugh Elementary campus, including the seeded destination chase. */
 export class ReidenbaughScene extends BaseExplorationScene {
@@ -111,9 +112,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
     const selected = selectRyanLoop(REIDENBAUGH_CHASE_ROUTES.map((route) => route.id), seed, 0);
     const route = REIDENBAUGH_CHASE_ROUTES.find((candidate) => candidate.id === selected.loopId)!;
     const start = this.tiledWorld.point(route.waypoints[0]!.objectId);
-    this.ryan = this.physics.add.sprite(start.x, start.y, "ryan")
-      .setScale(1.2)
-      .setDepth(49)
+    this.ryan = CharacterFactory.styleNpc(this.physics.add.sprite(start.x, start.y, "ryan"), { id: "ryan", depth: 49 })
       .setName("ryan-school-chase");
     this.follower = new RyanRouteFollower({
       time: this.time,
@@ -156,10 +155,10 @@ export class ReidenbaughScene extends BaseExplorationScene {
       gameEvents.emit(EVENT.toast, "Catch Ryan complete — new objective: Explore Bent Creek.");
       this.mountPostQuest();
       void finishLeaderboardTimer("chaseRyan").then((entries) => {
-        const lines = leaderboardLines(entries);
+        const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id);
         this.showDialogue([{
           speaker: "Leaderboard",
-          text: lines.length ? `Top riders:\n${lines.join("\n")}` : "Chase Ryan time saved. No other leaderboard times yet.",
+          text: `Catch Ryan scores:\n${lines.join("\n")}`,
         }]);
       });
     });
@@ -170,9 +169,7 @@ export class ReidenbaughScene extends BaseExplorationScene {
     this.setScriptedTransportOverride(null);
     const post = this.tiledWorld.point("ryan_post");
     if (!this.ryan) {
-      this.ryan = this.physics.add.sprite(post.x, post.y, "ryan")
-        .setScale(1.2)
-        .setDepth(49);
+      this.ryan = CharacterFactory.styleNpc(this.physics.add.sprite(post.x, post.y, "ryan"), { id: "ryan", depth: 49 });
     } else {
       this.ryan.setPosition(post.x, post.y).setVelocity(0, 0);
     }

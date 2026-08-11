@@ -2,9 +2,10 @@ import Phaser from "phaser";
 
 import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/events";
 import { gameStore } from "../game/GameStore";
+import { canLaunchMinigameReplay } from "../game/minigames";
 import type { MapId } from "../game/types";
 import { gamePlatform } from "../platform/integration";
-import { leaderboardLines, submitLeaderboardTime } from "../platform/leaderboards";
+import { leaderboardSummaryLines, submitLeaderboardTime, formatLeaderboardTime } from "../platform/leaderboards";
 
 const MAX_RACE_MS = 60_000;
 const FINISH_DISTANCE = 720;
@@ -40,11 +41,6 @@ const MICKEY_SPEED = FINISH_DISTANCE / MICKEY_FINISH_SECONDS;
 
 type RacePhase = "countdown" | "racing" | "result";
 
-function raceTime(ms: number): string {
-  const seconds = Math.max(0, ms) / 1000;
-  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
-}
-
 /** Full-screen, touch-friendly drag race unlocked at the Bent Creek gate. */
 export class MickeyDragRaceScene extends Phaser.Scene {
   private returnMap: MapId = "bent_creek";
@@ -66,7 +62,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
   private gasHeld = false;
   private touchGasHeld = false;
   private playerCar!: Phaser.GameObjects.Graphics;
-  private mickeyCar!: Phaser.GameObjects.Graphics;
+  private mickeyCar!: Phaser.GameObjects.Image;
   private rpmGauge!: Phaser.GameObjects.Graphics;
   private rpmNeedle!: Phaser.GameObjects.Graphics;
   private rpmValueText!: Phaser.GameObjects.Text;
@@ -107,6 +103,12 @@ export class MickeyDragRaceScene extends Phaser.Scene {
   }
 
   public create(): void {
+    // Quest replay snapshots have no nested replay context. Refuse a stale
+    // launch before recording a best time or changing any scene/UI state.
+    if (!canLaunchMinigameReplay(gameStore.getState())) {
+      this.scene.start(this.returnMap);
+      return;
+    }
     // A direct mini-game launch is still real play; this remains idempotent
     // when the surrounding exploration session is already active.
     void gamePlatform.beginPlaySession();
@@ -116,9 +118,8 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.drawRoad();
     this.drawStartLine();
     this.playerCar = this.add.graphics().setDepth(4);
-    this.mickeyCar = this.add.graphics().setDepth(4);
+    this.mickeyCar = this.add.image(0, 0, "mickey-car-right").setOrigin(0.5, 0.75).setDisplaySize(128, 115).setDepth(4);
     this.drawCar(this.playerCar, 0, 0, this.playerGearColor(), false);
-    this.drawCar(this.mickeyCar, 0, 0, 0xbfc7cd, true);
     this.playerCar.setPosition(START_X, 354);
     this.mickeyCar.setPosition(START_X, 253);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, 540);
@@ -210,7 +211,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.instructionText = this.add.text(505, 418, "HOLD ACT / GAS • JOYSTICK UP / DOWN SHIFTS", {
       fontFamily: "monospace", fontSize: "10px", color: "#d8e6d4", fontStyle: "bold", fixedWidth: 270, align: "center",
     }).setOrigin(0.5).setScrollFactor(0).setDepth(18);
-    this.timerText = this.add.text(505, 442, "0:00.00", { fontFamily: "monospace", fontSize: "14px", color: "#fff3c9", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(16);
+    this.timerText = this.add.text(505, 442, "0.00s", { fontFamily: "monospace", fontSize: "14px", color: "#fff3c9", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(16);
     this.gasIndicator = this.add.text(825, 461, "THROTTLE CLOSED", {
       fontFamily: "monospace", fontSize: "9px", color: "#9bb7a3", fontStyle: "bold",
     }).setOrigin(0.5).setScrollFactor(0).setDepth(18);
@@ -327,7 +328,7 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.updateGasFeedback();
     this.gearText.setText(`GEAR ${this.gear}  •  PERFECT ${this.perfectShifts}/${REQUIRED_PERFECT_SHIFTS}`);
     this.speedText.setText(`SPEED ${this.speedMph} MPH`);
-    this.timerText.setText(raceTime(this.elapsedMs));
+    this.timerText.setText(formatLeaderboardTime(this.elapsedMs));
     const heatRatio = Phaser.Math.Clamp(this.engineHeatMs / ENGINE_HEAT_LIMIT_MS, 0, 1);
     this.engineHeatFill.width = 186 * heatRatio;
     this.engineHeatFill.setFillStyle(heatRatio >= 0.8 ? 0xc45045 : heatRatio >= 0.45 ? 0xe0b84d : 0x5d9b68);
@@ -361,19 +362,19 @@ export class MickeyDragRaceScene extends Phaser.Scene {
     this.gasHeld = false;
     this.touchGasHeld = false;
     gameStore.recordMickeyDragRace(Math.round(this.elapsedMs), won);
+    const personalBest = gameStore.getMickeyDragRaceRecord().bestTimeMs;
     this.statusText.setText(message).setFontSize(30);
-    const finalTime = raceTime(this.elapsedMs);
+    const finalTime = formatLeaderboardTime(this.elapsedMs);
     const detail = this.engineBlown
       ? `ENGINE BLOWN • FINAL ${finalTime}`
       : won
-      ? `FINAL ${finalTime} • YOU WIN • ${this.perfectShifts}/${REQUIRED_PERFECT_SHIFTS} PERFECT`
+      ? `FINAL ${finalTime} • BEST ${personalBest ? formatLeaderboardTime(personalBest) : finalTime} • YOU WIN • ${this.perfectShifts}/${REQUIRED_PERFECT_SHIFTS} PERFECT`
       : `FINAL ${finalTime} • ${this.mickeyFinished ? "MICKEY WON" : "TIME UP"} • ${this.perfectShifts}/${REQUIRED_PERFECT_SHIFTS} PERFECT`;
     this.instructionText.setText(detail).setColor(won ? "#fff0a3" : "#ffd1c7");
     if (won) {
       void submitLeaderboardTime("mickeyDragRace", this.elapsedMs).then((entries) => {
-        const lines = leaderboardLines(entries);
-        if (lines.length) this.instructionText.setText(`${detail}\nTOP TIMES\n${lines.join("\n")}`).setColor("#fff0a3");
-        else this.instructionText.setText(`${detail}\nTIME SAVED — NO OTHER LEADERBOARD TIMES YET`).setColor("#fff0a3");
+        const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id, 2, personalBest);
+        this.instructionText.setFontSize(9).setText(lines.join("\n")).setColor("#fff0a3");
       });
     }
     const retry = this.button(630, 510, 200, 42, "RACE AGAIN", "TAP TO CHASE YOUR BEST", 0x37764e);

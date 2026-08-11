@@ -11,6 +11,7 @@ export interface MinigameDefinition {
 }
 
 type MinigameProgress = Pick<GameState, "completedQuestIds" | "secrets">;
+type MinigameLaunchContext = Pick<GameState, "replayQuestId">;
 
 export const MINIGAMES: readonly MinigameDefinition[] = [
   {
@@ -36,4 +37,16 @@ export function isMinigameUnlocked(id: MinigameId, state: MinigameProgress): boo
 
 export function selectUnlockedMinigames(state: MinigameProgress): readonly MinigameDefinition[] {
   return MINIGAMES.filter((game) => isMinigameUnlocked(game.id, state));
+}
+
+/**
+ * Quest replays deliberately have no nested replay stack. A standalone
+ * mini-game replay must therefore begin from canonical adventure state;
+ * quest-owned challenges pass `false` and remain part of that quest replay.
+ */
+export function canLaunchMinigameReplay(
+  state: MinigameLaunchContext,
+  replayRequested = true,
+): boolean {
+  return !replayRequested || state.replayQuestId === null;
 }

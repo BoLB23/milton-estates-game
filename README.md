@@ -76,7 +76,7 @@ Controls:
 - Talk, inspect, and travel: E, Space, or click the interaction prompt
 - Open Billy's Backpack: Escape
 
-The front end opens as a childhood scrapbook: Title → Chapter Scrapbook → Quest Journal → Start / Continue / Replay. Completed-quest replay uses a temporary in-memory copy and never overwrites canonical progress.
+The front end opens as a childhood scrapbook: Title → Chapter Scrapbook → Quest Journal → Start / Continue / Replay. Completed-quest replay resets only the selected quest in a temporary in-memory copy, keeps the player's unlocked world and durable rewards available, and never overwrites canonical progress.
 
 The Backpack contains the quest history, local map, save/restart controls, and settings.
 
@@ -102,6 +102,8 @@ During development builds, F2 overlays authored collision and map anchors, F3 to
 - `docs/` contains the durable concept, architecture and art contracts, provenance, and archived implementation records.
 
 The illustrated presentation is governed by [the art contract](docs/art-direction.md), with a generated fictionalized Chapter 1 cover. Stable interaction and quest IDs remain independent of map artwork. Completed production checkpoints and their historical temporary-art notes are preserved in the [production-polish archive](docs/archive/production-polish-manifest.md).
+
+Character, vehicle, and Creek Clubhouse source art is normalized with `npm run process:art`; see [the art asset architecture](docs/ART_ASSET_ARCHITECTURE.md) before changing crop regions or adding a character.
 
 See [content architecture and authoring](docs/content-architecture.md) before adding a chapter or quest.
 
