@@ -104,6 +104,10 @@ export class BillyQuestScene extends Phaser.Scene {
     this.selectedQuestIndex = Phaser.Math.Clamp(this.selectedQuestIndex, 0, Math.max(0, chapter.quests.length - 1));
     const selected = chapter.quests[this.selectedQuestIndex] ?? chapter.quests[0]!;
     const status = selectQuestState(selected, this.state);
+    const isOpeningQuest = selected.id === "missing_controller"
+      && status === "active"
+      && this.state.questStage === "talk_to_billy"
+      && !this.state.replayQuestId;
     const action = selectQuestJournalAction(selected, {
       ...this.state,
       replayComplete: this.state.replayQuestId === selected.id && this.state.questStage === "complete",
@@ -165,7 +169,13 @@ export class BillyQuestScene extends Phaser.Scene {
     }, policy.textScale);
     this.fitText(detail, 450, 48, 10);
 
-    if (action === "continue-quest") {
+    if (isOpeningQuest) {
+      this.button(610, 397, "START QUEST", () => this.beginOpeningQuest(), 220);
+      scrapbookText(this, this.content, 380, 452,
+        "Meet Jeremy outside his house to start the controller mystery.", {
+          fontSize: "11px", color: "#76624f", fontStyle: "italic", wordWrap: { width: 450 },
+        }, policy.textScale);
+    } else if (action === "continue-quest") {
       this.button(380, 397, "CONTINUE QUEST", () => this.closeJournal(), 210);
       const armed = this.resetArmedQuestId === selected.id;
       this.button(610, 397, armed ? "CONFIRM RESET" : "RESET QUEST", () => this.resetQuest(selected), 220, armed ? "#c65246" : "#d69b62");
@@ -222,6 +232,13 @@ export class BillyQuestScene extends Phaser.Scene {
     gameStore.setCurrentMap("neighborhood");
     this.closeJournal();
     this.relaunchNeighborhood(oldMap);
+  }
+
+  /** The first mission is active in a new save, but begins only by this explicit journal action. */
+  private beginOpeningQuest(): void {
+    if (!gameStore.beginMissingControllerQuest()) return;
+    this.closeJournal();
+    gameEvents.emit(EVENT.toast, "First quest started — talk to Jeremy outside his house.");
   }
 
   private returnToAdventure(): void {

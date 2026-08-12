@@ -209,7 +209,7 @@ export class BentCreekScene extends BaseExplorationScene {
   private mountSchwartz(): void {
     if (this.schwartzVisual) return;
     const point = this.tiledWorld.point("golf_cart_path_10");
-    const body = CharacterFactory.createNpc(this, { id: "schwartz", x: 0, y: 0, scale: 0.16 });
+    const body = CharacterFactory.createNpc(this, { id: "schwartz", x: 0, y: 0, scale: 0.2 });
     const name = this.add.text(0, 49, "SCHWARTZ", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#fff5d6",
       backgroundColor: "#302c42dd", padding: { x: 5, y: 2 },
@@ -269,7 +269,7 @@ export class BentCreekScene extends BaseExplorationScene {
     if (this.mickeyVisual) return;
     const entry = this.tiledWorld.point("gate_entry");
     const car = this.add.image(0, 0, "mickey-car-left").setOrigin(0.5, 0.75).setDisplaySize(128, 115);
-    const mickey = CharacterFactory.createNpc(this, { id: "mickey", x: 72, y: -20, scale: 0.16 });
+    const mickey = CharacterFactory.createNpc(this, { id: "mickey", x: 72, y: -20, scale: 0.2 });
     const name = this.add.text(72, -68, "MICKEY", {
       fontFamily: "Trebuchet MS, Arial, sans-serif", fontSize: "11px", fontStyle: "bold", color: "#fff5d6",
       backgroundColor: "#173d32dd", padding: { x: 4, y: 2 },

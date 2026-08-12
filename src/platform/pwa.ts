@@ -35,11 +35,19 @@ export function setupPwaNavigation(): void {
 
   exitLink.href = getCatalogUrl();
   const updateViewport = (): void => {
-    document.documentElement.style.setProperty("--viewport-width", `${window.innerWidth}px`);
-    document.documentElement.style.setProperty("--viewport-height", `${window.innerHeight}px`);
+    // Mobile browsers can report a layout viewport taller than the actually
+    // visible area during PWA launch and orientation changes. Phaser FITs to
+    // #game, so size that parent from the visual viewport whenever possible.
+    const viewport = window.visualViewport;
+    const width = viewport?.width ?? window.innerWidth;
+    const height = viewport?.height ?? window.innerHeight;
+    document.documentElement.style.setProperty("--viewport-width", `${Math.round(width)}px`);
+    document.documentElement.style.setProperty("--viewport-height", `${Math.round(height)}px`);
     document.documentElement.classList.toggle("standalone", isStandaloneMode(window));
   };
   updateViewport();
   window.addEventListener("resize", updateViewport, { passive: true });
+  window.addEventListener("orientationchange", updateViewport, { passive: true });
+  window.visualViewport?.addEventListener("resize", updateViewport, { passive: true });
   window.matchMedia(STANDALONE_MEDIA_QUERY).addEventListener?.("change", updateViewport);
 }

@@ -48,7 +48,7 @@ const INTERACTION_IDS = [
 
 const BILLY_QUEST_ACTION_ID = "billy_home";
 
-export type BillyInteractionMode = "first_quest_intro" | "quest_action" | "quest_journal";
+export type BillyInteractionMode = "quest_action" | "quest_journal";
 
 export function createBillyQuestChoices(actionLabel: string): readonly ChoiceOption[] {
   return [
@@ -69,13 +69,10 @@ export function createBillyIdleChoices(): readonly ChoiceOption[] {
 
 /** Pure routing rule used by the single Billy world interaction. */
 export function selectBillyInteractionMode(
-  activeQuestId: string,
-  questStage: string,
+  _activeQuestId: string,
+  _questStage: string,
   questActionAvailable: boolean,
 ): BillyInteractionMode {
-  if (activeQuestId === "missing_controller" && questStage === "talk_to_billy") {
-    return "first_quest_intro";
-  }
   return questActionAvailable ? "quest_action" : "quest_journal";
 }
 
@@ -218,20 +215,9 @@ export class NeighborhoodQuestController {
       });
       return;
     }
-    if (mode === "first_quest_intro") {
-      const nickname = gameStore.getPlayerProfile()?.nickname ?? "neighbor";
-      this.host.showDialogue([
-        { speaker: "Billy", text: `Hey, ${nickname}! Welcome to Wheatfield Drive.` },
-        { speaker: "Billy", text: "I keep track of neighborhood quests. Come back anytime you want a new one—or need to restart one." },
-        { speaker: "Billy", text: "First up: Jeremy lost his Xbox controller. Talk to him and find out what happened." },
-      ], () => {
-        gameStore.beginMissingControllerQuest();
-        this.host.refreshQuestBindings();
-      });
-      return;
-    }
-    // No urgent quest handoff right now — offer the journal alongside every
-    // Milton Estates leaderboard instead of jumping straight into the journal.
+    // Billy is the journal host. Even the opening mission starts only after
+    // the player explicitly chooses it in the journal; meeting him must never
+    // advance the active quest as a side effect of opening its menu.
     this.host.showChoice({
       speaker: "Billy",
       prompt: "What do you want to do?",

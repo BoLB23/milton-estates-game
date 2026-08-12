@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createBillyQuestChoices, selectBillyInteractionMode } from "./NeighborhoodQuestController";
 
 describe("Billy's single neighborhood interaction", () => {
-  it("introduces the first quest before opening management", () => {
+  it("opens the journal before the first quest starts", () => {
     expect(selectBillyInteractionMode("missing_controller", "talk_to_billy", false))
-      .toBe("first_quest_intro");
+      .toBe("quest_journal");
   });
 
   it("prioritizes an available quest handoff at Billy's location", () => {

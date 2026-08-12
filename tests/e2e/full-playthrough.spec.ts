@@ -116,8 +116,9 @@ async function startNewGame(page: Page): Promise<void> {
   await advanceDialogue(page, 4); // Moving-in intro is skippable.
   await page.waitForTimeout(1_900);
   await waitForSave(page, { questStage: "talk_to_billy", currentMap: "neighborhood" });
-  await teleportAndInteract(page); // Billy assigns the first controller quest.
-  await advanceDialogue(page, 3);
+  await teleportAndInteract(page); // Billy opens the quest journal.
+  await page.waitForTimeout(180);
+  await page.keyboard.press("Space"); // Explicitly start Missing Controller.
   await waitForSave(page, {
     questStage: "talk_to_jeremy",
     questHistory: ["missing_controller.started"],
@@ -553,6 +554,26 @@ test("catalog exit stays out of gameplay and is available from the portrait prom
   const landscapePage = await landscapeContext.newPage();
   await landscapePage.goto("/");
   await expect(landscapePage.locator("[data-exit-to-catalog]")).toBeHidden();
+  await expect.poll(() => landscapePage.evaluate(() => {
+    const canvas = document.querySelector("canvas")?.getBoundingClientRect();
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      canvasFits: Boolean(canvas
+        && canvas.left >= 0
+        && canvas.top >= 0
+        && canvas.right <= window.innerWidth
+        && canvas.bottom <= window.innerHeight),
+    };
+  })).toMatchObject({
+    scrollWidth: 844,
+    scrollHeight: 390,
+    viewportWidth: 844,
+    viewportHeight: 390,
+    canvasFits: true,
+  });
   await landscapeContext.close();
 
   const portraitContext = await browser.newContext({

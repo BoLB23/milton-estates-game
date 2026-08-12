@@ -14,7 +14,10 @@ export class CharacterFactory {
   ): T {
     const { id, facing = "down", depth = sprite.y } = options;
     const scale = options.scale ?? (id === "billy" ? 0.26 : 0.2);
-    sprite.setOrigin(0.5, 0.9).setDepth(depth).setScale(scale);
+    // A spritesheet's base frame is the complete 384×1024 source image. Set
+    // a directional frame before playback so a briefly unavailable animation
+    // can never leave an NPC rendered as that full, oversized sheet.
+    sprite.setOrigin(0.5, 0.9).setDepth(depth).setScale(scale).setFrame(0);
     sprite.anims.play(`${id}-idle-${facing}`);
     return sprite;
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CharacterAssets, PLAYER_HAIR_TEXTURE_KEYS, registerCharacterAnimations } from "./characterAssets";
+import { CharacterFactory } from "./CharacterFactory";
 
 describe("character art registry", () => {
   it("keeps every named NPC on the shared directional contract", () => {
@@ -24,5 +25,21 @@ describe("character art registry", () => {
     ]);
     const legacyBillyTexture = ["assets/characters", "billy-hd-movement.png"].join("/");
     expect(Object.values(CharacterAssets)).not.toContain(legacyBillyTexture);
+  });
+
+  it("selects a directional NPC frame before starting its idle animation", () => {
+    const calls: string[] = [];
+    const sprite = {
+      y: 20,
+      setOrigin: () => { calls.push("origin"); return sprite; },
+      setDepth: () => { calls.push("depth"); return sprite; },
+      setScale: () => { calls.push("scale"); return sprite; },
+      setFrame: (frame: number) => { calls.push(`frame:${frame}`); return sprite; },
+      anims: { play: (key: string) => calls.push(`play:${key}`) },
+    };
+
+    CharacterFactory.styleNpc(sprite as never, { id: "andrew" });
+
+    expect(calls).toEqual(["origin", "depth", "scale", "frame:0", "play:andrew-idle-down"]);
   });
 });
