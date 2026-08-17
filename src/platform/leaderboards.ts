@@ -1,4 +1,4 @@
-import type { LeaderboardEntry } from "./GamePlatformAdapter";
+import type { LeaderboardDelivery, LeaderboardEntry } from "./GamePlatformAdapter";
 import { gamePlatform } from "./integration";
 
 export const LEADERBOARD_KEYS = {
@@ -13,25 +13,34 @@ export const LEADERBOARD_KEYS = {
 export const BAD_TRIP_SURVIVAL_CEILING_MS = 15 * 60 * 1_000;
 
 export type TimedLeaderboard = keyof typeof LEADERBOARD_KEYS;
-const starts = new Map<TimedLeaderboard, number>();
+const starts = new Map<TimedLeaderboard, { startedAt: number; invalidated: boolean }>();
+
+/** Competitive runs are cancelled on tab suspension; they cannot be paused for an exploitable score. */
+export function invalidateCompetitiveRunsForVisibility(): void {
+  for (const timer of starts.values()) timer.invalidated = true;
+}
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+  if (document.hidden) invalidateCompetitiveRunsForVisibility();
+});
 
 export function startLeaderboardTimer(board: TimedLeaderboard): void {
-  starts.set(board, performance.now());
+  starts.set(board, { startedAt: performance.now(), invalidated: false });
 }
 
 export function getLeaderboardElapsedMs(board: TimedLeaderboard): number | undefined {
   const startedAt = starts.get(board);
-  return startedAt === undefined ? undefined : Math.max(0, performance.now() - startedAt);
+  return startedAt === undefined || startedAt.invalidated ? undefined : Math.max(0, performance.now() - startedAt.startedAt);
 }
 
-export async function finishLeaderboardTimer(board: TimedLeaderboard): Promise<LeaderboardEntry[]> {
+export type TimedLeaderboardDelivery = LeaderboardDelivery | { status: "cancelled" };
+export async function finishLeaderboardTimer(board: TimedLeaderboard): Promise<TimedLeaderboardDelivery> {
   const startedAt = starts.get(board);
   starts.delete(board);
-  if (startedAt === undefined) return fetchLeaderboard(board, 25);
-  return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS[board], Math.max(1, Math.round(performance.now() - startedAt)));
+  if (startedAt === undefined || startedAt.invalidated) return { status: "cancelled" };
+  return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS[board], Math.max(1, Math.round(performance.now() - startedAt.startedAt)));
 }
 
-export function submitLeaderboardTime(board: TimedLeaderboard, milliseconds: number): Promise<LeaderboardEntry[]> {
+export function submitLeaderboardTime(board: TimedLeaderboard, milliseconds: number): Promise<LeaderboardDelivery> {
   return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS[board], Math.max(1, Math.round(milliseconds)));
 }
 
@@ -100,6 +109,14 @@ export function decodeBadTripSurvivalValue(encodedValue: number): number {
 }
 
 /** Submit exactly once when a run ends. Longer survival encodes to a lower SDK value. */
-export function submitBadTripSurvivalTime(survivalMs: number): Promise<LeaderboardEntry[]> {
+export function submitBadTripSurvivalTime(survivalMs: number): Promise<LeaderboardDelivery> {
   return gamePlatform.submitLeaderboardTime(LEADERBOARD_KEYS.badTripSurvival, encodeBadTripSurvivalValue(survivalMs));
+}
+
+export function leaderboardDeliveryLines(kind: "fastest" | "longest", delivery: TimedLeaderboardDelivery, currentUserId?: string, fallbackBestMs?: number): string[] {
+  if (delivery.status === "accepted") return leaderboardSummaryLines(kind, delivery.entries, currentUserId, 3, fallbackBestMs);
+  if (delivery.status === "cancelled") return ["Run cancelled while this tab was hidden. Start a fresh competitive run."];
+  if (delivery.status === "pending") return [delivery.detail === "offline" ? "Score saved locally — submission pending until you reconnect." : "Score submission is pending confirmation."];
+  if (delivery.status === "session-expired") return ["Score is pending. Sign in again from the catalog to submit it."];
+  return ["Score could not be submitted. Use Retry after reconnecting."];
 }

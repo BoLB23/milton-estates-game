@@ -5,7 +5,7 @@ import { gameStore } from "../game/GameStore";
 import { canLaunchMinigameReplay } from "../game/minigames";
 import type { MapId } from "../game/types";
 import { gamePlatform } from "../platform/integration";
-import { leaderboardSummaryLines, submitLeaderboardTime, formatLeaderboardTime } from "../platform/leaderboards";
+import { leaderboardDeliveryLines, submitLeaderboardTime, formatLeaderboardTime } from "../platform/leaderboards";
 
 const MAX_RACE_MS = 60_000;
 const FINISH_DISTANCE = 720;
@@ -372,8 +372,8 @@ export class MickeyDragRaceScene extends Phaser.Scene {
       : `FINAL ${finalTime} • ${this.mickeyFinished ? "MICKEY WON" : "TIME UP"} • ${this.perfectShifts}/${REQUIRED_PERFECT_SHIFTS} PERFECT`;
     this.instructionText.setText(detail).setColor(won ? "#fff0a3" : "#ffd1c7");
     if (won) {
-      void submitLeaderboardTime("mickeyDragRace", this.elapsedMs).then((entries) => {
-        const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id, 2, personalBest);
+      void submitLeaderboardTime("mickeyDragRace", this.elapsedMs).then((delivery) => {
+        const lines = leaderboardDeliveryLines("fastest", delivery, gameStore.getPlayerProfile()?.id, personalBest);
         this.instructionText.setFontSize(9).setText(lines.join("\n")).setColor("#fff0a3");
       });
     }

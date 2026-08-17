@@ -11,7 +11,7 @@ import {
   advanceMushroomStage,
   type MushroomQuestEvent,
 } from "../rules";
-import { finishLeaderboardTimer, leaderboardSummaryLines, startLeaderboardTimer } from "../../../../../../platform/leaderboards";
+import { finishLeaderboardTimer, leaderboardDeliveryLines, startLeaderboardTimer } from "../../../../../../platform/leaderboards";
 
 const INTERACTION_IDS = ["jeremy", "billy_home", "andrew"] as const;
 
@@ -101,8 +101,8 @@ export class MushroomNeighborhoodBinding implements QuestRuntimeBinding {
         this.host.refreshMushroomHunt();
       }
       if (current === "give_mushrooms_to_andrew" && next === "complete") {
-        void finishLeaderboardTimer("mushroomHunt").then((entries) => {
-          const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id);
+        void finishLeaderboardTimer("mushroomHunt").then((delivery) => {
+          const lines = leaderboardDeliveryLines("fastest", delivery, gameStore.getPlayerProfile()?.id);
           this.host.showDialogue([{
             speaker: "Leaderboard",
             text: `Mushroom Hunt scores:\n${lines.join("\n")}`,

@@ -4,7 +4,7 @@ import { EVENT, gameEvents, inputCapture, type InputActionEvent } from "../game/
 import { gameStore } from "../game/GameStore";
 import { canLaunchMinigameReplay } from "../game/minigames";
 import { createPresentationPolicy, type PresentationPolicy } from "../presentation/presentationPolicy";
-import { submitBadTripSurvivalTime, leaderboardSummaryLines, formatLeaderboardTime } from "../platform/leaderboards";
+import { submitBadTripSurvivalTime, leaderboardDeliveryLines, formatLeaderboardTime } from "../platform/leaderboards";
 import { inputState } from "./InputRouterScene";
 import { BAD_TRIP_PASS_MS, badTripDifficulty, stepBadTripPlayer, type BadTripPlatform, type BadTripState } from "./badTripCore";
 
@@ -318,9 +318,9 @@ export class BadTripScene extends Phaser.Scene {
     this.cameras.main.shake(this.policy.duration(240), this.policy.reducedMotion ? 0 : 0.012);
     this.showResult(result);
     const generation = this.runGeneration;
-    void submitBadTripSurvivalTime(result.elapsedMs).then((entries) => {
+    void submitBadTripSurvivalTime(result.elapsedMs).then((delivery) => {
       if (generation !== this.runGeneration || this.phase !== "result" || !this.leaderboardText?.active) return;
-      const lines = leaderboardSummaryLines("longest", entries, gameStore.getPlayerProfile()?.id);
+      const lines = leaderboardDeliveryLines("longest", delivery, gameStore.getPlayerProfile()?.id);
       this.leaderboardText.setText(lines.join("\n"));
     }).catch(() => {
       if (generation === this.runGeneration && this.leaderboardText?.active) {

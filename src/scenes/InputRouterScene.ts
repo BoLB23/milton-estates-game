@@ -54,6 +54,7 @@ export class InputRouterScene extends Phaser.Scene {
   private previousDirections = new Map<SemanticAction, boolean>();
   private touchReleases = new Map<HTMLElement, () => void>();
   private nextTouchControlId = 0;
+  private platformInputBlocked = false;
 
   constructor() { super("input-router"); }
 
@@ -61,6 +62,7 @@ export class InputRouterScene extends Phaser.Scene {
     window.addEventListener("keydown", this.handleKeyDown);
     window.addEventListener("keyup", this.handleKeyUp);
     window.addEventListener("blur", this.handleBlur);
+    gameEvents.on(EVENT.platformRecovery, this.handlePlatformRecovery, this);
     document.querySelectorAll<HTMLElement>("[data-game-action]").forEach((element) => {
       const action = element.dataset.gameAction as SemanticAction | undefined;
       if (!action) return;
@@ -201,6 +203,7 @@ export class InputRouterScene extends Phaser.Scene {
     token: string,
     contributesToMovement = source !== "gamepad",
   ): void {
+    if (this.platformInputBlocked) return;
     const changed = inputState.set(action, token, pressed, contributesToMovement);
     if (!changed) return;
     const event = { action, pressed, source } as const;
@@ -209,6 +212,11 @@ export class InputRouterScene extends Phaser.Scene {
   }
 
   private handleBlur = (): void => this.resetInputState();
+
+  private handlePlatformRecovery(state: "ready" | "reconnecting" | "offline" | "session-expired" | "failed" | "hidden"): void {
+    this.platformInputBlocked = state !== "ready";
+    if (this.platformInputBlocked) this.resetInputState();
+  }
 
   private resetInputState(): void {
     inputState.clear();
@@ -220,6 +228,7 @@ export class InputRouterScene extends Phaser.Scene {
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
     window.removeEventListener("blur", this.handleBlur);
+    gameEvents.off(EVENT.platformRecovery, this.handlePlatformRecovery, this);
     this.touchReleases.forEach((release) => release());
     this.touchReleases.clear();
     this.nextTouchControlId = 0;

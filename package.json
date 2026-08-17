@@ -18,7 +18,7 @@
     "check:full": "npm run check && npm run test:e2e"
   },
   "dependencies": {
-    "@bolb23/game-client-sdk": "0.1.0",
+    "@bolb23/game-client-sdk": "0.2.0",
     "phaser": "4.2.1"
   },
   "devDependencies": {

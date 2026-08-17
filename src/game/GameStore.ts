@@ -1726,7 +1726,12 @@ export class GameStore {
     return true;
   }
 
-  public saveNow(): void { this.update(this.replayState ?? this.state); }
+  /** Explicit saves report only confirmed server persistence as success. */
+  public async saveNow(): Promise<CloudSaveState<MiltonCloudSave>> {
+    this.update(this.replayState ?? this.state);
+    if (!this.cloudRepository || this.replayState) return this.cloudSaveState;
+    return this.cloudRepository.saveNow(this.getCloudSnapshot());
+  }
   public hasInventoryItem(item: string): boolean {
     const normalized = LEGACY_CONTROLLER_ITEMS.has(item) ? CONTROLLER_ITEM : item;
     return isItemId(normalized) && this.hasItem(normalized);

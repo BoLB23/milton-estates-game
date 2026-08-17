@@ -22,14 +22,10 @@ type MockCloudSave = { data: unknown; revision: number; createdAt: string; updat
 let e2eCloudSaves = new Map<string, MockCloudSave>();
 
 async function readSave(page: Page): Promise<BrowserSave | null> {
-  return page.evaluate(() => {
-    const cacheKey = Object.keys(localStorage).find((key) => key.startsWith("@game-platform/cloud-save/milton-estates/"));
-    const raw = cacheKey ? localStorage.getItem(cacheKey) : null;
-    if (!raw) return null;
-
-    const cached = JSON.parse(raw) as { data: BrowserSave };
-    const save = cached.data;
-    const questStage = save.activeQuestId === "andrew_mushroom_hunt"
+  void page;
+  const save = e2eCloudSaves.get("primary")?.data as BrowserSave | undefined;
+  if (!save) return null;
+  const questStage = save.activeQuestId === "andrew_mushroom_hunt"
       ? save.questProgress.mushrooms.stage
       : save.activeQuestId === "three_player_sports"
         ? save.questProgress.sports.stage
@@ -38,8 +34,7 @@ async function readSave(page: Page): Promise<BrowserSave | null> {
           : save.activeQuestId === "explore_bent_creek"
             ? save.questProgress.exploreBentCreek.stage
           : save.questProgress.missingControllerStage;
-    return { ...save, version: 8, questStage };
-  });
+  return { ...save, version: 8, questStage };
 }
 
 async function seedPrimaryCloudSave(
@@ -52,10 +47,7 @@ async function seedPrimaryCloudSave(
   e2eCloudSaves.clear();
   await page.goto("/");
   await startNewGame(page);
-  const cloudData = await page.evaluate(() => {
-    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("@game-platform/cloud-save/milton-estates/"));
-    return key ? (JSON.parse(localStorage.getItem(key)!) as { data: Record<string, unknown> }).data : undefined;
-  });
+  const cloudData = e2eCloudSaves.get("primary")?.data as Record<string, unknown> | undefined;
   expect(cloudData).toBeDefined();
   const save = cloudData as Record<string, unknown>;
   configure(save);
@@ -186,6 +178,10 @@ test.beforeEach(async ({ page }) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const now = "2026-08-06T12:00:00.000Z";
+    if (path.endsWith("/auth/session")) {
+      await route.fulfill({ json: { user: { id: "e2e-player", display_name: "Molly" }, expires_at: "2026-08-07T12:00:00.000Z" } });
+      return;
+    }
     if (path.endsWith("/me/player")) {
       await route.fulfill({ json: { user_id: "e2e-player", nickname: "Molly", haircut: "short", hair_color: "brown", tshirt_color: "blue", pants_color: "denim", shoe_color: "white" } });
       return;
@@ -342,10 +338,7 @@ test("preserves dialogue through pause", async ({ page }) => {
 test("cloud slots hydrate completed canonical progress without a returned controller", async ({ page }) => {
   await page.goto("/");
   await startNewGame(page);
-  const cloudData = await page.evaluate(() => {
-    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("@game-platform/cloud-save/milton-estates/"));
-    return key ? (JSON.parse(localStorage.getItem(key)!) as { data: Record<string, unknown> }).data : undefined;
-  });
+  const cloudData = e2eCloudSaves.get("primary")?.data as Record<string, unknown> | undefined;
   expect(cloudData).toBeDefined();
   const seeded = cloudData as Record<string, unknown>;
   seeded.activeQuestId = "missing_controller";

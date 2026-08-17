@@ -10,7 +10,7 @@ import { RyanRouteFollower } from "../world/ryanRide/RouteFollower";
 import { PaperAirplaneRelayController } from "../world/paperAirplaneRelay/PaperAirplaneRelayController";
 import { TiledRuntimeWorld } from "../world/tiledRuntime";
 import { BaseExplorationScene } from "./BaseExplorationScene";
-import { finishLeaderboardTimer, leaderboardSummaryLines, startLeaderboardTimer } from "../platform/leaderboards";
+import { finishLeaderboardTimer, leaderboardDeliveryLines, startLeaderboardTimer } from "../platform/leaderboards";
 import { CharacterFactory } from "../world/CharacterFactory";
 
 /** Reidenbaugh Elementary campus, including the seeded destination chase. */
@@ -154,8 +154,8 @@ export class ReidenbaughScene extends BaseExplorationScene {
     this.showDialogue([...RYAN_CAUGHT], () => {
       gameEvents.emit(EVENT.toast, "Catch Ryan complete — new objective: Explore Bent Creek.");
       this.mountPostQuest();
-      void finishLeaderboardTimer("chaseRyan").then((entries) => {
-        const lines = leaderboardSummaryLines("fastest", entries, gameStore.getPlayerProfile()?.id);
+      void finishLeaderboardTimer("chaseRyan").then((delivery) => {
+        const lines = leaderboardDeliveryLines("fastest", delivery, gameStore.getPlayerProfile()?.id);
         this.showDialogue([{
           speaker: "Leaderboard",
           text: `Catch Ryan scores:\n${lines.join("\n")}`,

@@ -68,6 +68,7 @@ export const EVENT = {
   questJournalRequested: "quest-journal-requested",
   playerLocationChanged: "player-location-changed",
   audioCue: "audio-cue",
+  platformRecovery: "platform-recovery",
 } as const;
 
 /** A live, normalized world coordinate used by the backpack map. */
@@ -94,6 +95,7 @@ export interface GameEventMap {
   [EVENT.questJournalRequested]: [];
   [EVENT.playerLocationChanged]: [location: PlayerMapLocation];
   [EVENT.audioCue]: [cue: AudioCue];
+  [EVENT.platformRecovery]: [state: "ready" | "reconnecting" | "offline" | "session-expired" | "failed" | "hidden"];
 }
 
 type ListenerEntry = {

@@ -8,6 +8,8 @@ import { selectHudInventory } from "../presentation/hudInventory";
 import { createPresentationPolicy } from "../presentation/presentationPolicy";
 import { TextEntryModal } from "../ui/TextEntryModal";
 import { formatLeaderboardTime, getLeaderboardElapsedMs } from "../platform/leaderboards";
+import { gamePlatform } from "../platform/integration";
+import { getCatalogUrl } from "../platform/pwa";
 
 const UI_DEPTH = 1_000;
 const UI_FONT = '"Courier New", monospace';
@@ -24,6 +26,8 @@ export class UIScene extends Phaser.Scene {
   private inventoryText!: Phaser.GameObjects.Text;
   private saveStatusText!: Phaser.GameObjects.Text;
   private mushroomTimerText!: Phaser.GameObjects.Text;
+  private recoveryPanel!: Phaser.GameObjects.Container;
+  private recoveryText!: Phaser.GameObjects.Text;
   private debugText?: Phaser.GameObjects.Text;
   private dialoguePanel!: Phaser.GameObjects.Container;
   private dialogueSpeaker!: Phaser.GameObjects.Text;
@@ -67,6 +71,7 @@ export class UIScene extends Phaser.Scene {
     this.buildHint();
     this.buildSaveStatus();
     this.buildMushroomTimer();
+    this.buildRecoveryPanel();
     this.buildInventoryIndicator();
     if (import.meta.env.DEV) this.buildDebugPanel();
 
@@ -80,6 +85,7 @@ export class UIScene extends Phaser.Scene {
     gameEvents.on(EVENT.toast, this.handleToast, this);
     gameEvents.on(EVENT.hint, this.handleHint, this);
     gameEvents.on(EVENT.inputAction, this.handleInputAction, this);
+    gameEvents.on(EVENT.platformRecovery, this.handlePlatformRecovery, this);
     if (import.meta.env.DEV) this.input.keyboard?.on("keydown-F3", this.toggleDebug, this);
     this.handleStateChanged(gameStore.getState());
 
@@ -188,6 +194,30 @@ export class UIScene extends Phaser.Scene {
       backgroundColor: "#7d461be8",
       padding: { x: 9, y: 6 },
     }).setOrigin(1, 0).setDepth(UI_DEPTH + 2).setVisible(false);
+  }
+
+  private buildRecoveryPanel(): void {
+    const shade = this.add.rectangle(480, 270, 960, 540, 0x07131c, 0.72).setInteractive();
+    const card = this.add.rectangle(480, 270, 620, 190, PAPER, 0.99).setStrokeStyle(4, INK, 1);
+    this.recoveryText = this.add.text(480, 236, "Reconnecting to Game Lab…", { fontFamily: UI_FONT, fontSize: "20px", color: "#172735", fontStyle: "bold", align: "center", wordWrap: { width: 540 } }).setOrigin(0.5);
+    const action = this.add.text(480, 310, "", { fontFamily: UI_FONT, fontSize: "15px", color: "#275c73", fontStyle: "bold", backgroundColor: "#d8e8bc", padding: { x: 14, y: 9 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    action.on("pointerdown", () => {
+      if (this.recoveryText.text.includes("session expired")) window.location.assign(getCatalogUrl());
+      else void gamePlatform.retryPendingWork();
+    });
+    this.recoveryPanel = this.add.container(0, 0, [shade, card, this.recoveryText, action]).setDepth(UI_DEPTH + 20).setVisible(false);
+  }
+
+  private handlePlatformRecovery(state: "ready" | "reconnecting" | "offline" | "session-expired" | "failed" | "hidden"): void {
+    if (state === "ready" || state === "hidden") { this.recoveryPanel.setVisible(false); return; }
+    const copy = state === "reconnecting" ? ["Reconnecting to Game Lab…", "PLEASE WAIT"]
+      : state === "offline" ? ["You’re offline. Your newest progress is safely pending on this device.", "RETRY CONNECTION"]
+      : state === "session-expired" ? ["Your Game Lab session expired. Sign in again to protect and resume this adventure.", "SIGN IN FROM CATALOG"]
+      : ["Game Lab could not recover this session yet. Your pending progress remains on this device.", "RETRY CONNECTION"];
+    this.recoveryText.setText(copy[0]!);
+    const action = this.recoveryPanel.list[3] as Phaser.GameObjects.Text;
+    action.setText(copy[1]!);
+    this.recoveryPanel.setVisible(true);
   }
 
   private buildInventoryIndicator(): void {
@@ -379,6 +409,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   private setSavedStatus(savedAt: string | null): void {
+    const cloud = gameStore.getCloudSaveState();
+    if (cloud.status === "offline" || cloud.status === "dirty") { this.saveStatusText.setText("SAVE PENDING • OFFLINE"); return; }
+    if (cloud.status === "saving") { this.saveStatusText.setText("SAVING TO GAME LAB…"); return; }
+    if (cloud.status === "unauthorized") { this.saveStatusText.setText("SAVE PAUSED • SIGN IN"); return; }
+    if (cloud.status === "failed") { this.saveStatusText.setText("SAVE FAILED • RETRY"); return; }
+    if (cloud.status === "conflict") { this.saveStatusText.setText("SAVE CONFLICT • ACTION NEEDED"); return; }
     if (!savedAt) {
       this.saveStatusText.setText("AUTOSAVE • ON");
       return;
@@ -655,6 +691,7 @@ export class UIScene extends Phaser.Scene {
     gameEvents.off(EVENT.toast, this.handleToast, this);
     gameEvents.off(EVENT.hint, this.handleHint, this);
     gameEvents.off(EVENT.inputAction, this.handleInputAction, this);
+    gameEvents.off(EVENT.platformRecovery, this.handlePlatformRecovery, this);
     if (import.meta.env.DEV) this.input.keyboard?.off("keydown-F3", this.toggleDebug, this);
     this.toastTimer?.remove(false);
     this.objectiveTimer?.remove(false);

@@ -4,6 +4,9 @@ import {
   decodeBadTripSurvivalValue,
   encodeBadTripSurvivalValue,
   leaderboardSummaryLines,
+  finishLeaderboardTimer,
+  invalidateCompetitiveRunsForVisibility,
+  startLeaderboardTimer,
 } from "./leaderboards";
 
 describe("bad-trip survival leaderboard encoding", () => {
@@ -38,5 +41,13 @@ describe("leaderboard summaries", () => {
       "YOUR BEST — survived 51.25s",
       "No other player scores yet.",
     ]);
+  });
+});
+
+describe("competitive timer visibility policy", () => {
+  it("cancels a timed run after suspension instead of including hidden time", async () => {
+    startLeaderboardTimer("chaseRyan");
+    invalidateCompetitiveRunsForVisibility();
+    await expect(finishLeaderboardTimer("chaseRyan")).resolves.toEqual({ status: "cancelled" });
   });
 });

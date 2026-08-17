@@ -1,9 +1,11 @@
 import type { Page, Route } from "@playwright/test";
 
 export type MockCloudSave = { data: unknown; revision: number; createdAt: string; updatedAt: string };
+let latestSaves: Map<string, MockCloudSave> | undefined;
 
 export async function installCloudSaveApi(page: Page): Promise<Map<string, MockCloudSave>> {
   const saves = new Map<string, MockCloudSave>();
+  latestSaves = saves;
   await page.route("**://localhost:8001/api/v1/**", async (route) => fulfillCloudRequest(route, saves));
   return saves;
 }
@@ -12,6 +14,10 @@ async function fulfillCloudRequest(route: Route, saves: Map<string, MockCloudSav
   const request = route.request();
   const path = new URL(request.url()).pathname;
   const now = "2026-08-06T12:00:00.000Z";
+  if (path.endsWith("/auth/session")) {
+    await route.fulfill({ json: { user: { id: "e2e-player", display_name: "Molly" }, expires_at: "2026-08-07T12:00:00.000Z" } });
+    return;
+  }
   if (path.endsWith("/me/player")) {
     await route.fulfill({ json: { user_id: "e2e-player", nickname: "Molly", haircut: "short", hair_color: "brown", tshirt_color: "blue", pants_color: "denim", shoe_color: "white" } });
     return;
@@ -64,10 +70,8 @@ async function fulfillCloudRequest(route: Route, saves: Map<string, MockCloudSav
 }
 
 export async function readCloudData(page: Page): Promise<Record<string, unknown> | undefined> {
-  return page.evaluate(() => {
-    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("@game-platform/cloud-save/milton-estates/"));
-    return key ? (JSON.parse(localStorage.getItem(key)!) as { data: Record<string, unknown> }).data : undefined;
-  });
+  void page;
+  return latestSaves?.get("primary")?.data as Record<string, unknown> | undefined;
 }
 
 export async function launchSeededCloudSave(

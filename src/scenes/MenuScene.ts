@@ -335,7 +335,7 @@ export class MenuScene extends Phaser.Scene {
     } else {
       this.button(68, 400, "RESUME GAME", () => this.closeMenu());
     }
-    const status = cloud.status === "saved" ? "Cloud save ✓" : cloud.status === "saving" || cloud.status === "dirty" ? "Saving to cloud…" : cloud.status === "conflict" ? "Cloud conflict — return to saves" : cloud.status === "failed" ? "Cloud save failed — retry later" : "Cloud save ready";
+    const status = cloud.status === "saved" ? "Cloud save ✓" : cloud.status === "saving" ? "Saving to Game Lab…" : cloud.status === "dirty" || cloud.status === "offline" ? "Pending locally — waiting to reconnect" : cloud.status === "unauthorized" ? "Session expired — sign in again" : cloud.status === "conflict" ? "Cloud conflict — return to saves" : cloud.status === "failed" ? "Cloud save failed — retry later" : "Cloud save ready";
     this.note(cloud.status === "conflict" ? 640 : 348, 412, cloud.status === "conflict" ? "Choose which progress to keep." : status, { fontSize: "14px", color: cloud.status === "failed" || cloud.status === "conflict" ? "#a43732" : "#76624f", fontStyle: "italic" });
   }
 
@@ -647,10 +647,19 @@ export class MenuScene extends Phaser.Scene {
       fontSize: "14px", color: "#675544", fontStyle: "italic", wordWrap: { width: 290 },
     });
     this.button(68, 250, "SAVE NOW", () => {
-      gameStore.saveNow();
-      gameEvents.emit(EVENT.audioCue, "saveConfirmation");
-      gameEvents.emit(EVENT.toast, "Adventure tucked safely in your backpack.");
-      this.renderPage();
+      void gameStore.saveNow().then((state) => {
+        if (state.status === "saved") {
+          gameEvents.emit(EVENT.audioCue, "saveConfirmation");
+          gameEvents.emit(EVENT.toast, "Adventure saved to Game Lab.");
+        } else if (state.status === "offline" || state.status === "dirty" || state.status === "saving") {
+          gameEvents.emit(EVENT.toast, "Save is pending until Game Lab reconnects.");
+        } else if (state.status === "unauthorized") {
+          gameEvents.emit(EVENT.toast, "Session expired — sign in again to save.");
+        } else if (state.status === "conflict") {
+          gameEvents.emit(EVENT.toast, "Cloud conflict — choose which progress to keep.");
+        } else gameEvents.emit(EVENT.toast, "Cloud save failed. Retry after reconnecting.");
+        this.renderPage();
+      });
     }).setPosition(550, 310);
     this.button(68, 330, this.restartArmed ? "CONFIRM RESTART" : "RESTART MISSION", () => this.restartMission(), 300)
       .setBackgroundColor(this.restartArmed ? "#c65246" : "#f3c95f");

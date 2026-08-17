@@ -35,7 +35,7 @@ The Kubernetes manifests expose the game at [https://games.bolblab.org/games/mil
 The deploy command requires Bash, `kubectl`, `curl`, `jq`, Ruby with its standard Psych YAML library, `cloudflared`, a current Kubernetes context that can apply the four resources in `k8s/`, update the shared Cloudflare ConfigMap, and restart the `cloudflare/cloudflared` Deployment, plus a GHCR package the cluster can read. It does not require a Cloudflare API token because this connector is locally configured in Kubernetes.
 
 Before the first release, complete the Game Lab side of the integration: publish
-`@bolb23/game-client-sdk@0.1.0` (the SDK workflow uses the `sdk-v0.1.0` tag), set
+`@bolb23/game-client-sdk@0.2.0` (the SDK workflow uses the `sdk-v0.2.0` tag), set
 `MILTON_ESTATES_ORIGIN=https://games.bolblab.org`,
 `MILTON_ESTATES_LAUNCH_URL=https://games.bolblab.org/games/milton-estates/`,
 `MILTON_ESTATES_ENABLED=true`, and
@@ -79,6 +79,8 @@ Controls:
 The front end opens as a childhood scrapbook: Title → Chapter Scrapbook → Quest Journal → Start / Continue / Replay. Completed-quest replay resets only the selected quest in a temporary in-memory copy, keeps the player's unlocked world and durable rewards available, and never overwrites canonical progress.
 
 The Backpack contains the quest history, local map, save/restart controls, and settings.
+
+Cloud progress is authoritative in Game Lab. If a tab is suspended, Milton pauses input while it revalidates the browser session and starts fresh telemetry. Offline snapshots and completed leaderboard results are retained in account-scoped SDK queues and marked as pending until Game Lab confirms them. Competitive timed runs are cancelled when the tab is hidden, rather than counting hidden time or allowing a paused run to be resumed.
 
 ## MVP gameplay
 
