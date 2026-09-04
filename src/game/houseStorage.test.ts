@@ -17,4 +17,13 @@ describe("house storage transfers", () => {
     )).toBeUndefined();
     expect(transferStorageToInventory([], [{ itemId: "bicycle", quantity: 1 }], "bicycle", 2)).toBeUndefined();
   });
+
+  it("does not create a duplicate stack when the destination stack is full", () => {
+    expect(transferStorageToInventory(
+      [{ itemId: "bicycle", quantity: 1 }], [{ itemId: "bicycle", quantity: 1 }], "bicycle", 1,
+    )).toBeUndefined();
+    expect(transferInventoryToStorage(
+      [{ itemId: "bicycle", quantity: 1 }], [{ itemId: "bicycle", quantity: 1 }], "bicycle", 1,
+    )).toBeUndefined();
+  });
 });

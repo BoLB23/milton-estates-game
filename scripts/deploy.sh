@@ -84,6 +84,12 @@ rendered_deployment=""
 current_tunnel_config=""
 desired_tunnel_config=""
 current_tunnel_object=""
+previous_workload_object=""
+rollback_workload_object=""
+current_workload_object=""
+workload_capture_error=""
+expected_workload_projection=""
+expected_workload_object=""
 desired_tunnel_object=""
 updated_tunnel_object=""
 rollback_tunnel_object=""
@@ -93,6 +99,8 @@ preserve_recovery_files=false
 tunnel_config_applied=false
 release_complete=false
 rollback_in_progress=false
+workload_applied=false
+workload_was_present=false
 
 cleanup() {
   [[ -z "${rendered_deployment}" ]] || rm -f -- "${rendered_deployment}"
@@ -104,6 +112,11 @@ cleanup() {
   if [[ "${preserve_recovery_files}" == false ]]; then
     [[ -z "${current_tunnel_config}" ]] || rm -f -- "${current_tunnel_config}"
     [[ -z "${current_tunnel_object}" ]] || rm -f -- "${current_tunnel_object}"
+    [[ -z "${previous_workload_object}" ]] || rm -f -- "${previous_workload_object}"
+    [[ -z "${rollback_workload_object}" ]] || rm -f -- "${rollback_workload_object}"
+    [[ -z "${current_workload_object}" ]] || rm -f -- "${current_workload_object}"
+    [[ -z "${workload_capture_error}" ]] || rm -f -- "${workload_capture_error}"
+    [[ -z "${expected_workload_object}" ]] || rm -f -- "${expected_workload_object}"
     [[ -z "${rollback_tunnel_object}" ]] || rm -f -- "${rollback_tunnel_object}"
   fi
 }
@@ -114,12 +127,14 @@ on_exit() {
   trap - EXIT
   trap '' HUP INT TERM
   set +e
-  if [[ "${status}" -ne 0 && "${tunnel_config_applied}" == true && "${release_complete}" == false && "${rollback_in_progress}" == false ]]; then
-    restore_tunnel_config
+  if [[ "${status}" -ne 0 && "${release_complete}" == false && "${rollback_in_progress}" == false && ( "${tunnel_config_applied}" == true || "${workload_applied}" == true ) ]]; then
+    restore_release
     recovery_status=$?
     if [[ "${recovery_status}" -ne 0 ]]; then
       preserve_recovery_files=true
-      echo "Automatic tunnel recovery failed. Recovery files were preserved:" >&2
+      echo "Automatic release recovery failed. Recovery files were preserved:" >&2
+      echo "  ${previous_workload_object}" >&2
+      echo "  ${rollback_workload_object}" >&2
       echo "  ${current_tunnel_object}" >&2
       echo "  ${current_tunnel_config}" >&2
       echo "  ${rollback_tunnel_object}" >&2
@@ -261,6 +276,10 @@ updated_tunnel_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-tunnel-object-up
 rollback_tunnel_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-tunnel-object-rollback.XXXXXX")"
 tunnel_deployment_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-tunnel-deployment.XXXXXX")"
 health_response="$(mktemp "${TMPDIR:-/tmp}/milton-estates-health.XXXXXX")"
+previous_workload_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-workload-previous.XXXXXX")"
+rollback_workload_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-workload-rollback.XXXXXX")"
+current_workload_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-workload-current.XXXXXX")"
+expected_workload_object="$(mktemp "${TMPDIR:-/tmp}/milton-estates-workload-expected.XXXXXX")"
 chmod 600 \
   "${current_tunnel_config}" \
   "${desired_tunnel_config}" \
@@ -269,7 +288,11 @@ chmod 600 \
   "${updated_tunnel_object}" \
   "${rollback_tunnel_object}" \
   "${tunnel_deployment_object}" \
-  "${health_response}"
+  "${health_response}" \
+  "${previous_workload_object}" \
+  "${rollback_workload_object}" \
+  "${current_workload_object}" \
+  "${expected_workload_object}"
 
 # Verify cluster credentials and reachability before the first external write.
 kubectl config current-context >/dev/null
@@ -283,6 +306,9 @@ kubectl apply --dry-run=server \
   --filename "${project_root}/k8s/ingress.yaml" \
   --filename "${rendered_deployment}" \
   >/dev/null
+kubectl apply --dry-run=server --filename "${rendered_deployment}" --output json \
+  > "${expected_workload_object}"
+expected_workload_projection="$(jq -cS '.spec.template' "${expected_workload_object}")"
 
 # This tunnel is locally managed: fetch the complete shared ConfigMap once so
 # its resourceVersion can make the eventual update conditional. A concurrent
@@ -485,6 +511,23 @@ kubectl --namespace "${tunnel_namespace}" patch "deployment/${tunnel_deployment}
   --dry-run=server \
   >/dev/null
 
+# Capture the exact workload before the first write. A missing Deployment is a
+# valid first release state; transport and authorization failures are fatal.
+workload_capture_error="$(mktemp "${TMPDIR:-/tmp}/milton-estates-workload-capture-error.XXXXXX")"
+if kubectl --namespace "${namespace}" get "deployment/${deployment}" --output json \
+  2>"${workload_capture_error}" \
+  | jq 'del(.metadata.managedFields, .status)' > "${previous_workload_object}"; then
+  workload_was_present=true
+elif grep -qE 'NotFound|not found' "${workload_capture_error}"; then
+  : > "${previous_workload_object}"
+else
+  echo "Could not capture the current game Deployment before writes:" >&2
+  cat "${workload_capture_error}" >&2
+  exit 1
+fi
+rm -f -- "${workload_capture_error}"
+workload_capture_error=""
+
 build_rollback_tunnel_object() {
   jq --rawfile config "${current_tunnel_config}" '
     .data["config.yaml"] = $config
@@ -522,6 +565,55 @@ restore_tunnel_config() {
   return 0
 }
 
+restore_workload() {
+  if [[ "${workload_applied}" != true ]]; then
+    return 0
+  fi
+  if [[ "${workload_was_present}" == true ]]; then
+    echo "Release failed after changing the game workload; restoring its previous Deployment." >&2
+    if ! kubectl --namespace "${namespace}" get "deployment/${deployment}" --output json > "${current_workload_object}"; then
+      echo "Could not inspect the current game Deployment before rollback." >&2
+      return 1
+    fi
+    current_workload_projection="$(jq -cS '.spec.template' "${current_workload_object}")"
+    if [[ "${current_workload_projection}" != "${expected_workload_projection}" ]]; then
+      echo "The game Deployment changed concurrently; refusing to overwrite it during rollback." >&2
+      return 1
+    fi
+    if ! jq --slurpfile current "${current_workload_object}" \
+      '.metadata.resourceVersion = $current[0].metadata.resourceVersion
+       | .metadata.uid = $current[0].metadata.uid' \
+      "${previous_workload_object}" > "${rollback_workload_object}"; then
+      echo "Could not build the conditional game Deployment rollback object." >&2
+      return 1
+    fi
+    if ! kubectl replace --filename "${rollback_workload_object}" >/dev/null; then
+      echo "Could not restore the previous game Deployment." >&2
+      return 1
+    fi
+    if ! kubectl --namespace "${namespace}" rollout status \
+      "deployment/${deployment}" --timeout "${rollout_timeout}"; then
+      echo "The previous game Deployment was restored, but its rollback rollout did not become healthy." >&2
+      return 1
+    fi
+  else
+    echo "First release failed; retaining the game Deployment for manual recovery because kubectl delete has no resource-version precondition." >&2
+    return 1
+  fi
+  workload_applied=false
+  return 0
+}
+
+restore_release() {
+  rollback_in_progress=true
+  local recovery_status=0
+  restore_workload || recovery_status=1
+  if [[ "${tunnel_config_applied}" == true ]]; then
+    restore_tunnel_config || recovery_status=1
+  fi
+  return "${recovery_status}"
+}
+
 verify_public_health() {
   local attempt
   local http_code=""
@@ -551,6 +643,10 @@ kubectl apply --filename "${project_root}/k8s/service.yaml"
 kubectl apply --filename "${project_root}/k8s/ingress.yaml"
 # The checked-in placeholder is never applied. The requested immutable image
 # and rerun nonce enter the pod template together, producing exactly one rollout.
+# Mark this before the request: if the API accepted the write but the client
+# lost its response, the exit trap must still attempt an ownership-guarded
+# recovery.
+workload_applied=true
 kubectl apply --filename "${rendered_deployment}"
 
 kubectl --namespace "${namespace}" rollout status \

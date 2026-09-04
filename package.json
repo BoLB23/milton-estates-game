@@ -8,13 +8,15 @@
     "typecheck": "tsc -b && tsc -p tsconfig.e2e.json",
     "check:exports": "node scripts/check-exports.mjs",
     "check:assets": "node scripts/audit-assets.mjs",
+    "test:nginx": "./scripts/test-nginx.sh",
     "process:art": "node scripts/process-game-art.mjs",
     "check:maps": "node scripts/validate-map-expansion.mjs",
     "maps:migrate-editor": "node scripts/migrate-map-editor.mjs",
-    "build": "npm run typecheck && npm run check:exports && npm run check:assets && vite build",
+    "build": "npm run typecheck && npm run check:exports && npm run check:assets && vite build && node scripts/check-service-worker.mjs",
     "test": "vitest run src",
+    "test:deployment": "node --test scripts/deploy.contract.test.mjs",
     "test:e2e": "playwright test",
-    "check": "npm run test && npm run check:maps && npm run build",
+    "check": "npm run test && npm run test:deployment && npm run check:maps && npm run build",
     "check:full": "npm run check && npm run test:e2e"
   },
   "dependencies": {

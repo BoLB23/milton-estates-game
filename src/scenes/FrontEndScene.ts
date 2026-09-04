@@ -10,6 +10,7 @@ import { miltonCloudSaves, gamePlatform } from "../platform/integration";
 import type { GameSaveMetadata, GamePlatformIdentityState } from "../platform/GamePlatformAdapter";
 import { toPlayerProfile } from "../platform/playerProfile";
 import { PlayerAvatar } from "../world/PlayerAvatar";
+import { isCurrentSlotRefresh, replaceWithRollback } from "./frontEndState";
 
 type FrontPage = "saves" | "settings";
 type SlotPreview = { metadata: GameSaveMetadata; save?: MiltonCloudSave };
@@ -31,6 +32,8 @@ export class FrontEndScene extends Phaser.Scene {
   private platformIdentity: GamePlatformIdentityState = gamePlatform.getIdentityState();
   private unsubscribePlatformIdentity?: () => void;
   private slots: SlotPreview[] = [];
+  private slotPage = 0;
+  private refreshGeneration = 0;
   private savesLoading = false;
   private saveError?: string;
   private confirmation?: { kind: "reset" | "delete"; slotKey: string };
@@ -43,6 +46,16 @@ export class FrontEndScene extends Phaser.Scene {
     this.content = this.add.container(0, 0);
     this.platformIdentity = gamePlatform.getIdentityState();
     this.unsubscribePlatformIdentity = gamePlatform.subscribeIdentity((identity) => {
+      const previousUserId = this.platformIdentity.status === "authenticated" ? this.platformIdentity.player.id : undefined;
+      const nextUserId = identity.status === "authenticated" ? identity.player.id : undefined;
+      if (previousUserId !== nextUserId) {
+        this.refreshGeneration += 1;
+        this.slots = [];
+        this.slotPage = 0;
+        this.savesLoading = false;
+        this.saveError = undefined;
+        this.confirmation = undefined;
+      }
       this.platformIdentity = identity;
       if (identity.status === "authenticated") {
         gameStore.setPlayerProfile(toPlayerProfile(identity.player));
@@ -128,15 +141,18 @@ export class FrontEndScene extends Phaser.Scene {
       this.button(82, 290, "NEW GAME", () => void this.createSave(), { width: 300, color: "#275c73" });
     } else {
       this.renderSlotCards();
-      this.button(82, 440, "NEW SAVE", () => void this.createSave(), { width: 220, color: "#275c73" });
+      this.button(82, 442, "NEW SAVE", () => void this.createSave(), { width: 220, color: "#275c73" });
     }
-    this.button(720, 455, "SETTINGS", () => { this.page = "settings"; this.render(); }, { width: 170, color: "#50675b" });
+    this.button(720, 442, "SETTINGS", () => { this.page = "settings"; this.render(); }, { width: 170, color: "#50675b" });
   }
 
   private renderSlotCards(): void {
-    const visible = this.slots.slice(0, 3);
+    const pageSize = 3;
+    const pageCount = Math.max(1, Math.ceil(this.slots.length / pageSize));
+    this.slotPage = Math.min(this.slotPage, pageCount - 1);
+    const visible = this.slots.slice(this.slotPage * pageSize, (this.slotPage + 1) * pageSize);
     visible.forEach((slot, index) => {
-      const y = 205 + index * 72;
+      const y = 195 + index * 64;
       scrapbookCard(this, this.content, 82, y, 770, 62, 0xfff8df);
       const state = slot.save;
       const stage = state ? stageFromProgress(state.questProgress, state.activeQuestId) : undefined;
@@ -148,6 +164,11 @@ export class FrontEndScene extends Phaser.Scene {
       this.button(610, y + 10, "CONTINUE", () => void this.continueSlot(slot.metadata.slotKey), { width: 110, color: "#275c73" });
       this.button(728, y + 10, "⋯", () => { this.confirmation = { kind: "reset", slotKey: slot.metadata.slotKey }; this.render(); }, { width: 60, color: "#50675b" });
     });
+    if (pageCount > 1) {
+      this.button(82, 390, "← PREVIOUS", () => { this.slotPage = Math.max(0, this.slotPage - 1); this.render(); }, { width: 165, color: "#50675b" });
+      this.text(270, 403, `Page ${this.slotPage + 1} of ${pageCount}`, { fontSize: "12px", color: MUTED_INK });
+      this.button(405, 390, "NEXT →", () => { this.slotPage = Math.min(pageCount - 1, this.slotPage + 1); this.render(); }, { width: 140, color: "#50675b" });
+    }
     if (this.confirmation) this.renderConfirmation();
   }
 
@@ -162,6 +183,8 @@ export class FrontEndScene extends Phaser.Scene {
 
   private async refreshSlots(): Promise<void> {
     if (this.platformIdentity.status !== "authenticated" || this.savesLoading) return;
+    const userId = this.platformIdentity.player.id;
+    const generation = this.refreshGeneration;
     this.savesLoading = true;
     this.saveError = undefined;
     this.render();
@@ -172,11 +195,14 @@ export class FrontEndScene extends Phaser.Scene {
         try { return { metadata: item, save: (await miltonCloudSaves.peek(item.slotKey)).data }; }
         catch { return { metadata: item }; }
       }));
-      this.slots = slots;
+      if (isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) {
+        this.slots = slots;
+        this.slotPage = 0;
+      }
     } catch {
-      this.saveError = "Could not load your cloud saves. Please retry.";
+      if (this.refreshGeneration === generation) this.saveError = "Could not load your cloud saves. Please retry.";
     } finally {
-      this.savesLoading = false;
+      if (this.refreshGeneration === generation) this.savesLoading = false;
       if (this.sys.isActive()) this.render();
     }
   }
@@ -190,22 +216,28 @@ export class FrontEndScene extends Phaser.Scene {
   }
 
   private async createSave(slotKey = this.nextSlotKey()): Promise<void> {
+    const generation = this.refreshGeneration; const userId = this.platformIdentity.status === "authenticated" ? this.platformIdentity.player.id : undefined;
     try {
       const snapshot = gameStore.createFreshCloudSave();
       await miltonCloudSaves.create(slotKey, snapshot);
+      if (!userId || !isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) return;
       this.launchGameplay();
     } catch {
+      if (!userId || !isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) return;
       this.saveError = "Could not create that cloud save. Please retry.";
       this.render();
     }
   }
 
   private async continueSlot(slotKey: string): Promise<void> {
+    const generation = this.refreshGeneration; const userId = this.platformIdentity.status === "authenticated" ? this.platformIdentity.player.id : undefined;
     try {
       const save = await miltonCloudSaves.load(slotKey);
+      if (!userId || !isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) return;
       if (!gameStore.hydrateCloudSave(save.data)) throw new Error("Invalid save");
       this.launchGameplay();
     } catch {
+      if (!userId || !isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) return;
       this.saveError = "Could not load that cloud save. Please retry.";
       this.render();
     }
@@ -217,8 +249,18 @@ export class FrontEndScene extends Phaser.Scene {
     if (!action) return;
     try {
       if (action.kind === "reset") {
-        await miltonCloudSaves.delete(action.slotKey);
-        await this.createSave(action.slotKey);
+        const previous = gameStore.getCloudSnapshot();
+        const generation = this.refreshGeneration; const userId = this.platformIdentity.status === "authenticated" ? this.platformIdentity.player.id : undefined;
+        try {
+          const snapshot = gameStore.createFreshCloudSave();
+          await replaceWithRollback(previous, async () => {
+            await miltonCloudSaves.replace(action.slotKey, snapshot);
+          }, (restore) => {
+            if (userId && isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) gameStore.hydrateCloudSave(restore);
+          });
+          if (!userId || !isCurrentSlotRefresh(generation, this.refreshGeneration, userId, this.platformIdentity)) return;
+          this.launchGameplay();
+        } catch (error) { throw error; }
         return;
       }
       await miltonCloudSaves.delete(action.slotKey);

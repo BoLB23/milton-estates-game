@@ -19,6 +19,15 @@ function client(authenticated = true): GamePlatformClient & GameLabSDK {
 }
 
 describe("GamePlatformAdapter visible-tab recovery", () => {
+  it("exposes an actionable unavailable state when the initial auth check fails", async () => {
+    const sdk = client();
+    sdk.auth.revalidate = vi.fn(async () => { throw new Error("network"); });
+    const adapter = new GamePlatformAdapter({ createClient: () => sdk });
+    await adapter.initializeIdentity();
+    expect(adapter.getIdentityState()).toEqual({ status: "unavailable" });
+    expect(adapter.getRecoveryState()).toBe("offline");
+  });
+
   it("revalidates and starts one fresh session after a hidden tab becomes visible", async () => {
     const sdk = client(); const page = new Events(); const visibility = new Visibility();
     const adapter = new GamePlatformAdapter({ createClient: () => sdk, pageLifecycleTarget: page, visibilityLifecycleTarget: visibility });

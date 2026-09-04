@@ -4,6 +4,7 @@ import path from "node:path";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const ROUTE_PREFIX = "/__map-editor/maps/";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 /** The editor may only ever write these checked-in authoring files. */
 export const DEFAULT_MAP_FILES = Object.freeze({
@@ -23,6 +24,24 @@ function send(response, status, body) {
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function requestHeaders(request) { return request.headers ?? {}; }
+
+function isLoopbackRequest(request) {
+  const address = request.socket?.remoteAddress?.replace(/^::ffff:/, "");
+  const rawHost = String(requestHeaders(request).host ?? "");
+  const host = rawHost.startsWith("[") ? rawHost.slice(1, rawHost.indexOf("]")) : rawHost.split(":", 1)[0];
+  return Boolean(address) && LOOPBACK_HOSTS.has(address) && LOOPBACK_HOSTS.has(host);
+}
+
+function sameOriginRequest(request, { requireOrigin = false } = {}) {
+  const headers = requestHeaders(request);
+  if (headers["sec-fetch-site"] !== "same-origin") return false;
+  const origin = headers.origin;
+  if (requireOrigin && !origin) return false;
+  if (!origin) return true;
+  try { return new URL(origin).host === String(headers.host ?? ""); } catch { return false; }
 }
 
 function mapIdFromRequestUrl(requestUrl) {
@@ -135,7 +154,8 @@ async function readJsonBody(request) {
   }
 }
 
-export function createMapEditorMiddleware({ root = process.cwd(), mapFiles = DEFAULT_MAP_FILES, validate = () => undefined } = {}) {
+export function createMapEditorMiddleware({ root = process.cwd(), mapFiles = DEFAULT_MAP_FILES, validate = () => undefined, enabled = false } = {}) {
+  const token = randomBytes(32).toString("base64url");
   const resolvedFiles = new Map(Object.entries(mapFiles).map(([mapId, relativePath]) => [mapId, path.resolve(root, relativePath)]));
   const saveQueues = new Map();
 
@@ -155,19 +175,27 @@ export function createMapEditorMiddleware({ root = process.cwd(), mapFiles = DEF
   }
 
   return async function mapEditorMiddleware(request, response, next) {
+    if (!enabled) return next();
     const mapId = mapIdFromRequestUrl(request.url);
     if (!mapId) return next();
+    if (!isLoopbackRequest(request) || !sameOriginRequest(request, { requireOrigin: request.method === "POST" })) return send(response, 403, { error: "Map editor is limited to same-origin loopback requests" });
     const filename = resolvedFiles.get(mapId);
     if (!filename) return send(response, 404, { error: "Unknown map ID" });
 
     try {
       if (request.method === "GET") {
         const source = await readFile(filename, "utf8");
+        response.setHeader("X-Map-Editor-Token", token);
         return send(response, 200, { revision: revisionFor(source), document: JSON.parse(source) });
       }
       if (request.method !== "POST") {
         response.setHeader("Allow", "GET, POST");
         return send(response, 405, { error: "Method not allowed" });
+      }
+
+      if (requestHeaders(request)["x-map-editor-token"] !== token) return send(response, 403, { error: "Invalid map editor token" });
+      if (String(requestHeaders(request)["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+        return send(response, 415, { error: "Content-Type must be application/json" });
       }
 
       const payload = await readJsonBody(request);
@@ -209,7 +237,8 @@ export function mapEditorServerPlugin(options) {
   return {
     name: "milton-estates-map-editor-server",
     configureServer(server) {
-      server.middlewares.use(createMapEditorMiddleware({ root: server.config.root, ...options }));
+      if (options?.enabled !== true && process.env.MILTON_MAP_EDITOR !== "1") return;
+      server.middlewares.use(createMapEditorMiddleware({ root: server.config.root, ...options, enabled: true }));
     },
   };
 }

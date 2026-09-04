@@ -60,7 +60,9 @@ export class MapEditorController {
     const response = await fetch(`/__map-editor/maps/${encodeURIComponent(options.mapId)}`);
     const payload = await response.json() as MapResponse;
     if (!response.ok) throw new Error(payload.error ?? `Unable to load ${options.mapId}`);
-    return new MapEditorController(options, payload.document, payload.revision);
+    const token = response.headers.get("X-Map-Editor-Token");
+    if (!token) throw new Error("Map editor handshake failed");
+    return new MapEditorController(options, payload.document, payload.revision, token);
   }
 
   private readonly scene: Phaser.Scene;
@@ -78,7 +80,7 @@ export class MapEditorController {
   private status = "Ready";
   private destroyed = false;
 
-  private constructor(private readonly options: MapEditorControllerOptions, documentData: MapDocument, revision: string) {
+  private constructor(private readonly options: MapEditorControllerOptions, documentData: MapDocument, revision: string, private readonly token: string) {
     this.scene = options.scene;
     this.mapId = options.mapId;
     this.draft = new MapEditorDraft(documentData as TiledMapDocument, revision);
@@ -391,7 +393,7 @@ export class MapEditorController {
     try {
       const response = await fetch(`/__map-editor/maps/${encodeURIComponent(this.mapId)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Map-Editor-Token": this.token },
         body: JSON.stringify({ baseRevision: this.draft.baseRevision, document }),
       });
       const payload = await response.json() as MapResponse;

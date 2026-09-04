@@ -923,6 +923,15 @@ describe("GameStore save v9", () => {
     expect(store.getState().equipment.transport).toBe(null);
   });
 
+  it("clears the equipped transport when it is deposited", () => {
+    const store = makeStore();
+    completeCatchRyan(store);
+    expect(store.setEquippedTransport("bicycle")).toBe(true);
+    expect(store.depositToHouseStorage("bicycle", 1)).toBe(true);
+    expect(store.getState().equipment.transport).toBe(null);
+    expect(store.getState().inventory).toEqual([]);
+  });
+
   it("remaps legacy mushroom coordinates while preserving stable IDs and partial collection", () => {
     const storage = new MemoryStorage();
     const writer = makeStore(storage);

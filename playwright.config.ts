@@ -29,17 +29,17 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4183",
+      command: "MILTON_MAP_EDITOR=1 VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4183",
       url: "http://127.0.0.1:4183",
       reuseExistingServer: false,
     },
     {
-      command: "VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4184 --base=/games/milton-estates/",
+      command: "MILTON_MAP_EDITOR=1 VITE_E2E_RENDERER=canvas npm run dev -- --host 127.0.0.1 --port 4184 --base=/games/milton-estates/",
       url: "http://127.0.0.1:4184/games/milton-estates/",
       reuseExistingServer: false,
     },
     {
-      command: "npm run dev -- --host 127.0.0.1 --port 4185",
+      command: "MILTON_MAP_EDITOR=1 npm run dev -- --host 127.0.0.1 --port 4185",
       url: "http://127.0.0.1:4185",
       reuseExistingServer: false,
     },

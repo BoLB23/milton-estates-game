@@ -349,7 +349,10 @@ function addToInventory(inventory: readonly InventoryStack[], itemId: ItemId, qu
     // Item definitions currently have a single stack per item. Keeping this
     // branch explicit makes the stack limit the only capacity rule to revisit
     // when a future item needs multiple stacks.
-    if (definition.stackLimit < remaining) return undefined;
+    // There is one stack per item. A full existing stack cannot be split into
+    // a second stack, since that would later be collapsed and truncated by
+    // normalizeInventory (silently losing the transferred quantity).
+    if (existing || definition.stackLimit < remaining) return undefined;
     next.push({ itemId, quantity: remaining });
     remaining = 0;
   }
@@ -878,7 +881,12 @@ function normalizeSave(save: NormalizableSave): SaveData | undefined {
     questProgress,
     questHistory: unique(save.questHistory),
     inventory,
-    equipment: { ...(save.equipment ?? DEFAULT_EQUIPMENT) },
+    // A saved equipment slot must always refer to a carried item. This also
+    // repairs older saves where storage/deposit removed the equipped bike.
+    equipment: {
+      transport: save.equipment?.transport === "bicycle" && inventory.some((stack) => stack.itemId === "bicycle" && stack.quantity > 0)
+        ? "bicycle" : null,
+    },
     collectedPickupIds: unique(save.collectedPickupIds ?? []),
     lastKnownLocation: {
       ...(save.lastKnownLocation ?? { ...DEFAULT_LAST_KNOWN_LOCATION, map: save.currentMap }),
@@ -1172,7 +1180,11 @@ export class GameStore {
     const result = transferInventoryToStorage(this.state.inventory, this.houseStorage, itemId, quantity);
     if (!result) return false;
     this.houseStorage = result.houseStorage;
-    this.update({ ...this.state, inventory: result.inventory });
+    this.update({
+      ...this.state,
+      inventory: result.inventory,
+      equipment: this.state.equipment.transport === itemId ? { transport: null } : this.state.equipment,
+    });
     return true;
   }
 

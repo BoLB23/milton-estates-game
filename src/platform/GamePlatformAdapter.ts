@@ -128,7 +128,13 @@ export class GamePlatformAdapter {
       this.setRecovery("reconnecting");
       let authentication;
       try { authentication = await this.client.auth.revalidate(); }
-      catch { this.setRecovery("offline"); return; }
+      catch {
+        // Keep the identity surface actionable after the very first failed
+        // check; the frontend can offer retry instead of hanging on loading.
+        this.setIdentity({ status: "unavailable" });
+        this.setRecovery("offline");
+        return;
+      }
       if (authentication.status === "reauthentication_required") {
         this.setIdentity({ status: "unauthorized", message: GAME_PLATFORM_SIGN_IN_MESSAGE });
         await this.lifecycle?.end();

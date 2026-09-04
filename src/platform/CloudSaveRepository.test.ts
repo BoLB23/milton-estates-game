@@ -8,6 +8,11 @@ function saved(value: number, revision = 1): GameSave<Save> { return { id: "id",
 function client(put = vi.fn(async (_g: string, _s: string, input: { data: Save; expectedRevision: number | null }) => saved(input.data.value, (input.expectedRevision ?? 0) + 1))): GamePlatformClient {
   return { auth: { revalidate: vi.fn(async () => ({ status: "authenticated" as const, session: { user: { id: "player-a" }, expiresAt: "x", isSliding: false as const } })) }, saves: { list: vi.fn(async () => []), get: vi.fn(async () => saved(0)), put, delete: vi.fn() } } as unknown as GamePlatformClient;
 }
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 describe("CloudSaveRepository durable recovery", () => {
   it("stores then confirms a pending snapshot with the latest revision", async () => {
     const sdk = client(); const repo = new CloudSaveRepository<Save>({ client: sdk, storage: memory() }); repo.setAuthenticatedUser("player-a");
@@ -31,5 +36,43 @@ describe("CloudSaveRepository durable recovery", () => {
     expect(repo.getState()).toMatchObject({ status: "conflict", local: { value: 7 } });
     await repo.keepLocalConflict();
     expect(put.mock.calls[1]?.[2]).toMatchObject({ expectedRevision: 1, data: { value: 7 } });
+  });
+  it("replaces a slot with its current revision without deleting first", async () => {
+    const put = vi.fn(async (_g: string, _s: string, input: { data: Save; expectedRevision: number | null }) => saved(input.data.value, 4));
+    const sdk = client(put);
+    sdk.saves.get = vi.fn(async () => saved(3, 3)) as typeof sdk.saves.get;
+    const repo = new CloudSaveRepository<Save>({ client: sdk, storage: memory() });
+    repo.setAuthenticatedUser("player-a");
+    await repo.replace("primary", { value: 9 });
+    expect(sdk.saves.delete).not.toHaveBeenCalled();
+    expect(put).toHaveBeenCalledWith("milton-estates", "primary", expect.objectContaining({ expectedRevision: 3, data: { value: 9 } }));
+  });
+
+  it("rejects a stale load after the authenticated account changes", async () => {
+    const pending = deferred<GameSave<Save>>();
+    const sdk = client();
+    sdk.saves.get = vi.fn(() => pending.promise) as typeof sdk.saves.get;
+    const repo = new CloudSaveRepository<Save>({ client: sdk });
+    repo.setAuthenticatedUser("player-a");
+    const load = repo.load("primary");
+    repo.setAuthenticatedUser("player-b");
+    pending.resolve(saved(8));
+    await expect(load).rejects.toThrow(/player changed/);
+    expect(repo.getState()).toEqual({ status: "idle" });
+    expect(repo.getSelectedSlot()).toBeUndefined();
+  });
+
+  it("rejects stale destructive completion without removing the new account state", async () => {
+    const pending = deferred<void>();
+    const sdk = client();
+    sdk.saves.delete = vi.fn(() => pending.promise) as typeof sdk.saves.delete;
+    const repo = new CloudSaveRepository<Save>({ client: sdk });
+    repo.setAuthenticatedUser("player-a");
+    await repo.load("primary");
+    const deleting = repo.delete("primary");
+    repo.setAuthenticatedUser("player-b");
+    pending.resolve();
+    await expect(deleting).rejects.toThrow(/player changed/);
+    expect(repo.getState()).toEqual({ status: "idle" });
   });
 });

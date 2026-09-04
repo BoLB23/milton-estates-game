@@ -24,11 +24,18 @@ The build is written to `dist/`. To launch the local development server, also wi
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser. Keep the terminal running while you play, and press `Ctrl+C` to stop it. The server reloads automatically when source files change.
 
+The map authoring API is disabled by default because saves write the checked-in
+Tiled maps. Enable it explicitly for local authoring with
+`MILTON_MAP_EDITOR=1 ./scripts/serve.sh`; it only accepts same-origin requests
+from the loopback server and requires the per-process editor handshake.
+
 The game requires a browser with WebGL or WebGL2 support. Canvas is retained only for the long-running automated regression suite.
 
 ## Homelab deployment
 
-Merges (and direct pushes) to `main` run the unit, map, build, deployment-manifest, and browser regression checks before publishing a container image to GitHub Container Registry. Images are tagged with both `latest` and `sha-<full 40-character commit SHA>`.
+Pull requests and pushes to `main` run the unit, map, build, deployment-manifest, deployment rollback-contract, and browser regression checks. Only a successful push to `main` publishes a container image to GitHub Container Registry. Images are tagged with both `latest` and `sha-<full 40-character commit SHA>`.
+
+The publishing job packages the tested `dist/` artifact with the NGINX runtime stage, so its package write token is never passed into the dependency build. Direct `docker build` remains available when a local `dist/` is present for the runtime target or when the Dockerfile's full build stage is used with the package credentials required by `.npmrc`.
 
 The Kubernetes manifests expose the game at [https://games.bolblab.org/games/milton-estates/](https://games.bolblab.org/games/milton-estates/) through the existing in-cluster Cloudflare Tunnel. The deployment script structurally preserves the shared `cloudflare/cloudflared` ConfigMap, adds or refreshes this game's path-specific route before the catalog host route and terminal 404 rule, validates the result with `cloudflared`, and rolls the two connector pods so the local configuration takes effect. ExternalDNS publishes the hostname as a proxied CNAME to that tunnel. Cloudflare terminates public TLS and tunnels plain HTTP to the game's ClusterIP Service; NGINX strips the public game prefix before resolving the static bundle, and cert-manager separately provisions the certificate declared by the NGINX Ingress.
 
@@ -58,7 +65,7 @@ Validate the exact local rendering without Cloudflare credentials or cluster acc
 ./scripts/deploy.sh --dry-run ghcr.io/bolb23/milton-estates-game:sha-0123456789abcdef0123456789abcdef01234567
 ```
 
-The script preflights manifests, the existing local tunnel structure, the exact tunnel update and connector restart, cluster authorization/admission, and connectivity before writes. It applies the requested image and a unique rollout annotation together, so a deploy produces one game Deployment revision and rerunning the same immutable image still restarts the pod. The shared ConfigMap update carries the resource version read during preflight, so a concurrent route edit causes a safe conflict instead of being overwritten. If connector activation or the public health check fails after that update, the script conditionally restores the prior ConfigMap and reloads the connectors; if safe automatic recovery is blocked by another concurrent edit, it preserves and prints the mode-600 recovery-file paths. Success requires `https://games.bolblab.org/games/milton-estates/healthz` to return exactly HTTP 200 with body `ok`; redirects are rejected and every attempt has a connection and transfer timeout. Check the workload, image, Service, and labeled Ingress with:
+The script preflights manifests, the existing local tunnel structure, the exact tunnel update and connector restart, cluster authorization/admission, and connectivity before writes. It captures the current game Deployment immediately before applying the release and applies the requested image and a unique rollout annotation together, so a deploy produces one game Deployment revision and rerunning the same immutable image still restarts the pod. A failed post-apply step restores the prior workload and tunnel, waits for both rollback rollouts to become healthy, and removes a workload created by a first release. Rollback refuses to overwrite a workload or shared ConfigMap changed concurrently; if recovery fails, it preserves and prints the mode-600 recovery-file paths. Success requires `https://games.bolblab.org/games/milton-estates/healthz` to return exactly HTTP 200 with body `ok`; redirects are rejected and every attempt has a connection and transfer timeout. Check the workload, image, Service, and labeled Ingress with:
 
 ```sh
 ./scripts/deploy-status.sh

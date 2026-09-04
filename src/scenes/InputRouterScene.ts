@@ -156,6 +156,12 @@ export class InputRouterScene extends Phaser.Scene {
   }
 
   update(): void {
+    // Gamepads are polled directly each frame, so clearing edge state during
+    // recovery is insufficient on its own.
+    if (this.platformInputBlocked) {
+      inputState.setGamepadMovement({ x: 0, y: 0 });
+      return;
+    }
     const gamepad = navigator.getGamepads?.().find((candidate) => candidate?.connected) ?? null;
     const movement = gamepad ? gamepadMovement(gamepad) : { x: 0, y: 0 };
     inputState.setGamepadMovement(movement);

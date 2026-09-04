@@ -17,6 +17,7 @@ export interface SemanticActionEvent {
 
 export interface MovementVector { x: number; y: number }
 
+
 /**
  * Identifies one physical control which currently owns a semantic action.
  *

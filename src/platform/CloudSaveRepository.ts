@@ -40,6 +40,7 @@ export class CloudSaveRepository<T> {
   private state: CloudSaveState<T> = { status: "idle" };
   private readonly listeners = new Set<(state: CloudSaveState<T>) => void>();
   private pendingAt?: string;
+  private identityEpoch = 0;
 
   public constructor(options: CloudSaveRepositoryOptions) {
     this.client = options.client; this.storage = options.storage;
@@ -49,26 +50,54 @@ export class CloudSaveRepository<T> {
   }
   public setAuthenticatedUser(userId: string): void {
     if (this.userId === userId) return;
+    this.identityEpoch += 1;
     this.disposeDurable(); this.userId = userId; this.selectedSlot = undefined; this.pendingAt = undefined; this.setState({ status: "idle" });
   }
-  public clearAuthenticatedUser(): void { this.disposeDurable(); this.userId = undefined; this.selectedSlot = undefined; this.setState({ status: "idle" }); }
+  public clearAuthenticatedUser(): void { this.identityEpoch += 1; this.disposeDurable(); this.userId = undefined; this.selectedSlot = undefined; this.setState({ status: "idle" }); }
   public getState(): CloudSaveState<T> { return this.state; }
   public getSelectedSlot(): string | undefined { return this.selectedSlot; }
   public subscribe(listener: (state: CloudSaveState<T>) => void): () => void { this.listeners.add(listener); listener(this.state); return () => this.listeners.delete(listener); }
 
-  public async listSlots(): Promise<GameSaveMetadata[]> { return this.client.saves.list(this.gameSlug); }
-  public async peek(slotKey: string): Promise<GameSave<T>> { return this.client.saves.get<T>(this.gameSlug, slotKey); }
+  public async listSlots(): Promise<GameSaveMetadata[]> {
+    const epoch = this.identityEpoch; const userId = this.requireUser();
+    const result = await this.client.saves.list(this.gameSlug);
+    this.assertIdentity(epoch, userId);
+    return result;
+  }
+  public async peek(slotKey: string): Promise<GameSave<T>> {
+    const epoch = this.identityEpoch; const userId = this.requireUser();
+    const result = await this.client.saves.get<T>(this.gameSlug, slotKey);
+    this.assertIdentity(epoch, userId);
+    return result;
+  }
   public async load(slotKey: string): Promise<GameSave<T>> {
     this.requireUser(); this.selectedSlot = slotKey; this.setState({ status: "loading", slotKey });
-    try { const save = await this.client.saves.get<T>(this.gameSlug, slotKey); this.bind(slotKey, save); return save; }
-    catch (error) { this.setState({ status: "failed", slotKey, error }); throw error; }
+    const epoch = this.identityEpoch; const userId = this.userId;
+    try { const save = await this.client.saves.get<T>(this.gameSlug, slotKey); this.assertIdentity(epoch, userId); this.bind(slotKey, save); return save; }
+    catch (error) { if (this.identityEpoch === epoch) this.setState({ status: "failed", slotKey, error }); throw error; }
   }
   public async create(slotKey: string, data: T): Promise<GameSave<T>> {
-    this.requireUser(); this.selectedSlot = slotKey; this.bind(slotKey, null); this.pendingAt = new Date().toISOString();
-    this.durable!.save(this.input(data, null));
-    await this.durable!.flush();
-    if (this.durable!.state.status !== "saved" || !this.durable!.state.saved) throw this.deliveryError(this.durable!.state);
-    return this.durable!.state.saved;
+    const epoch = this.identityEpoch; const userId = this.requireUser();
+    this.selectedSlot = slotKey; this.bind(slotKey, null); this.pendingAt = new Date().toISOString();
+    const durable = this.durable!;
+    durable.save(this.input(data, null));
+    await durable.flush();
+    this.assertIdentity(epoch, userId);
+    if (durable.state.status !== "saved" || !durable.state.saved) throw this.deliveryError(durable.state);
+    return durable.state.saved;
+  }
+  /** Replaces an existing slot with a conditional write; the old server copy is retained on failure. */
+  public async replace(slotKey: string, data: T): Promise<GameSave<T>> {
+    const userId = this.requireUser();
+    const epoch = this.identityEpoch;
+    const current = await this.client.saves.get<T>(this.gameSlug, slotKey);
+    if (this.identityEpoch !== epoch || this.userId !== userId) throw new Error("Authenticated player changed during cloud save replacement");
+    // A reset is an explicit user action. A direct conditional PUT avoids
+    // queuing a destructive replacement for later replay if delivery fails.
+    const saved = await this.client.saves.put<T>(this.gameSlug, slotKey, this.input(data, current.revision));
+    if (this.identityEpoch !== epoch || this.userId !== userId) throw new Error("Authenticated player changed during cloud save replacement");
+    this.bind(slotKey, saved);
+    return saved;
   }
   /** Persists synchronously to the SDK's account-scoped pending-save store before returning. */
   public requestSave(data: T): Promise<CloudSaveState<T>> {
@@ -84,21 +113,31 @@ export class CloudSaveRepository<T> {
   public async retry(): Promise<CloudSaveState<T>> { await this.durable?.flush(); return this.state; }
   public async recoverAfterReauthentication(): Promise<void> { if (this.durable) await this.durable.recoverAfterReauthentication(); }
   public async useRemoteConflict(): Promise<GameSave<T>> {
+    const epoch = this.identityEpoch; const userId = this.requireUser();
     const slotKey = this.requireSlot(); const remote = await this.client.saves.get<T>(this.gameSlug, slotKey);
+    this.assertIdentity(epoch, userId);
     // This is an explicit player choice to discard the scoped pending copy.
     this.removePending(slotKey); this.bind(slotKey, remote); return remote;
   }
   public async keepLocalConflict(): Promise<GameSave<T>> {
+    const epoch = this.identityEpoch; const userId = this.requireUser();
     const slotKey = this.requireSlot(); const local = this.durable?.state.pending?.data;
     if (!local) throw new Error("No local cloud-save conflict to resolve");
     const remote = await this.client.saves.get<T>(this.gameSlug, slotKey);
+    this.assertIdentity(epoch, userId);
     this.bind(slotKey, remote); this.pendingAt = new Date().toISOString();
-    this.durable!.save(this.input(local, remote.revision)); await this.durable!.flush();
-    if (this.durable!.state.status !== "saved" || !this.durable!.state.saved) throw this.deliveryError(this.durable!.state);
-    return this.durable!.state.saved;
+    const durable = this.durable!;
+    durable.save(this.input(local, remote.revision)); await durable.flush();
+    this.assertIdentity(epoch, userId);
+    if (durable.state.status !== "saved" || !durable.state.saved) throw this.deliveryError(durable.state);
+    return durable.state.saved;
   }
   public async delete(slotKey = this.selectedSlot): Promise<void> {
-    if (!slotKey) return; await this.client.saves.delete(this.gameSlug, slotKey); this.removePending(slotKey);
+    if (!slotKey) return;
+    const epoch = this.identityEpoch; const userId = this.requireUser();
+    const current = await this.client.saves.get<T>(this.gameSlug, slotKey);
+    this.assertIdentity(epoch, userId);
+    await this.client.saves.delete(this.gameSlug, slotKey, current.revision); this.assertIdentity(epoch, userId); this.removePending(slotKey);
     if (slotKey === this.selectedSlot) { this.disposeDurable(); this.selectedSlot = undefined; this.setState({ status: "idle" }); }
   }
   public dispose(): void { this.disposeDurable(); this.listeners.clear(); }
@@ -120,6 +159,9 @@ export class CloudSaveRepository<T> {
   private removePending(slotKey: string): void { try { this.storage?.removeItem(this.pendingKey(slotKey)); } catch { /* explicit recovery remains in memory */ } }
   private requireUser(): string { if (!this.userId) throw new Error("Cloud saves require an authenticated Game Lab player"); return this.userId; }
   private requireSlot(): string { if (!this.selectedSlot) throw new Error("No cloud-save slot selected"); return this.selectedSlot; }
+  private assertIdentity(epoch: number, userId: string | undefined): void {
+    if (this.identityEpoch !== epoch || this.userId !== userId) throw new Error("Authenticated player changed during cloud save operation");
+  }
   private disposeDurable(): void { this.unsubscribe?.(); this.unsubscribe = undefined; this.durable?.dispose(); this.durable = undefined; }
   private deliveryError(state: DurableSaveState<T>): Error { return new Error(state.status === "unauthorized" ? "Reauthentication required" : state.status === "conflict" ? "Cloud save conflict" : "Cloud save was not confirmed"); }
   private setState(state: CloudSaveState<T>): void { this.state = state; for (const listener of this.listeners) listener(state); }

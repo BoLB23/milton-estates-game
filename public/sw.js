@@ -1,5 +1,7 @@
 const CACHE_PREFIX = "milton-estates-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v2`;
+// Vite replaces this marker with a fingerprint of the complete output,
+// including copied public files. Activation removes prior generations.
+const CACHE_NAME = `${CACHE_PREFIX}__MILTON_BUILD_ID__`;
 const SHELL_URLS = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
