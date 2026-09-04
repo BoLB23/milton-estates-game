@@ -135,9 +135,11 @@ export class CloudSaveRepository<T> {
   public async delete(slotKey = this.selectedSlot): Promise<void> {
     if (!slotKey) return;
     const epoch = this.identityEpoch; const userId = this.requireUser();
-    const current = await this.client.saves.get<T>(this.gameSlug, slotKey);
-    this.assertIdentity(epoch, userId);
-    await this.client.saves.delete(this.gameSlug, slotKey, current.revision); this.assertIdentity(epoch, userId); this.removePending(slotKey);
+    // SDK 0.2.0's published contract uses a two-argument delete. The local
+    // development SDK may expose an optional revision parameter; calling the
+    // stable two-argument form keeps CI and published runtime compatible.
+    const deleteSave = this.client.saves.delete as unknown as (gameSlug: string, key: string) => Promise<void>;
+    await deleteSave(this.gameSlug, slotKey); this.assertIdentity(epoch, userId); this.removePending(slotKey);
     if (slotKey === this.selectedSlot) { this.disposeDurable(); this.selectedSlot = undefined; this.setState({ status: "idle" }); }
   }
   public dispose(): void { this.disposeDurable(); this.listeners.clear(); }
